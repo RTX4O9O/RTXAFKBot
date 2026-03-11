@@ -44,7 +44,7 @@ bot-name:
 #  LUCKPERMS INTEGRATION
 # ─────────────────────────────────────────────────────────────────────────────
 luckperms:
-  # Prepend the LuckPerms default-group prefix to every bot display name.
+  # Prepend the LuckPerms default-group prefix to every bot display name
   # Example with use-prefix: true  →  §7[bot-Steve]
   # Example with use-prefix: false →  [bot-Steve]   (colors from format only)
   use-prefix: true
