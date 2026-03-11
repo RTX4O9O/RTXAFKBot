@@ -401,7 +401,7 @@ fake-chat:
   # Probability (0.0–1.0) that a scheduled interval actually fires a message.
   chance: 0.75
 
-  # Seconds between each bot's chat attempts (chosen randomly per bot)
+  # Seconds between each bot's chat attempts (chosen randomly per bot).
   interval:
     min: 5
     max: 10
