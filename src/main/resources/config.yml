@@ -35,10 +35,10 @@ limits:
 # ─────────────────────────────────────────────────────────────────────────────
 bot-name:
   # Display name shown in tab list and nametag for admin-spawned bots.
-  admin-format: '<#0079FF>[bot-{bot_name}]</#0079FF>'
+  admin-format: '{bot_name}'
 
   # Display name for bots spawned by normal users (fpp.user.spawn).
-  user-format: '<gray>[bot-{spawner}-{num}]</gray>'
+  user-format: 'bot-{spawner}-{num}'
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  LUCKPERMS INTEGRATION
