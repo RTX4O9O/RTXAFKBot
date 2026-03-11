@@ -95,5 +95,14 @@
                 </exclusion>
             </exclusions>
         </dependency>
+
+        <!-- LuckPerms API system dependency -->
+        <dependency>
+            <groupId>net.luckperms</groupId>
+            <artifactId>luckperms-api</artifactId>
+            <version>5.5</version>
+            <scope>system</scope>
+            <systemPath>${project.basedir}/libs/api-5.5.jar</systemPath>
+        </dependency>
     </dependencies>
 </project>

@@ -5,13 +5,15 @@ import me.bill.fakePlayerPlugin.FakePlayerPlugin;
 import me.bill.fakePlayerPlugin.config.Config;
 import me.bill.fakePlayerPlugin.database.BotRecord;
 import me.bill.fakePlayerPlugin.database.DatabaseManager;
-import me.bill.fakePlayerPlugin.lang.Lang;
-import net.kyori.adventure.text.Component;
+import net.luckperms.api.LuckPerms;
+import net.luckperms.api.LuckPermsProvider;
+import net.luckperms.api.model.group.Group;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.NamespacedKey;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
+import org.bukkit.plugin.Plugin;
 
 import java.time.Instant;
 import java.util.*;
@@ -44,8 +46,7 @@ public class FakePlayerManager {
         this.plugin = plugin;
         FAKE_PLAYER_KEY = new NamespacedKey(plugin, "fake_player_name");
 
-        // Every 30 s, flush each bot's current position to the DB so that
-        // on restart they return to where they actually were.
+        // Every 30 s, flush each bot's current position to the DB
         Bukkit.getScheduler().runTaskTimer(plugin, () -> {
             if (activePlayers.isEmpty()) return;
             for (FakePlayer fp : activePlayers.values()) {
@@ -54,20 +55,28 @@ public class FakePlayerManager {
                 org.bukkit.Location loc = body.getLocation();
                 if (loc.getWorld() == null) continue;
                 String world = loc.getWorld().getName();
-
-                // Keep spawnLocation current — used by BotPersistence as fallback
                 fp.setSpawnLocation(loc.clone());
-
-                // Queue location update to DB (batched, includes yaw/pitch)
                 if (db != null) {
                     db.updateLastLocation(fp.getUuid(), world,
                             loc.getX(), loc.getY(), loc.getZ(),
                             loc.getYaw(), loc.getPitch());
                 }
             }
-            // Flush all pending location updates in one batch
             if (db != null) db.flushPendingLocations();
         }, 600L, 600L); // every 30 s
+
+        // Every 40 ticks (2 s) re-send display names for all bots to all players.
+        // Uses the lighter UPDATE_DISPLAY_NAME-only packet to override TAB plugin resets.
+        Bukkit.getScheduler().runTaskTimer(plugin, () -> {
+            if (activePlayers.isEmpty()) return;
+            List<Player> online = new ArrayList<>(Bukkit.getOnlinePlayers());
+            if (online.isEmpty()) return;
+            for (FakePlayer fp : activePlayers.values()) {
+                for (Player p : online) {
+                    PacketHelper.sendTabListDisplayNameUpdate(p, fp);
+                }
+            }
+        }, 40L, 40L);
     }
 
     // ── Spawn ────────────────────────────────────────────────────────────────
@@ -125,6 +134,7 @@ public class FakePlayerManager {
             UUID uuid = UUID.randomUUID();
             PlayerProfile profile = Bukkit.createProfile(uuid, ubn.internalName());
             FakePlayer fp = new FakePlayer(uuid, ubn.internalName(), profile);
+            // Store display name as MiniMessage string — NEVER convert to legacy
             fp.setDisplayName(ubn.displayName());
             fp.setSpawnLocation(location);
             fp.setSpawnedBy(spawnerName, spawnerUuid);
@@ -185,6 +195,10 @@ public class FakePlayerManager {
             UUID uuid = UUID.randomUUID();
             PlayerProfile profile = Bukkit.createProfile(uuid, name);
             FakePlayer fp = new FakePlayer(uuid, name, profile);
+            // Set display name using admin bot name format + LuckPerms prefix
+            String lpPrefix = getLuckPermsPrefix();
+            String displayName = lpPrefix + Config.adminBotNameFormat().replace("{bot_name}", name);
+            fp.setDisplayName(displayName);
             fp.setSpawnLocation(location);
             fp.setSpawnedBy(spawnerName, spawnerUuid);
             activePlayers.put(uuid, fp);
@@ -251,13 +265,12 @@ public class FakePlayerManager {
             Entity body = FakePlayerBody.spawn(fp, spawnLoc);
             if (body != null) {
                 fp.setPhysicsEntity(body);
-                // Register in entity-id index for O(1) getByEntity() lookups
                 entityIdIndex.put(body.getEntityId(), fp);
                 Bukkit.getScheduler().runTaskLater(plugin, () -> {
                     if (!body.isValid()) return;
                     FakePlayerBody.applySkin(plugin, body, fp.getName());
                     fp.setNametagEntity(FakePlayerBody.spawnNametag(fp, body));
-                    // Re-broadcast tab entry with skin ~1 s later
+                    // Re-send tab after skin loads (~1 s later)
                     Bukkit.getScheduler().runTaskLater(plugin, () -> {
                         List<Player> online = new ArrayList<>(Bukkit.getOnlinePlayers());
                         for (Player p : online) PacketHelper.sendTabListAdd(p, fp);
@@ -266,25 +279,27 @@ public class FakePlayerManager {
             }
         }
 
-        // Snapshot online players once — avoids repeated CraftServer.getOnlinePlayers() calls
+        // Send tab list immediately
         List<Player> online = new ArrayList<>(Bukkit.getOnlinePlayers());
         for (Player p : online) PacketHelper.sendTabListAdd(p, fp);
 
+        // Re-send after 5 ticks to override TAB plugin or other plugins that may reset it
+        Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            List<Player> snap = new ArrayList<>(Bukkit.getOnlinePlayers());
+            for (Player p : snap) PacketHelper.sendTabListAdd(p, fp);
+        }, 5L);
+
         if (Config.joinMessage()) {
-            Bukkit.getScheduler().runTaskLater(plugin, () -> {
-                Component msg = Lang.get("bot-join", "name", fp.getDisplayName());
-                List<Player> snap = new ArrayList<>(Bukkit.getOnlinePlayers());
-                for (Player p : snap) p.sendMessage(msg);
-                Bukkit.getConsoleSender().sendMessage(msg);
-            }, 2L);
+            Bukkit.getScheduler().runTaskLater(plugin, () ->
+                BotBroadcast.broadcastJoin(fp), 2L);
         }
 
         if (persistence != null && Config.persistOnRestart()) {
             persistence.saveAsync(activePlayers.values());
         }
 
-        // Start swap timer for this bot
         if (swapAI != null) swapAI.schedule(fp);
+        fireVanillaJoin(fp);
     }
 
     // ── Remove all ───────────────────────────────────────────────────────────
@@ -299,6 +314,10 @@ public class FakePlayerManager {
 
         PlayerProfile profile = Bukkit.createProfile(uuid, name);
         FakePlayer fp = new FakePlayer(uuid, name, profile);
+        // Set display name using admin bot name format + LuckPerms prefix
+        String lpPrefix = getLuckPermsPrefix();
+        String displayName = lpPrefix + Config.adminBotNameFormat().replace("{bot_name}", name);
+        fp.setDisplayName(displayName);
         fp.setSpawnLocation(location);
         fp.setSpawnedBy(spawnedBy, spawnedByUuid);
         usedNames.add(name);
@@ -365,9 +384,7 @@ public class FakePlayerManager {
                 for (Player online : snapshot) PacketHelper.sendTabListRemove(online, target);
 
                 if (Config.leaveMessage()) {
-                    Component msg = Lang.get("bot-leave", "name", target.getDisplayName());
-                    for (Player online : snapshot) online.sendMessage(msg);
-                    Bukkit.getConsoleSender().sendMessage(msg);
+                    BotBroadcast.broadcastLeave(target);
                 }
                 if (db != null) db.recordRemoval(target.getUuid(), "DELETED");
                 Config.debug("Removed bot: " + target.getName());
@@ -433,9 +450,7 @@ public class FakePlayerManager {
             for (Player online : snapshot) PacketHelper.sendTabListRemove(online, target);
 
             if (Config.leaveMessage()) {
-                Component leaveMsg = Lang.get("bot-leave", "name", target.getDisplayName());
-                for (Player online : snapshot) online.sendMessage(leaveMsg);
-                Bukkit.getConsoleSender().sendMessage(leaveMsg);
+                BotBroadcast.broadcastLeave(target);
             }
             if (db != null) db.recordRemoval(target.getUuid(), "DELETED");
             Config.debug("Deleted fake player: " + name);
@@ -487,9 +502,7 @@ public class FakePlayerManager {
 
             // 3. Leave message
             if (Config.leaveMessage()) {
-                Component leaveMsg = Lang.get("bot-leave", "name", fp.getDisplayName());
-                for (Player online : snapshot) online.sendMessage(leaveMsg);
-                Bukkit.getConsoleSender().sendMessage(leaveMsg);
+                BotBroadcast.broadcastLeave(fp);
             }
 
             // 4. DB record
@@ -639,19 +652,18 @@ public class FakePlayerManager {
         List<String> pool = Config.namePool();
         if (pool.isEmpty()) return fallbackName();
 
-        // Reservoir-sample one unused name in a single O(n) pass —
-        // avoids building a full candidate index list.
         String chosen  = null;
         int    count   = 0;
         for (String n : pool) {
             if (usedNames.contains(n) || Bukkit.getPlayerExact(n) != null) continue;
             count++;
-            // Replace current choice with probability 1/count
             if (ThreadLocalRandom.current().nextInt(count) == 0) chosen = n;
         }
-        if (chosen != null) { usedNames.add(chosen); return chosen; }
-
-        // Pool exhausted — fall back to generated name
+        if (chosen != null) {
+            usedNames.add(chosen);
+            // Only return the valid Minecraft identifier for GameProfile
+            return chosen;
+        }
         return fallbackName();
     }
 
@@ -677,45 +689,137 @@ public class FakePlayerManager {
     public record UserBotName(String internalName, String displayName) {}
 
     /**
-     * Generates a valid internal Minecraft name and a display name for a
-     * user-tier bot owned by {@code spawnerName}.
-     *
-     * <p>Display name format:
-     * <ul>
-     *   <li>First bot  → {@code "bot-PlayerName"}</li>
-     *   <li>More bots  → {@code "bot-PlayerName-2"}, {@code "bot-PlayerName-3"}, …</li>
-     * </ul>
-     *
-     * <p>The internal Minecraft profile name (GameProfile, must be [a-zA-Z0-9_], ≤16 chars)
-     * uses underscores: {@code b_PlayerName}, {@code b_PlayerName_2}, …
-     *
-     * @param spawnerName   the spawning player's Minecraft name
-     * @param existingCount number of bots this player already owns (used for suffix)
+     * Converts a LuckPerms prefix (legacy & codes, §codes, or already MiniMessage) to MiniMessage.
+     * Handles plain named colors (&7 → <gray>), hex (&x&0&0&7&9&F&F), and &#RRGGBB formats.
      */
-    public UserBotName generateUserBotName(String spawnerName, int existingCount) {
-        int slot = existingCount + 1; // 1-based ordinal for this bot
+    private String convertLuckPermsPrefixToMiniMessage(String prefix) {
+        if (prefix == null || prefix.isEmpty()) return "";
+        // Use TextUtil's round-trip conversion which handles all legacy formats correctly
+        return me.bill.fakePlayerPlugin.util.TextUtil.legacyToMiniMessage(prefix);
+    }
 
-        // ── Display name (shown in nametag + tab list, hyphens allowed) ───────
-        String display = slot == 1
-                ? "bot-" + spawnerName
-                : "bot-" + spawnerName + "-" + slot;
+    /** Public accessor for startup diagnostic logging. Returns the LP prefix in MiniMessage, or empty string. */
+    public String detectLuckPermsPrefix() {
+        return getLuckPermsPrefix();
+    }
 
-        // ── Internal name (GameProfile, only [a-zA-Z0-9_], max 16 chars) ─────
-        // "b_" prefix (2) + up to 11 chars of spawner name + optional "_N" suffix
-        String base = "b_" + (spawnerName.length() > 11 ? spawnerName.substring(0, 11) : spawnerName);
+    private String getLuckPermsPrefix() {
+        // Respect the config toggle
+        if (!Config.luckpermsUsePrefix()) return "";
 
-        String internal = base;
-        if (usedNames.contains(internal) || Bukkit.getPlayerExact(internal) != null) {
-            for (int suffix = 2; suffix <= 1000; suffix++) {
-                String candidate = base + "_" + suffix;
-                if (candidate.length() > 16) candidate = candidate.substring(0, 16);
-                if (!usedNames.contains(candidate) && Bukkit.getPlayerExact(candidate) == null) {
-                    internal = candidate;
-                    break;
+        Plugin lpPlugin = Bukkit.getPluginManager().getPlugin("LuckPerms");
+        if (lpPlugin == null || !lpPlugin.isEnabled()) return "";
+        try {
+            LuckPerms lp = LuckPermsProvider.get();
+            net.luckperms.api.query.QueryOptions opts =
+                    net.luckperms.api.query.QueryOptions.nonContextual();
+
+            // ── Strategy 1: read prefix nodes directly from the default group ──
+            Group defaultGroup = lp.getGroupManager().getGroup("default");
+            if (defaultGroup != null) {
+                // Scan the group's own nodes for PrefixNode — most reliable approach
+                String directPrefix = defaultGroup.getNodes(net.luckperms.api.node.NodeType.PREFIX)
+                        .stream()
+                        .max(java.util.Comparator.comparingInt(
+                                n -> n.getPriority()))   // highest priority wins
+                        .map(n -> n.getMetaValue())
+                        .orElse(null);
+                if (directPrefix != null && !directPrefix.isEmpty()) {
+                    Config.debug("[LP prefix] Direct node prefix from 'default': " + directPrefix);
+                    return convertLuckPermsPrefixToMiniMessage(directPrefix);
+                }
+
+                // ── Strategy 2: cached metadata (works when LP has resolved the group) ──
+                String cachedPrefix = defaultGroup.getCachedData().getMetaData(opts).getPrefix();
+                if (cachedPrefix != null && !cachedPrefix.isEmpty()) {
+                    Config.debug("[LP prefix] Cached metadata prefix from 'default': " + cachedPrefix);
+                    return convertLuckPermsPrefixToMiniMessage(cachedPrefix);
                 }
             }
+
+            // ── Strategy 3: scan ALL groups by weight, pick highest-weight prefix ──
+            String bestPrefix = null;
+            int bestWeight = Integer.MIN_VALUE;
+            for (Group g : lp.getGroupManager().getLoadedGroups()) {
+                int weight = g.getWeight().orElse(0);
+                if (weight <= bestWeight) continue;
+
+                // Try direct nodes first
+                String p = g.getNodes(net.luckperms.api.node.NodeType.PREFIX)
+                        .stream()
+                        .max(java.util.Comparator.comparingInt(
+                                n -> n.getPriority()))
+                        .map(n -> n.getMetaValue())
+                        .orElse(null);
+                if (p == null || p.isEmpty()) {
+                    p = g.getCachedData().getMetaData(opts).getPrefix();
+                }
+                if (p != null && !p.isEmpty()) {
+                    bestPrefix = p;
+                    bestWeight = weight;
+                }
+            }
+            if (bestPrefix != null) {
+                Config.debug("[LP prefix] Best-weight group prefix: " + bestPrefix);
+                return convertLuckPermsPrefixToMiniMessage(bestPrefix);
+            }
+
+        } catch (Exception e) {
+            Config.debug("[LP prefix] Failed to get LuckPerms prefix: " + e.getMessage());
         }
+        return "";
+    }
+
+    /**
+     * Generates a valid internal Minecraft name and a display name for an admin bot.
+     *
+     * @param botName the bot's actual Minecraft name
+     */
+    public UserBotName generateAdminBotName(String botName) {
+        // Internal name: "bot_<name>" truncated to 16 chars (valid MC identifier)
+        String internal = "bot_" + botName;
+        if (internal.length() > 16) internal = internal.substring(0, 16);
         usedNames.add(internal);
+        String prefix  = getLuckPermsPrefix();
+        String display = prefix + Config.adminBotNameFormat().replace("{bot_name}", botName);
         return new UserBotName(internal, display);
+    }
+
+    /**
+     * Generates a valid internal Minecraft name and a display name for a user-tier bot.
+     *
+     * @param spawnerName   the spawning player's Minecraft name
+     * @param existingCount bots this player already owns (used for the numeric suffix)
+     */
+    public UserBotName generateUserBotName(String spawnerName, int existingCount) {
+        // Internal name: "ubot_<spawner>_<num>" truncated to 16 chars
+        String suffix   = String.valueOf(existingCount + 1);
+        String internal = "ubot_" + spawnerName + "_" + suffix;
+        if (internal.length() > 16) internal = internal.substring(0, 16);
+        usedNames.add(internal);
+        String prefix  = getLuckPermsPrefix();
+        String display = prefix + Config.userBotNameFormat()
+                .replace("{spawner}", spawnerName)
+                .replace("{num}",     suffix)
+                .replace("{bot_name}", internal);
+        return new UserBotName(internal, display);
+    }
+
+    /**
+     * Fires a vanilla join event for a fake player, so it appears in the server player list and triggers vanilla join message.
+     */
+    private void fireVanillaJoin(FakePlayer fp) {
+        for (Player online : Bukkit.getOnlinePlayers()) {
+            PacketHelper.sendTabListAdd(online, fp);
+        }
+    }
+
+    /**
+     * Fires a vanilla leave event for a fake player, so it disappears from the server player list and triggers vanilla leave message.
+     */
+    private void fireVanillaLeave(FakePlayer fp) {
+        for (Player online : Bukkit.getOnlinePlayers()) {
+            PacketHelper.sendTabListRemove(online, fp);
+        }
     }
 }

@@ -117,6 +117,16 @@ public final class FakePlayerPlugin extends JavaPlugin {
         // First purge any orphaned Mannequin bodies left by a crash, then restore.
         botPersistence.purgeOrphanedBodiesAndRestore(fakePlayerManager);
 
+        // Log LuckPerms prefix detection after server fully starts (1-tick delay)
+        getServer().getScheduler().runTaskLater(this, () -> {
+            String detected = fakePlayerManager.detectLuckPermsPrefix();
+            if (detected.isEmpty()) {
+                FppLogger.info("[FPP] LuckPerms: no prefix detected on default group.");
+            } else {
+                FppLogger.info("[FPP] LuckPerms: detected prefix → " + detected);
+            }
+        }, 1L);
+
         Config.debug("onEnable complete.");
     }
 

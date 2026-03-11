@@ -2,7 +2,6 @@ package me.bill.fakePlayerPlugin.fakeplayer;
 
 import me.bill.fakePlayerPlugin.FakePlayerPlugin;
 import me.bill.fakePlayerPlugin.config.Config;
-import me.bill.fakePlayerPlugin.lang.Lang;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextColor;
@@ -173,9 +172,7 @@ public final class BotSwapAI {
             for (Player p : online) PacketHelper.sendTabListRemove(p, fp);
 
             if (Config.leaveMessage()) {
-                Component leaveMsg = Lang.get("bot-leave", "name", leavingName);
-                for (Player p : online) p.sendMessage(leaveMsg);
-                Bukkit.getConsoleSender().sendMessage(leaveMsg);
+                BotBroadcast.broadcastLeaveByDisplayName(leavingName);
             }
 
             // ── 4. Schedule rejoin ────────────────────────────────────────

@@ -170,8 +170,8 @@ public final class FakePlayerBody {
                 stand.setSilent(true);
                 stand.setCollidable(false);
 
-                // White text — matches vanilla player nametag appearance
-                stand.customName(Component.text(fp.getDisplayName(), NamedTextColor.WHITE));
+                // Use MiniMessage color parsing for custom nametag color
+                stand.customName(me.bill.fakePlayerPlugin.util.TextUtil.colorize(fp.getDisplayName()));
                 stand.setCustomNameVisible(true);
 
                 stand.getPersistentDataContainer().set(

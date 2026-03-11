@@ -2,6 +2,9 @@ package me.bill.fakePlayerPlugin.fakeplayer;
 
 import me.bill.fakePlayerPlugin.config.Config;
 import me.bill.fakePlayerPlugin.util.FppLogger;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.minimessage.MiniMessage;
+import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
@@ -10,6 +13,8 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Sends NMS packets via reflection — zero NMS imports, compiles against paper-api only.
@@ -48,6 +53,9 @@ public final class PacketHelper {
     private static Method         componentLiteral;
     private static Method         craftPlayerGetHandle;
     private static Constructor<?> playerInfoUpdateCtor;
+
+    /** Paper's PaperAdventure.asVanilla(Component) — converts Adventure → NMS Component. */
+    private static Method paperAdventureAsVanilla;
 
     /** Cached {@code ServerPlayer.connection} Field — resolved on first {@link #sendPacket} call. */
     private static volatile Field  cachedConnectionField;
@@ -116,6 +124,16 @@ public final class PacketHelper {
             if (playerInfoUpdateCtor == null)
                 throw new IllegalStateException("Cannot find ClientboundPlayerInfoUpdatePacket constructor.");
 
+            // Resolve PaperAdventure.asVanilla(Component) — Paper's official Adventure→NMS bridge
+            try {
+                Class<?> paperAdventure = Class.forName("io.papermc.paper.adventure.PaperAdventure");
+                paperAdventureAsVanilla = paperAdventure.getDeclaredMethod("asVanilla", Component.class);
+                paperAdventureAsVanilla.setAccessible(true);
+                Config.debug("PaperAdventure.asVanilla found — colored tablist names supported.");
+            } catch (Exception ex) {
+                Config.debug("PaperAdventure.asVanilla not found, will fall back to literal: " + ex.getMessage());
+            }
+
             Config.debug("PacketHelper ready.");
             ready = true;
         } catch (Exception e) {
@@ -154,6 +172,27 @@ public final class PacketHelper {
 
     // ── Public API ────────────────────────────────────────────────────────────
 
+    /**
+     * Converts MiniMessage hex color tags to Minecraft legacy hex color codes for tab list display name.
+     * Example: <#0079FF>text</#0079FF> → §x§0§0§7§9§F§Ftext§r
+     */
+    public static String convertHexColors(String input) {
+        Pattern open = Pattern.compile("<#([A-Fa-f0-9]{6})>");
+        Matcher m = open.matcher(input);
+        StringBuffer sb = new StringBuffer();
+        while (m.find()) {
+            String hex = m.group(1);
+            StringBuilder color = new StringBuilder("§x");
+            for (char c : hex.toCharArray()) color.append('§').append(c);
+            m.appendReplacement(sb, color.toString());
+        }
+        m.appendTail(sb);
+        String result = sb.toString();
+        // Replace closing tags
+        result = result.replaceAll("</#([A-Fa-f0-9]{6})>", "§r");
+        return result;
+    }
+
     public static void sendTabListAdd(Player receiver, FakePlayer fp) {
         if (!ensureReady()) return;
         try {
@@ -162,9 +201,10 @@ public final class PacketHelper {
                     ? gameProfileCtor.newInstance(fp.getUuid(), fp.getName())
                     : gameProfileClass.getDeclaredConstructors()[0].newInstance(fp.getUuid(), fp.getName());
 
-            Object displayName = componentLiteral != null
-                    ? componentLiteral.invoke(null, fp.getDisplayName())
-                    : fp.getDisplayName();
+            // Parse display name: MiniMessage → Adventure Component → NMS Component
+            String displayNameMini = fp.getDisplayName();
+            Component adventureComponent = MiniMessage.miniMessage().deserialize(displayNameMini);
+            Object displayName = adventureToNms(adventureComponent);
 
             Object entry   = buildEntry(fp.getUuid(), profile, displayName);
             Object actions = buildActionSet();
@@ -202,6 +242,46 @@ public final class PacketHelper {
             Config.debug("Tab REMOVE → " + receiver.getName() + " for " + fp.getName());
         } catch (Exception e) {
             FppLogger.error("sendTabListRemove failed: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Sends only the {@code UPDATE_DISPLAY_NAME} action for {@code fp} to {@code receiver}.
+     * Lighter than {@link #sendTabListAdd} — use in the periodic refresh loop to override
+     * TAB plugin resets without re-adding the player entry from scratch.
+     */
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    public static void sendTabListDisplayNameUpdate(Player receiver, FakePlayer fp) {
+        if (!ensureReady()) return;
+        try {
+            Object nms = getHandle(receiver);
+            Object profile = gameProfileCtor != null
+                    ? gameProfileCtor.newInstance(fp.getUuid(), fp.getName())
+                    : gameProfileClass.getDeclaredConstructors()[0].newInstance(fp.getUuid(), fp.getName());
+
+            Component adventureComponent = MiniMessage.miniMessage().deserialize(fp.getDisplayName());
+            Object displayName = adventureToNms(adventureComponent);
+
+            Object entry = buildEntry(fp.getUuid(), profile, displayName);
+
+            // Only UPDATE_DISPLAY_NAME action
+            Class<? extends Enum> e = rawEnum(playerInfoUpdateActionClass);
+            Object actions = EnumSet.of(Enum.valueOf(e, "UPDATE_DISPLAY_NAME"));
+
+            Object secondArg;
+            Class<?> secondParamType = playerInfoUpdateCtor.getParameterTypes()[1];
+            if (secondParamType == playerInfoUpdateEntryClass) {
+                secondArg = entry;
+            } else if (secondParamType.isArray()) {
+                Object arr = java.lang.reflect.Array.newInstance(secondParamType.getComponentType(), 1);
+                java.lang.reflect.Array.set(arr, 0, entry);
+                secondArg = arr;
+            } else {
+                secondArg = List.of(entry);
+            }
+            sendPacket(nms, playerInfoUpdateCtor.newInstance(actions, secondArg));
+        } catch (Exception e) {
+            // Silent — this is a background refresh, don't spam logs
         }
     }
 
@@ -411,6 +491,31 @@ public final class PacketHelper {
     }
 
     // ── Packet builders ───────────────────────────────────────────────────────
+
+    /**
+     * Converts an Adventure {@link Component} to an NMS {@code net.minecraft.network.chat.Component}.
+     * Uses {@code PaperAdventure.asVanilla} (Paper's official bridge) as the primary strategy,
+     * falling back to plain-text literal if not available.
+     */
+    private static Object adventureToNms(Component component) {
+        if (paperAdventureAsVanilla != null) {
+            try {
+                return paperAdventureAsVanilla.invoke(null, component);
+            } catch (Exception e) {
+                Config.debug("PaperAdventure.asVanilla failed: " + e.getMessage());
+            }
+        }
+        // Fallback: plain text (no color) but at least avoids crashes
+        if (componentLiteral != null) {
+            try {
+                String plain = PlainTextComponentSerializer.plainText().serialize(component);
+                return componentLiteral.invoke(null, plain);
+            } catch (Exception e) {
+                Config.debug("componentLiteral fallback failed: " + e.getMessage());
+            }
+        }
+        return null;
+    }
 
     @SuppressWarnings({"unchecked", "rawtypes"})
     private static Object buildActionSet() {

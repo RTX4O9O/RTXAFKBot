@@ -2,13 +2,12 @@ package me.bill.fakePlayerPlugin.listener;
 
 import me.bill.fakePlayerPlugin.FakePlayerPlugin;
 import me.bill.fakePlayerPlugin.config.Config;
-import me.bill.fakePlayerPlugin.lang.Lang;
+import me.bill.fakePlayerPlugin.fakeplayer.BotBroadcast;
 import me.bill.fakePlayerPlugin.fakeplayer.FakePlayer;
 import me.bill.fakePlayerPlugin.fakeplayer.ChunkLoader;
 import me.bill.fakePlayerPlugin.fakeplayer.FakePlayerBody;
 import me.bill.fakePlayerPlugin.fakeplayer.FakePlayerManager;
 import me.bill.fakePlayerPlugin.fakeplayer.PacketHelper;
-import net.kyori.adventure.text.Component;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Sound;
@@ -86,10 +85,8 @@ public class FakePlayerEntityListener implements Listener {
         if (fp == null) return;
 
         Player killer = event.getEntity().getKiller();
-        if (killer != null && Config.killMessage()) {
-            Component killMsg = Lang.get("bot-kill", "killer", killer.getName(), "name", fp.getDisplayName());
-            for (Player p : Bukkit.getOnlinePlayers()) p.sendMessage(killMsg);
-            Bukkit.getConsoleSender().sendMessage(killMsg);
+        if (killer != null) {
+            BotBroadcast.broadcastKill(killer.getName(), fp.getDisplayName());
         }
 
         final Location respawnLoc = fp.getSpawnLocation() != null
@@ -143,10 +140,7 @@ public class FakePlayerEntityListener implements Listener {
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private void broadcastLeave(String displayName) {
-        if (!Config.leaveMessage()) return;
-        Component msg = Lang.get("bot-leave", "name", displayName);
-        for (Player p : Bukkit.getOnlinePlayers()) p.sendMessage(msg);
-        Bukkit.getConsoleSender().sendMessage(msg);
+        BotBroadcast.broadcastLeaveByDisplayName(displayName);
     }
 
     /** True only for Mannequin entities tagged as an FPP physics body. */

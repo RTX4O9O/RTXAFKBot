@@ -172,12 +172,15 @@ public class DatabaseManager {
     private boolean tryMysql() {
         try {
             Class.forName("com.mysql.cj.jdbc.Driver");
+            int connTimeout = Config.mysqlConnTimeout();
             String url = "jdbc:mysql://" + Config.mysqlHost() + ":" + Config.mysqlPort()
                     + "/" + Config.mysqlDatabase()
                     + "?useSSL=" + Config.mysqlUseSSL()
                     + "&autoReconnect=true&characterEncoding=utf8"
-                    + "&connectionTimeout=5000&socketTimeout=30000";
+                    + "&connectionTimeout=" + connTimeout
+                    + "&socketTimeout=" + (connTimeout * 2);
             connection = DriverManager.getConnection(url, Config.mysqlUsername(), Config.mysqlPassword());
+            Config.debug("MySQL pool-size advisory: " + Config.mysqlPoolSize());
             FppLogger.success("Database connected via MySQL ("
                     + Config.mysqlHost() + ":" + Config.mysqlPort()
                     + "/" + Config.mysqlDatabase() + ").");

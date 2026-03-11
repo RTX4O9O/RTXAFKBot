@@ -1,0 +1,9 @@
+<component name="libraryTable">
+  <library name="LuckPerms API">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/libs/api-5.5.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>

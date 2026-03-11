@@ -67,15 +67,21 @@ public final class TextUtil {
     // ── Legacy → MiniMessage bridge ──────────────────────────────────────────
 
     /**
-     * Converts legacy {@code &} colour/format codes to their MiniMessage equivalents
-     * so that any remaining {@code &} codes in lang files still render correctly.
+     * Converts legacy {@code &} or {@code §} colour/format codes to their MiniMessage equivalents
+     * so that any remaining legacy codes in lang files still render correctly.
      */
-    private static String legacyToMiniMessage(String s) {
+    public static String legacyToMiniMessage(String s) {
         if (s == null || s.isEmpty()) return s;
-        // Use the legacy serialiser → Component → MiniMessage serialiser round-trip
-        // only for strings that still contain legacy codes.
-        if (s.indexOf('&') < 0) return s;
-        Component legacy = LegacyComponentSerializer.legacyAmpersand().deserialize(s);
-        return MM.serialize(legacy);
+        // If it contains section-sign legacy codes (§), convert those first
+        if (s.indexOf('§') >= 0) {
+            Component legacy = LegacyComponentSerializer.legacySection().deserialize(s);
+            return MM.serialize(legacy);
+        }
+        // If it contains ampersand legacy codes (&), convert those
+        if (s.indexOf('&') >= 0) {
+            Component legacy = LegacyComponentSerializer.legacyAmpersand().deserialize(s);
+            return MM.serialize(legacy);
+        }
+        return s;
     }
 }
