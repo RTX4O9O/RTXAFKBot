@@ -31,6 +31,7 @@ import me.bill.fakePlayerPlugin.listener.ServerListListener;
 import me.bill.fakePlayerPlugin.util.BackupManager;
 import me.bill.fakePlayerPlugin.util.ConfigMigrator;
 import me.bill.fakePlayerPlugin.util.FppLogger;
+import me.bill.fakePlayerPlugin.util.FppMetrics;
 import me.bill.fakePlayerPlugin.util.UpdateChecker;
 import org.bukkit.Bukkit;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -47,6 +48,7 @@ public final class FakePlayerPlugin extends JavaPlugin {
     private DatabaseManager   databaseManager;
     private BotPersistence    botPersistence;
     private BotSwapAI         botSwapAI;
+    private FppMetrics        fppMetrics;
 
     /** System.currentTimeMillis() captured at the start of onEnable. */
     private long enabledAt;
@@ -189,6 +191,10 @@ public final class FakePlayerPlugin extends JavaPlugin {
         // ── Update checker (async, non-blocking) ─────────────────────────────
         UpdateChecker.check(this);
 
+        // ── Metrics (FastStats) ───────────────────────────────────────────────
+        fppMetrics = new FppMetrics();
+        fppMetrics.init(this, fakePlayerManager);
+
         // ── Bot persistence restore ───────────────────────────────────────────
         botPersistence.purgeOrphanedBodiesAndRestore(fakePlayerManager);
 
@@ -236,6 +242,9 @@ public final class FakePlayerPlugin extends JavaPlugin {
             databaseManager.close();
             dbFlushed = true;
         }
+
+        // ── Metrics shutdown ──────────────────────────────────────────────────
+        if (fppMetrics != null) fppMetrics.shutdown();
 
         long uptimeMs = System.currentTimeMillis() - enabledAt;
         FppLogger.printShutdownBanner(botsRemoved, dbFlushed, uptimeMs);

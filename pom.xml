@@ -41,6 +41,13 @@
                 </executions>
                 <configuration>
                     <minimizeJar>false</minimizeJar>
+                    <relocations>
+                        <!-- Relocate FastStats so it doesn't clash with other plugins -->
+                        <relocation>
+                            <pattern>dev.faststats</pattern>
+                            <shadedPattern>me.bill.fakePlayerPlugin.libs.faststats</shadedPattern>
+                        </relocation>
+                    </relocations>
                 </configuration>
             </plugin>
         </plugins>
@@ -60,6 +67,10 @@
         <repository>
             <id>central</id>
             <url>https://repo.maven.apache.org/maven2</url>
+        </repository>
+        <repository>
+            <id>faststats-releases</id>
+            <url>https://repo.faststats.dev/releases</url>
         </repository>
     </repositories>
 
@@ -103,6 +114,14 @@
             <version>5.5</version>
             <scope>system</scope>
             <systemPath>${project.basedir}/libs/api-5.5.jar</systemPath>
+        </dependency>
+
+        <!-- FastStats — anonymous usage analytics (shaded + relocated) -->
+        <dependency>
+            <groupId>dev.faststats.metrics</groupId>
+            <artifactId>bukkit</artifactId>
+            <version>0.18.1</version>
+            <scope>compile</scope>
         </dependency>
     </dependencies>
 </project>
