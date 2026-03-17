@@ -2,7 +2,7 @@
 
 > Spawn realistic fake players on your Paper server — with tab list presence, server list count, join/leave messages, in-world bodies, guaranteed skins, chunk loading, bot swap/rotation, fake chat, and full hot-reload support.
 
-![Version](https://img.shields.io/badge/version-1.3.0%20HF%20--%201-0079FF?style=flat-square)
+![Version](https://img.shields.io/badge/version-1.3.1-0079FF?style=flat-square)
 ![MC](https://img.shields.io/badge/Minecraft-1.21.x-0079FF?style=flat-square)
 ![Platform](https://img.shields.io/badge/platform-Paper-0079FF?style=flat-square)
 ![Java](https://img.shields.io/badge/Java-21-0079FF?style=flat-square)
@@ -209,7 +209,8 @@ When LuckPerms is installed and `luckperms.use-prefix: true`:
 ## ✦ Changelog
 
 
-### v1.3.0 HF - 1 *(2026-03-17)*
+
+### v1.3.1 *(2026-03-17)*
 #### Hotfix
 - Fixed NullPointerException in BotSwapAI when bot entity is null.
 - Fixed StackOverflowError in FakePlayerManager.visualChain by adding a recursion base case.
@@ -276,4 +277,4 @@ When LuckPerms is installed and `luckperms.use-prefix: true`:
 
 ---
 
-*Built for Paper 1.21.x · Java 21 · FPP v1.3.0 HF - 1 · [Modrinth](https://modrinth.com/plugin/fake-player-plugin-(fpp))*
+*Built for Paper 1.21.x · Java 21 · FPP v1.3.1 · [Modrinth](https://modrinth.com/plugin/fake-player-plugin-(fpp))*
