@@ -7,7 +7,8 @@ import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextColor;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
-import org.bukkit.entity.Player;
+ import org.bukkit.entity.Player;
+ import org.bukkit.entity.Entity;
 import org.bukkit.scheduler.BukkitTask;
 
 import java.time.LocalTime;
@@ -330,7 +331,8 @@ public final class BotSwapAI {
     }
 
     private void sendBotChat(FakePlayer bot, String message) {
-        if (!bot.getPhysicsEntity().isValid()) return;
+        Entity entity = bot.getPhysicsEntity();
+        if (entity == null || !entity.isValid()) return;
         Component chatLine = Component.empty()
                 .append(Component.text("<", NamedTextColor.WHITE))
                 .append(Component.text(bot.getName(), TextColor.color(0x0079FF)))

@@ -244,7 +244,7 @@ public class FakePlayerManager {
      * schedules the next one after a random join delay.
      */
     private void visualChain(List<FakePlayer> batch, int index, Location location) {
-        if (index >= batch.size()) return;
+        if (batch == null || index >= batch.size()) return;
 
         FakePlayer fp = batch.get(index);
         // Guard: bot may have been deleted while skins were loading

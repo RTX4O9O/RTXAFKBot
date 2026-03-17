@@ -1,5 +1,5 @@
 name: FakePlayerPlugin
-version: '1.3.0'
+version: '1.3.0 HF - 1'
 main: me.bill.fakePlayerPlugin.FakePlayerPlugin
 api-version: '1.21'
 authors: [ El_Pepes ]
