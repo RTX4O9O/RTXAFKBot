@@ -21,7 +21,7 @@ import java.util.stream.Collectors;
 
 /**
  * {@code /fpp list [page]} — paginated active-bot list with freeze indicator,
- * uptime, location, and spawner info. 10 bots per page.
+ * uptime, location, and spawner info. 10 bots per page
  */
 @SuppressWarnings("unused")
 public class ListCommand implements FppCommand {
