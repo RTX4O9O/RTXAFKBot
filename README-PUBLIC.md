@@ -2,12 +2,12 @@
 
 > Spawn realistic fake players on your Paper server — with tab list presence, server list count, join/leave messages, in-world bodies, guaranteed skins, chunk loading, bot swap/rotation, fake chat, and full hot-reload support.
 
-![Version](https://img.shields.io/badge/version-1.3.1-0079FF?style=flat-square)
+![Version](https://img.shields.io/badge/version-1.3.0-0079FF?style=flat-square)
 ![MC](https://img.shields.io/badge/Minecraft-1.21.x-0079FF?style=flat-square)
 ![Platform](https://img.shields.io/badge/platform-Paper-0079FF?style=flat-square)
 ![Java](https://img.shields.io/badge/Java-21-0079FF?style=flat-square)
 [![Modrinth](https://img.shields.io/badge/Modrinth-FPP-00AF5C?style=flat-square&logo=modrinth)](https://modrinth.com/plugin/fake-player-plugin-(fpp))
-[![Discord](https://img.shields.io/badge/Discord-Join%20Server-5865F2?style=flat-square&logo=discord&logoColor=white)](https://discord.gg/ZhsstSJb)
+[![Discord](https://img.shields.io/badge/Discord-Contact%20Me-5865F2?style=flat-square&logo=discord&logoColor=white)](https://discord.com/users/640512148786642947)
 
 ---
 
@@ -53,6 +53,22 @@ FPP adds fake players to your server that look and behave like real ones:
 5. Run `/fpp reload` to apply changes at any time.
 
 > **Updating?** FPP automatically migrates your config on first start and creates a timestamped backup before changing anything.
+
+---
+
+## 🚨 **IMPORTANT VERSION WARNING**
+>
+> **Fake Player Plugin (FPP) only supports Minecraft `1.21.9+` on Paper or Purpur.**  
+> The plugin **will NOT work on older versions or unsupported platforms**.
+>
+> ❌ Do NOT run on 1.21.8 or older  
+> ❌ Spigot, Bukkit, Fabric, Forge, or other servers are NOT supported
+>
+> Running outside the supported environment means:  
+> - **No support will be provided**  
+> - **Bug reports may be ignored**
+>
+> ✔ Supported Environment: Paper / Purpur `1.21.9+`, Java `21+`
 
 ---
 
@@ -208,20 +224,10 @@ When LuckPerms is installed and `luckperms.use-prefix: true`:
 
 ## ✦ Changelog
 
-
-
-### v1.3.1 *(2026-03-17)*
-#### Hotfix
-- Fixed NullPointerException in BotSwapAI when bot entity is null.
-- Fixed StackOverflowError in FakePlayerManager.visualChain by adding a recursion base case.
-
 ### v1.3.0 *(2026-03-15)*
-#### Changes
 - Config reload now updates all config files, including language, bot-names, and bot-messages.
 - Updated plugin info and documentation for Modrinth link and version 1.3.0.
 - Removed `/fpp setpos` command and all references.
-
----
 
 ### v1.2.7 *(2026-03-14)*
 - **`/fpp freeze <bot|all> [on|off]`** — freeze any bot in place; the Mannequin body becomes immovable and gravity is disabled. Frozen bots show ❄ in `/fpp list` and `/fpp stats`
@@ -272,9 +278,11 @@ When LuckPerms is installed and `luckperms.use-prefix: true`:
 ## ✦ Links
 
 - [Modrinth](https://modrinth.com/plugin/fake-player-plugin-(fpp)) — download
-- [Discord](https://discord.gg/ZhsstSJb) — support & feedback
+- [Spigotmc](https://www.spigotmc.org/resources/fake-player-plugin-fpp.133572/) - download
+- [Papermc](https://hangar.papermc.io/Pepe-tf/FakePlayerPlugin) - download
+- [Discord](https://discord.com/users/640512148786642947) — support & feedback
 - [GitHub](https://github.com/Pepe-tf/Fake-Player-Plugin-Public-) — source & issues
 
 ---
 
-*Built for Paper 1.21.x · Java 21 · FPP v1.3.1 · [Modrinth](https://modrinth.com/plugin/fake-player-plugin-(fpp))*
+*Built for Paper 1.21.11 - 1.21.9 · Java 21 · FPP v1.3.0 · [Modrinth](https://modrinth.com/plugin/fake-player-plugin-(fpp)) - [Spigotmc](https://www.spigotmc.org/resources/fake-player-plugin-fpp.133572/) - [Papermc](https://hangar.papermc.io/Pepe-tf/FakePlayerPlugin)*
