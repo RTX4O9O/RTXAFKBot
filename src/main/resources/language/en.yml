@@ -128,8 +128,8 @@ tp-failed:        "{prefix}<red>ᴄᴏᴜʟᴅ ɴᴏᴛ ᴛᴇʟᴇᴘᴏʀᴛ �
 
 # ── Update checker ────────────────────────────────────────────────────────────
 # {current} — installed version  |  {latest} — latest version
-update-available:  "{prefix}<#0079FF>ᴜᴘᴅᴀᴛᴇ ᴀᴠᴀɪʟᴀʙʟᴇ</#0079FF><gray>: <white>v{current} <gray>→ <white>v{latest}<gray>."
-update-up-to-date: "{prefix}<gray>ᴘʟᴜɢɪɴ ɪꜱ ᴜᴘ ᴛᴏ ᴅᴀᴛᴇ <dark_gray>(<#0079FF>v{current}</#0079FF><dark_gray>)<gray>."
+update-available:  "{prefix}<bold><#0079FF>UPDATE AVAILABLE</#0079FF></bold> <gray>— <white>v{current} <gray>→ <white>v{latest}</white>\n{prefix}<gray>Download: <#0079FF>https://modrinth.com/plugin/fake-player-plugin-(fpp)</#0079FF>"
+update-up-to-date: "{prefix}<#66CC66>Plugin is up to date</#66CC66> <dark_gray>(<#0079FF>v{current}</#0079FF>)<dark_gray>"
 update-failed:     "{prefix}<gray>ᴄᴏᴜʟᴅ ɴᴏᴛ ᴄʜᴇᴄᴋ ꜰᴏʀ ᴜᴘᴅᴀᴛᴇꜱ."
 
 # In-game compatibility warning shown to admins when the server/runtime is restricted
