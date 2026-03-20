@@ -2,6 +2,9 @@ package me.bill.fakePlayerPlugin.util;
 
 import me.bill.fakePlayerPlugin.config.Config;
 import org.bukkit.Bukkit;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
+import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
 
 import java.io.BufferedReader;
@@ -10,6 +13,8 @@ import java.net.HttpURLConnection;
 import java.net.URI;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Checks a remote update API for a newer version of FakePlayerPlugin.
@@ -23,7 +28,7 @@ public final class UpdateChecker {
 
     /** Update API endpoint (replaceable). */
     private static final String API_URL =
-            "https://fake-player-plugin-12tbdipae-pepe-tfs-projects.vercel.app";
+            "https://fake-player-plugin.vercel.app";
     private static final String MODRINTH_URL = "https://modrinth.com/plugin/fake-player-plugin-(fpp)";
 
     private UpdateChecker() {}
@@ -39,63 +44,82 @@ public final class UpdateChecker {
             return;
         }
 
+        // Run the fetch asynchronously and handle result on the main thread
         Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
-            try {
-                HttpURLConnection conn = (HttpURLConnection)
-                        URI.create(API_URL).toURL().openConnection();
-                conn.setRequestMethod("GET");
-                conn.setConnectTimeout(5_000);
-                conn.setReadTimeout(5_000);
-                conn.setRequestProperty("Accept", "application/json");
-                conn.setRequestProperty("User-Agent", "FakePlayerPlugin-UpdateChecker/" +
-                        plugin.getPluginMeta().getVersion());
-
-                int code = conn.getResponseCode();
-                if (code != 200) {
-                    Config.debug("UpdateChecker: HTTP " + code + " — skipping.");
-                    return;
-                }
-
-                StringBuilder sb = new StringBuilder();
-                try (BufferedReader r = new BufferedReader(
-                        new InputStreamReader(conn.getInputStream()))) {
-                    String line;
-                    while ((line = r.readLine()) != null) sb.append(line);
-                }
-
-                String json    = sb.toString();
-                String latest  = extractLatestVersion(json);
-                String current = plugin.getPluginMeta().getVersion();
-
-                if (latest == null || latest.isBlank()) {
-                    Config.debug("UpdateChecker: could not parse tag_name from response.");
-                    return;
-                }
-
-                // Normalise — strip leading 'v' if present
-                String latestClean  = latest.startsWith("v")  ? latest.substring(1)  : latest;
-                String currentClean = current.startsWith("v") ? current.substring(1) : current;
-
-                if (!latestClean.equals(currentClean)) {
-                    // Print a clearly-visible update notice using logger helpers
-                    FppLogger.warn("┌────────────────────────────────────────────────┐");
-                    FppLogger.warn("│     ꜰᴀᴋᴇ ᴘʟᴀʏᴇʀ ᴘʟᴜɢɪɴ  Update Available!    │");
-                    FppLogger.warn("│                                                │");
-                    FppLogger.warn("│  Running : v" + padRight(currentClean, 35) + "│");
-                    FppLogger.warn("│  Latest  : v" + padRight(latestClean,  35) + "│");
-                    FppLogger.warn("│                                                │");
-                    FppLogger.warn("│  Download: " + padRight(MODRINTH_URL, 36) + "│");
-                    FppLogger.warn("└────────────────────────────────────────────────┘");
-                } else {
-                    FppLogger.success("Running the latest version: v" + currentClean + "  ✔");
-                }
-
-            } catch (java.net.SocketTimeoutException e) {
-                Config.debug("UpdateChecker timed out (no internet / GitHub unreachable).");
-            } catch (Exception e) {
-                Config.debug("UpdateChecker failed: " + e.getClass().getSimpleName() + ": " + e.getMessage());
-            }
+            UpdateInfo info = fetchUpdateInfo(plugin);
+            Bukkit.getScheduler().runTask(plugin, () -> handleResultOnMainThread(plugin, info));
         });
+    }
+
+    /**
+     * Performs the update check asynchronously but blocks the caller up to {@code timeoutMs}
+     * milliseconds waiting for a result. Returns {@code null} on timeout or if the check is
+     * disabled.
+     */
+    public static UpdateInfo checkBlocking(Plugin plugin, long timeoutMs) {
+        if (!Config.updateCheckerEnabled()) {
+            Config.debug("Update checker disabled in config.");
+            return null;
+        }
+        final UpdateInfo[] out = new UpdateInfo[1];
+        CountDownLatch latch = new CountDownLatch(1);
+        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+            out[0] = fetchUpdateInfo(plugin);
+            latch.countDown();
+        });
+        try {
+            boolean ok = latch.await(Math.max(100, timeoutMs), TimeUnit.MILLISECONDS);
+            if (ok) return out[0];
+        } catch (InterruptedException ignored) {
+            Thread.currentThread().interrupt();
+        }
+        return null;
+    }
+
+    /** Handle the fetched result on the main server thread: log and notify players if needed. */
+    public static void handleResultOnMainThread(Plugin plugin, UpdateInfo info) {
+        if (info == null) return;
+        if (info.error != null) {
+            Config.debug("UpdateChecker failed: " + info.error);
+            return;
+        }
+        String latestClean  = info.latestStartsWithV ? info.latest.substring(1) : info.latest;
+        String currentClean = info.currentStartsWithV ? info.current.substring(1) : info.current;
+        if (!latestClean.equals(currentClean)) {
+            FppLogger.warn("┌────────────────────────────────────────────────┐");
+            FppLogger.warn("│     ꜰᴀᴋᴇ ᴘʟᴀʏᴇʀ ᴘʟᴜɢɪɴ  Update Available!    │");
+            FppLogger.warn("│                                                │");
+            FppLogger.warn("│  Running : v" + padRight(currentClean, 35) + "│");
+            FppLogger.warn("│  Latest  : v" + padRight(latestClean,  35) + "│");
+            FppLogger.warn("│                                                │");
+            FppLogger.warn("│  Download: " + padRight(MODRINTH_URL, 36) + "│");
+            FppLogger.warn("└────────────────────────────────────────────────┘");
+
+            Component prefix = Component.text("[FPP] ").color(NamedTextColor.BLUE);
+            Component line1 = prefix.append(Component.text("Update available: running v" + currentClean + ", latest v" + latestClean).color(NamedTextColor.GOLD));
+            Component line2 = prefix.append(Component.text("Download: ").color(NamedTextColor.YELLOW)
+                    .append(Component.text(MODRINTH_URL).color(NamedTextColor.AQUA)));
+            boolean notified = false;
+            for (Player p : plugin.getServer().getOnlinePlayers()) {
+                if (p.isOp() || p.hasPermission("fakeplayer.notify")) {
+                    p.sendMessage(line1);
+                    p.sendMessage(line2);
+                    notified = true;
+                }
+            }
+            if (!notified) Config.debug("UpdateChecker: no online ops/admins to notify.");
+        } else {
+            FppLogger.success("Running the latest version: v" + currentClean + "  ✔");
+        }
+    }
+
+    /** Holds a parsed update check result. */
+    public static final class UpdateInfo {
+        public String latest;
+        public boolean latestStartsWithV;
+        public String current;
+        public boolean currentStartsWithV;
+        public String error;
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -135,6 +159,59 @@ public final class UpdateChecker {
         String trimmed = body.trim();
         if (trimmed.length() <= 100) return trimmed;
         return null;
+    }
+
+    /** Performs the HTTP fetch and returns an UpdateInfo with parsed fields or error. */
+    private static UpdateInfo fetchUpdateInfo(Plugin plugin) {
+        UpdateInfo info = new UpdateInfo();
+        try {
+            HttpURLConnection conn = (HttpURLConnection)
+                    URI.create(API_URL).toURL().openConnection();
+            conn.setRequestMethod("GET");
+            conn.setConnectTimeout(5_000);
+            conn.setReadTimeout(5_000);
+            conn.setRequestProperty("Accept", "application/json");
+            conn.setRequestProperty("User-Agent", "FakePlayerPlugin-UpdateChecker/" +
+                    plugin.getPluginMeta().getVersion());
+
+            int code = conn.getResponseCode();
+            if (code != 200) {
+                info.error = "HTTP " + code;
+                Config.debug("UpdateChecker: HTTP " + code + " — skipping.");
+                return info;
+            }
+
+            StringBuilder sb = new StringBuilder();
+            try (BufferedReader r = new BufferedReader(
+                    new InputStreamReader(conn.getInputStream()))) {
+                String line;
+                while ((line = r.readLine()) != null) sb.append(line);
+            }
+
+            String json    = sb.toString();
+            String latest  = extractLatestVersion(json);
+            String current = plugin.getPluginMeta().getVersion();
+
+            if (latest == null || latest.isBlank()) {
+                info.error = "could not parse version from response";
+                Config.debug("UpdateChecker: could not parse tag_name from response.");
+                return info;
+            }
+
+            info.latest = latest;
+            info.latestStartsWithV = latest.startsWith("v");
+            info.current = current;
+            info.currentStartsWithV = current.startsWith("v");
+            return info;
+        } catch (java.net.SocketTimeoutException e) {
+            info.error = "timed out";
+            Config.debug("UpdateChecker timed out (no internet / GitHub unreachable).");
+            return info;
+        } catch (Exception e) {
+            info.error = e.getClass().getSimpleName() + ": " + e.getMessage();
+            Config.debug("UpdateChecker failed: " + e.getClass().getSimpleName() + ": " + e.getMessage());
+            return info;
+        }
     }
 
     private static String padRight(String s, int len) {

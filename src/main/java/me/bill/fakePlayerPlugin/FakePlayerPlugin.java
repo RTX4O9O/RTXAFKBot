@@ -290,8 +290,18 @@ public final class FakePlayerPlugin extends JavaPlugin {
         boolean luckPermsInstalled = Bukkit.getPluginManager().getPlugin("LuckPerms") != null;
 
         // ── Full startup banner ───────────────────────────────────────────────
-        // ── Update checker (async, non-blocking) ─────────────────────────────
-        UpdateChecker.check(this);
+        // ── Update checker — attempt a short blocking check so status is logged
+        //     in-order with the startup banner. Falls back to async behavior
+        //     when the check times out or is disabled.
+        try {
+            me.bill.fakePlayerPlugin.util.UpdateChecker.UpdateInfo ui = UpdateChecker.checkBlocking(this, 2500);
+            if (ui != null) UpdateChecker.handleResultOnMainThread(this, ui);
+        } catch (Throwable t) {
+            // Ensure startup proceeds even if update checking has issues
+            Config.debug("UpdateChecker blocking call failed: " + t.getClass().getSimpleName() + ": " + t.getMessage());
+            // Fallback to non-blocking check so reload still triggers checks later
+            UpdateChecker.check(this);
+        }
 
         // ── Metrics (FastStats) — init before banner so status is known ───────
         fppMetrics = new FppMetrics();

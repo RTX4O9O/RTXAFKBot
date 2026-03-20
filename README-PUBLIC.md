@@ -2,7 +2,7 @@
 
 > Spawn realistic fake players on your Paper server — with tab list presence, server list count, join/leave messages, in-world bodies, guaranteed skins, chunk loading, bot swap/rotation, fake chat, and full hot-reload support.
 
-![Version](https://img.shields.io/badge/version-1.4.14-0079FF?style=flat-square)
+![Version](https://img.shields.io/badge/version-1.4.17-0079FF?style=flat-square)
 ![MC](https://img.shields.io/badge/Minecraft-1.21.x-0079FF?style=flat-square)
 ![Platform](https://img.shields.io/badge/platform-Paper-0079FF?style=flat-square)
 ![Java](https://img.shields.io/badge/Java-21-0079FF?style=flat-square)
@@ -212,7 +212,7 @@ When LuckPerms is installed and `luckperms.use-prefix: true`:
 
 
 
-### v1.4.14 *(2026-03-20)*
+### v1.4.17 *(2026-03-20)*
 #### Release
 - Compatibility checks: detect non-Paper servers and Minecraft versions below 1.21.9 and enter a restricted compatibility mode when needed (physical bodies and chunk-loading disabled).
 - Added runtime guard for missing server API classes to avoid startup crashes when certain entity classes are absent.
@@ -284,4 +284,4 @@ When LuckPerms is installed and `luckperms.use-prefix: true`:
 
 ---
 
-*Built for Paper 1.21.x · Java 21 · FPP v1.4.14 · [Modrinth](https://modrinth.com/plugin/fake-player-plugin-(fpp)) - [Spigotmc](https://www.spigotmc.org/resources/fake-player-plugin-fpp.133572/) - [Papermc](https://hangar.papermc.io/Pepe-tf/FakePlayerPlugin)*
+*Built for Paper 1.21.x · Java 21 · FPP v1.4.17 · [Modrinth](https://modrinth.com/plugin/fake-player-plugin-(fpp)) - [Spigotmc](https://www.spigotmc.org/resources/fake-player-plugin-fpp.133572/) - [Papermc](https://hangar.papermc.io/Pepe-tf/FakePlayerPlugin)*
