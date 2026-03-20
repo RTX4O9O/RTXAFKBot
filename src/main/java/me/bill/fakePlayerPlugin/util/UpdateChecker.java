@@ -30,6 +30,8 @@ public final class UpdateChecker {
     private static final String API_URL =
             "https://fake-player-plugin.vercel.app";
     private static final String MODRINTH_URL = "https://modrinth.com/plugin/fake-player-plugin-(fpp)";
+    // Strict version-like pattern: v?1.2.3 etc. Only accept these as valid versions.
+    private static final Pattern VERSION_REGEX = Pattern.compile("v?\\d+(?:\\.\\d+)+");
 
     private UpdateChecker() {}
 
@@ -86,24 +88,18 @@ public final class UpdateChecker {
         String latestClean  = info.latestStartsWithV ? info.latest.substring(1) : info.latest;
         String currentClean = info.currentStartsWithV ? info.current.substring(1) : info.current;
         if (!latestClean.equals(currentClean)) {
-            FppLogger.warn("┌────────────────────────────────────────────────┐");
-            FppLogger.warn("│     ꜰᴀᴋᴇ ᴘʟᴀʏᴇʀ ᴘʟᴜɢɪɴ  Update Available!    │");
-            FppLogger.warn("│                                                │");
-            FppLogger.warn("│  Running : v" + padRight(currentClean, 35) + "│");
-            FppLogger.warn("│  Latest  : v" + padRight(latestClean,  35) + "│");
-            FppLogger.warn("│                                                │");
-            FppLogger.warn("│  Download: " + padRight(MODRINTH_URL, 36) + "│");
-            FppLogger.warn("└────────────────────────────────────────────────┘");
+            // Concise console warning instead of large ASCII banner
+            FppLogger.warn("Update available: running v" + currentClean + ", latest v" + latestClean + ". Download: " + MODRINTH_URL);
 
-            Component prefix = Component.text("[FPP] ").color(NamedTextColor.BLUE);
-            Component line1 = prefix.append(Component.text("Update available: running v" + currentClean + ", latest v" + latestClean).color(NamedTextColor.GOLD));
-            Component line2 = prefix.append(Component.text("Download: ").color(NamedTextColor.YELLOW)
-                    .append(Component.text(MODRINTH_URL).color(NamedTextColor.AQUA)));
+            Component msg = Component.text("[FPP] ").color(NamedTextColor.BLUE)
+                    .append(Component.text("Update available: running v" + currentClean + ", latest v" + latestClean + ". "))
+                    .append(Component.text("Download: ").color(NamedTextColor.YELLOW))
+                    .append(Component.text(MODRINTH_URL).color(NamedTextColor.AQUA));
+
             boolean notified = false;
             for (Player p : plugin.getServer().getOnlinePlayers()) {
                 if (p.isOp() || p.hasPermission("fakeplayer.notify")) {
-                    p.sendMessage(line1);
-                    p.sendMessage(line2);
+                    p.sendMessage(msg);
                     notified = true;
                 }
             }
@@ -151,13 +147,8 @@ public final class UpdateChecker {
         }
 
         // Fallback: find first version-like token using regex
-        Pattern p = Pattern.compile("v?\\d+(?:\\.\\d+)+");
-        Matcher m = p.matcher(body);
+        Matcher m = VERSION_REGEX.matcher(body);
         if (m.find()) return m.group();
-
-        // As a last resort return trimmed body if it's short and looks reasonable
-        String trimmed = body.trim();
-        if (trimmed.length() <= 100) return trimmed;
         return null;
     }
 
@@ -200,7 +191,13 @@ public final class UpdateChecker {
                 Pattern kvPattern = Pattern.compile("\"(tag_name|version|latest|name|remoteVersion|remote_version)\"\\s*:\\s*\"([^\"]+)\"", Pattern.CASE_INSENSITIVE);
                 Matcher kvm = kvPattern.matcher(body);
                 String latest = null;
-                if (kvm.find()) latest = kvm.group(2).trim();
+                if (kvm.find()) {
+                    String candidate = kvm.group(2).trim();
+                    // Only accept if it matches a version-like token (avoid names like plugin title)
+                    if (VERSION_REGEX.matcher(candidate).matches()) {
+                        latest = candidate;
+                    }
+                }
 
                 if (latest == null || latest.isBlank()) {
                     // Fallback to generic extraction (looks for version-like token)
@@ -230,8 +227,5 @@ public final class UpdateChecker {
         return info;
     }
 
-    private static String padRight(String s, int len) {
-        if (s.length() >= len) return s.substring(0, len);
-        return s + " ".repeat(len - s.length());
-    }
+    // padRight removed — no longer needed after concise messages
 }
