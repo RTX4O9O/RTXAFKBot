@@ -36,7 +36,6 @@ function safeReadYaml(filePath) {
     return { error: String(e) };
   }
 }
-
 module.exports = async (req, res) => {
   res.setHeader("Content-Type", "application/json");
   const projectRoot = path.resolve(process.cwd());
@@ -48,112 +47,99 @@ module.exports = async (req, res) => {
     "resources",
     "plugin.yml"
   );
-  const configYml = path.join(
-    projectRoot,
-    "src",
-    "main",
-    "resources",
-    "config.yml"
-  );
-  const botNames = path.join(
-    projectRoot,
-    "src",
-    "main",
-    "resources",
-    "bot-names.yml"
-  );
-  const botMessages = path.join(
-    projectRoot,
-    "src",
-    "main",
-    "resources",
-    "bot-messages.yml"
-  );
-  const languageEn = path.join(
-    projectRoot,
-    "src",
-    "main",
-    "resources",
-    "language",
-    "en.yml"
-  );
-  const skinsDir = path.join(projectRoot, "src", "main", "resources", "skins");
-  const pomProps = path.join(
-    projectRoot,
-    "target",
-    "maven-archiver",
-    "pom.properties"
-  );
-  const targetDir = path.join(projectRoot, "target");
 
-  // If local plugin files exist, return parsed data
-  if (fs.existsSync(pluginYml) || fs.existsSync(configYml)) {
-    const plugin = safeReadYaml(pluginYml);
-    const config = safeReadYaml(configYml);
-    const names = safeReadYaml(botNames);
-    const messages = safeReadYaml(botMessages);
-    const language = safeReadYaml(languageEn);
-    const skins = fs.existsSync(skinsDir) ? fs.readdirSync(skinsDir) : null;
-
-    let pom = null;
-    if (fs.existsSync(pomProps)) {
-      try {
-        const raw = fs.readFileSync(pomProps, "utf8");
-        pom = raw.split("\n").reduce((acc, line) => {
-          const idx = line.indexOf("=");
-          if (idx > 0)
-            acc[line.substring(0, idx).trim()] = line.substring(idx + 1).trim();
-          return acc;
-        }, {});
-      } catch (e) {
-        pom = { error: String(e) };
-      }
-    }
-
-    let jar = null;
-    if (fs.existsSync(targetDir)) {
-      try {
-        const files = fs.readdirSync(targetDir);
-        const fppFiles = files.filter(
-          (f) => f.startsWith("fpp-") && f.endsWith(".jar")
-        );
-        if (fppFiles.length) jar = fppFiles.sort().reverse()[0];
-      } catch (e) {
-        jar = { error: String(e) };
-      }
-    }
-
-    return res.status(200).json({
-      timestamp: new Date().toISOString(),
-      projectRoot,
-      plugin,
-      config,
-      botNames: names,
-      botMessages: messages,
-      language,
-      skins,
-      pom,
-      builtJar: jar,
-    });
+  // Map a plugin object (from YAML or remote JSON) to a minimal public shape
+  // Convert a value to a safe string or null; arrays/objects become null to avoid leaking large content.
+  function toSafeString(v) {
+    if (v === undefined || v === null) return null;
+    if (typeof v === "string") return v;
+    if (typeof v === "number" || typeof v === "boolean") return String(v);
+    // Avoid returning arrays or objects
+    return null;
   }
 
-  // Local files not found — try remote plugin API configured via env var
+  function mapToMinimal(obj) {
+    const fallback = {
+      name: null,
+      version: null,
+      downloadUrl: process.env.PLUGIN_DOWNLOAD_URL || "https://api.fpp.com/",
+      notes: null,
+    };
+    if (!obj || typeof obj !== "object") return fallback;
+    const name = toSafeString(obj.name || obj.displayName || obj.title) || null;
+    const version =
+      toSafeString(
+        obj.version || obj.tag_name || obj.latest || obj.version_number
+      ) || null;
+    const downloadUrl =
+      toSafeString(obj.downloadUrl || obj.download_url || obj.website) ||
+      process.env.PLUGIN_DOWNLOAD_URL ||
+      "https://api.fpp.com/";
+    const notes =
+      toSafeString(obj.description || obj.notes || obj.body || obj.summary) ||
+      null;
+    return { name, version, downloadUrl, notes };
+  }
+
+  // Some remote APIs return wrapper objects. Try to find the nested object that contains version/name
+  function findBestObject(result) {
+    if (!result || typeof result !== "object") return null;
+    // If result already looks like a plugin info object, use it
+    if (result.version || result.tag_name || result.name || result.latest)
+      return result;
+    // Common wrapper keys
+    const keys = [
+      "plugin",
+      "data",
+      "release",
+      "manifest",
+      "result",
+      "package",
+      "body",
+    ];
+    for (const k of keys) {
+      if (result[k] && typeof result[k] === "object") {
+        const candidate = result[k];
+        if (
+          candidate.version ||
+          candidate.tag_name ||
+          candidate.name ||
+          candidate.latest
+        )
+          return candidate;
+      }
+    }
+    // Search for any nested object with a version/tag_name/name field
+    for (const k of Object.keys(result)) {
+      const v = result[k];
+      if (v && typeof v === "object") {
+        if (v.version || v.tag_name || v.name || v.latest) return v;
+      }
+    }
+    // No obvious candidate — return null to let mapToMinimal handle fallback
+    return null;
+  }
+
+  // If local plugin.yml exists, return concise info (only minimal fields)
+  if (fs.existsSync(pluginYml)) {
+    const raw = safeReadYaml(pluginYml) || {};
+    // Some YAML layouts embed the real plugin info under a wrapper key — find it.
+    const bestLocal =
+      findBestObject(raw) ||
+      (raw.plugin && typeof raw.plugin === "object" ? raw.plugin : raw);
+    return res.status(200).json(mapToMinimal(bestLocal));
+  }
+
+  // No local files — proxy to configured PLUGIN_API_URL
   const pluginApi =
     process.env.PLUGIN_API_URL || process.env.NEXT_PUBLIC_PLUGIN_API_URL;
   if (!pluginApi) {
     return res.status(200).json({
-      timestamp: new Date().toISOString(),
-      projectRoot,
-      plugin: null,
-      config: null,
-      botNames: null,
-      botMessages: null,
-      language: null,
-      skins: null,
-      pom: null,
-      builtJar: null,
-      message:
-        "No local plugin files found. Set PLUGIN_API_URL in Vercel environment variables to point to the plugin server or hosted API.",
+      name: null,
+      version: null,
+      downloadUrl: null,
+      notes: null,
+      error: "No plugin info available. Set PLUGIN_API_URL in environment.",
     });
   }
 
@@ -171,13 +157,22 @@ module.exports = async (req, res) => {
 
   for (const c of candidates) {
     const result = await fetchCandidate(c);
-    if (result && !result.error) return res.status(200).json(result);
+    if (result && !result.error) {
+      // Normalize possible wrapper objects
+      const best =
+        findBestObject(result) ||
+        (typeof result === "object"
+          ? result
+          : { version: String(result).trim() });
+      return res.status(200).json(mapToMinimal(best));
+    }
   }
 
-  return res
-    .status(502)
-    .json({
-      error: "Could not retrieve plugin data from PLUGIN_API_URL",
-      tried: candidates,
-    });
+  return res.status(502).json({
+    name: null,
+    version: null,
+    downloadUrl: null,
+    notes: null,
+    error: "Could not retrieve plugin info from PLUGIN_API_URL",
+  });
 };

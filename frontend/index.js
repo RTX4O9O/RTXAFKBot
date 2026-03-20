@@ -41,10 +41,75 @@ function safeReadYaml(filePath) {
   }
 }
 
+// Helpers to normalize responses to a minimal public shape
+function toSafeString(v) {
+  if (v === undefined || v === null) return null;
+  if (typeof v === "string") return v;
+  if (typeof v === "number" || typeof v === "boolean") return String(v);
+  return null; // avoid arrays/objects
+}
+
+function mapToMinimal(obj) {
+  const fallback = {
+    name: null,
+    version: null,
+    downloadUrl: process.env.PLUGIN_DOWNLOAD_URL || "https://api.fpp.com/",
+    notes: null,
+  };
+  if (!obj || typeof obj !== "object") return fallback;
+  const name = toSafeString(obj.name || obj.displayName || obj.title) || null;
+  const version =
+    toSafeString(
+      obj.version || obj.tag_name || obj.latest || obj.version_number
+    ) || null;
+  const downloadUrl =
+    toSafeString(obj.downloadUrl || obj.download_url || obj.website) ||
+    process.env.PLUGIN_DOWNLOAD_URL ||
+    "https://api.fpp.com/";
+  const notes =
+    toSafeString(obj.description || obj.notes || obj.body || obj.summary) ||
+    null;
+  return { name, version, downloadUrl, notes };
+}
+
+function findBestObject(result) {
+  if (!result || typeof result !== "object") return null;
+  if (result.version || result.tag_name || result.name || result.latest)
+    return result;
+  const keys = [
+    "plugin",
+    "data",
+    "release",
+    "manifest",
+    "result",
+    "package",
+    "body",
+  ];
+  for (const k of keys) {
+    if (result[k] && typeof result[k] === "object") {
+      const candidate = result[k];
+      if (
+        candidate.version ||
+        candidate.tag_name ||
+        candidate.name ||
+        candidate.latest
+      )
+        return candidate;
+    }
+  }
+  for (const k of Object.keys(result)) {
+    const v = result[k];
+    if (v && typeof v === "object") {
+      if (v.version || v.tag_name || v.name || v.latest) return v;
+    }
+  }
+  return null;
+}
+
 const projectRoot = findProjectRoot(__dirname);
 console.log("Using project root:", projectRoot);
 
-app.get("/api/status", (req, res) => {
+app.get("/api/status", async (req, res) => {
   const pluginYmlPath = path.join(
     projectRoot,
     "src",
@@ -91,10 +156,48 @@ app.get("/api/status", (req, res) => {
   const targetJarDir = path.join(projectRoot, "target");
 
   const plugin = safeReadYaml(pluginYmlPath);
-  const config = safeReadYaml(configYmlPath);
-  const botNames = safeReadYaml(botNamesPath);
-  const botMessages = safeReadYaml(botMessagesPath);
-  const language = safeReadYaml(languageEnPath);
+  // Prefer plugin info from local YAML if present, but normalize to minimal fields
+  if (plugin) {
+    const bestLocal =
+      findBestObject(plugin) ||
+      (plugin.plugin && typeof plugin.plugin === "object"
+        ? plugin.plugin
+        : plugin);
+    return res.json(mapToMinimal(bestLocal));
+  }
+
+  // fallback: try to proxy to PLUGIN_API_URL if configured
+  const pluginApi =
+    process.env.PLUGIN_API_URL || process.env.NEXT_PUBLIC_PLUGIN_API_URL;
+  if (pluginApi) {
+    const candidates = [
+      pluginApi,
+      pluginApi.endsWith("/")
+        ? pluginApi + "api/status"
+        : pluginApi + "/api/status",
+      pluginApi.endsWith("/")
+        ? pluginApi + "api/check-update"
+        : pluginApi + "/api/check-update",
+      pluginApi.endsWith("/") ? pluginApi + "status" : pluginApi + "/status",
+      pluginApi.endsWith("/") ? pluginApi + "latest" : pluginApi + "/latest",
+    ];
+    for (const c of candidates) {
+      try {
+        const controller = new AbortController();
+        const id = setTimeout(() => controller.abort(), 5000);
+        const r = await fetch(c, { signal: controller.signal });
+        clearTimeout(id);
+        if (!r.ok) continue;
+        const json = await r.json();
+        const best =
+          findBestObject(json) ||
+          (typeof json === "object" ? json : { version: String(json).trim() });
+        return res.json(mapToMinimal(best));
+      } catch (e) {
+        // try next
+      }
+    }
+  }
 
   let pom = null;
   try {
@@ -133,17 +236,13 @@ app.get("/api/status", (req, res) => {
     }
   })();
 
-  res.json({
-    timestamp: new Date().toISOString(),
-    projectRoot,
-    plugin,
-    config,
-    botNames,
-    botMessages,
-    language,
-    skins,
-    pom,
-    builtJar: jar,
+  // If nothing else returned, respond with minimal empty shape
+  return res.json({
+    name: null,
+    version: null,
+    downloadUrl: null,
+    notes: null,
+    error: "No plugin info found locally and no PLUGIN_API_URL responded",
   });
 });
 

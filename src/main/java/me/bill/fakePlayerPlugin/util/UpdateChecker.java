@@ -8,24 +8,23 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URI;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
- * Checks GitHub releases for a newer version of FakePlayerPlugin.
+ * Checks a remote update API for a newer version of FakePlayerPlugin.
  *
  * <p>The check runs asynchronously once on startup (and optionally on {@code /fpp reload}).
  * It can be disabled in {@code config.yml} via {@code update-checker.enabled: false}.
  *
- * <p>GitHub API endpoint:
- * {@code https://api.github.com/repos/<owner>/<repo>/releases/latest}
+ * <p>By default this uses the project's update API endpoint hosted on Vercel.
  */
 public final class UpdateChecker {
 
-    /** GitHub repo path — update this if the repo moves. */
-    private static final String REPO    = "Pepe-tf/Fake-Player-Plugin-Public-";
+    /** Update API endpoint (replaceable). */
     private static final String API_URL =
-            "https://api.github.com/repos/" + REPO + "/releases/latest";
-    private static final String MODRINTH_URL =
-            "https://modrinth.com/plugin/fake-player-plugin-(fpp)";
+            "https://fake-player-plugin-12tbdipae-pepe-tfs-projects.vercel.app";
+    private static final String MODRINTH_URL = "https://modrinth.com/plugin/fake-player-plugin-(fpp)";
 
     private UpdateChecker() {}
 
@@ -47,7 +46,7 @@ public final class UpdateChecker {
                 conn.setRequestMethod("GET");
                 conn.setConnectTimeout(5_000);
                 conn.setReadTimeout(5_000);
-                conn.setRequestProperty("Accept", "application/vnd.github.v3+json");
+                conn.setRequestProperty("Accept", "application/json");
                 conn.setRequestProperty("User-Agent", "FakePlayerPlugin-UpdateChecker/" +
                         plugin.getPluginMeta().getVersion());
 
@@ -65,7 +64,7 @@ public final class UpdateChecker {
                 }
 
                 String json    = sb.toString();
-                String latest  = extractTagName(json);
+                String latest  = extractLatestVersion(json);
                 String current = plugin.getPluginMeta().getVersion();
 
                 if (latest == null || latest.isBlank()) {
@@ -101,17 +100,41 @@ public final class UpdateChecker {
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    /** Extracts the {@code tag_name} field from a GitHub releases JSON response. */
-    private static String extractTagName(String json) {
-        int idx = json.indexOf("\"tag_name\"");
-        if (idx == -1) return null;
-        int colon = json.indexOf(':', idx);
-        if (colon == -1) return null;
-        int q1 = json.indexOf('"', colon + 1);
-        if (q1 == -1) return null;
-        int q2 = json.indexOf('"', q1 + 1);
-        if (q2 == -1) return null;
-        return json.substring(q1 + 1, q2);
+    /**
+     * Attempts to extract a version string from the response body.
+     *
+     * <p>The remote API may return different JSON shapes. We try several common keys
+     * ({@code tag_name}, {@code version}, {@code latest}, {@code name}) and fall back to
+     * a version-like regex (e.g. "1.2.3" or "v1.2.3"). Returns {@code null} when
+     * no plausible version could be found.
+     */
+    private static String extractLatestVersion(String body) {
+        if (body == null || body.isBlank()) return null;
+
+        // Try common JSON keys
+        String[] keys = {"tag_name", "version", "latest", "name"};
+        for (String key : keys) {
+            int idx = body.indexOf('"' + key + '"');
+            if (idx == -1) continue;
+            int colon = body.indexOf(':', idx);
+            if (colon == -1) continue;
+            int q1 = body.indexOf('"', colon + 1);
+            if (q1 == -1) continue;
+            int q2 = body.indexOf('"', q1 + 1);
+            if (q2 == -1) continue;
+            String candidate = body.substring(q1 + 1, q2).trim();
+            if (!candidate.isBlank()) return candidate;
+        }
+
+        // Fallback: find first version-like token using regex
+        Pattern p = Pattern.compile("v?\\d+(?:\\.\\d+)+");
+        Matcher m = p.matcher(body);
+        if (m.find()) return m.group();
+
+        // As a last resort return trimmed body if it's short and looks reasonable
+        String trimmed = body.trim();
+        if (trimmed.length() <= 100) return trimmed;
+        return null;
     }
 
     private static String padRight(String s, int len) {

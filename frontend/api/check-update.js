@@ -1,5 +1,11 @@
 const fetch = require("node-fetch");
 
+function pickVersion(obj) {
+  if (!obj) return null;
+  if (typeof obj === "string") return obj;
+  return obj.version || obj.tag_name || obj.latest || obj.name || null;
+}
+
 module.exports = async (req, res) => {
   res.setHeader("Content-Type", "application/json");
   const pluginApi =
@@ -25,7 +31,8 @@ module.exports = async (req, res) => {
       clearTimeout(id);
       if (!r.ok) continue;
       const json = await r.json();
-      return res.status(200).json(json);
+      const remoteVersion = pickVersion(json);
+      return res.status(200).json({ remoteVersion, remote: json });
     } catch (e) {
       // try next
     }
