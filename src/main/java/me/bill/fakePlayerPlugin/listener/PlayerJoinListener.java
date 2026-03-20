@@ -39,6 +39,21 @@ public class PlayerJoinListener implements Listener {
             }
         } catch (Throwable ignored) {}
 
+        // Send any stored update notification to admins/ops who join after startup
+        try {
+            var upd = plugin.getUpdateNotification();
+            if (upd != null) {
+                if (me.bill.fakePlayerPlugin.permission.Perm.hasOrOp(event.getPlayer(), me.bill.fakePlayerPlugin.permission.Perm.ALL)
+                        || event.getPlayer().hasPermission("fakeplayer.notify")) {
+                    try {
+                        event.getPlayer().sendMessage(upd);
+                    } catch (NoSuchMethodError | NoClassDefFoundError e) {
+                        event.getPlayer().sendMessage(upd.toString());
+                    }
+                }
+            }
+        } catch (Throwable ignored) {}
+
         if (manager.getCount() == 0) return;
         // Small delay so the client is fully ready to receive entity packets
         event.getPlayer().getScheduler().runDelayed(

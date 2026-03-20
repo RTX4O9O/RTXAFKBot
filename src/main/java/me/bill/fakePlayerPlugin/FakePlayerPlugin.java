@@ -110,6 +110,10 @@ public final class FakePlayerPlugin extends JavaPlugin {
     /** Single concise compatibility warning message (Adventure Component) to send to ops/admins when configured. */
     private Component compatibilityWarningMessage = null;
 
+    /** Update notification Component stored when an update is detected so it can be
+     * delivered to admins who log in after startup. */
+    private Component updateNotificationMessage = null;
+
     /** System.currentTimeMillis() captured at the start of onEnable. */
     private long enabledAt;
 
@@ -448,6 +452,12 @@ public final class FakePlayerPlugin extends JavaPlugin {
 
     /** Returns the (possibly null) compatibility warning message collected during startup. */
     public Component getCompatibilityWarning() { return compatibilityWarningMessage; }
+
+    /** Returns the currently-stored update notification message, or null. */
+    public Component getUpdateNotification() { return updateNotificationMessage; }
+
+    /** Store or clear the update notification message (call on main thread). */
+    public void setUpdateNotification(Component c) { this.updateNotificationMessage = c; }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 

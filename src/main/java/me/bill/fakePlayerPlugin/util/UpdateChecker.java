@@ -104,8 +104,20 @@ public final class UpdateChecker {
                 }
             }
             if (!notified) Config.debug("UpdateChecker: no online ops/admins to notify.");
+            // Persist the notification so admins who join later receive it
+            try {
+                if (plugin instanceof me.bill.fakePlayerPlugin.FakePlayerPlugin fpp) {
+                    fpp.setUpdateNotification(msg);
+                }
+            } catch (Throwable ignored) {}
         } else {
             FppLogger.success("Running the latest version: v" + currentClean + "  ✔");
+            // Clear any previously stored notification
+            try {
+                if (plugin instanceof me.bill.fakePlayerPlugin.FakePlayerPlugin fpp) {
+                    fpp.setUpdateNotification(null);
+                }
+            } catch (Throwable ignored) {}
         }
     }
 
