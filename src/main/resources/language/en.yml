@@ -132,6 +132,9 @@ update-available:  "{prefix}<#0079FF>ᴜᴘᴅᴀᴛᴇ ᴀᴠᴀɪʟᴀʙʟᴇ<
 update-up-to-date: "{prefix}<gray>ᴘʟᴜɢɪɴ ɪꜱ ᴜᴘ ᴛᴏ ᴅᴀᴛᴇ <dark_gray>(<#0079FF>v{current}</#0079FF><dark_gray>)<gray>."
 update-failed:     "{prefix}<gray>ᴄᴏᴜʟᴅ ɴᴏᴛ ᴄʜᴇᴄᴋ ꜰᴏʀ ᴜᴘᴅᴀᴛᴇꜱ."
 
+# In-game compatibility warning shown to admins when the server/runtime is restricted
+compatibility-warning: "{prefix}<white>Not fully supported — some features disabled.</white>"
+
 # ── Freeze ────────────────────────────────────────────────────────────────────
 # {name}  — bot display name  |  {count} — number of bots (all)
 freeze-usage:         "{prefix}<red>ᴜꜱᴀɢᴇ<gray>: <#0079FF>/fpp freeze <bot|all> [on|off]</#0079FF><gray>."

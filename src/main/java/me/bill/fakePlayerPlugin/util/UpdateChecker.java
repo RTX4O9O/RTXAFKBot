@@ -3,7 +3,7 @@ package me.bill.fakePlayerPlugin.util;
 import me.bill.fakePlayerPlugin.config.Config;
 import org.bukkit.Bukkit;
 import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.format.NamedTextColor;
+import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
 
@@ -29,7 +29,7 @@ public final class UpdateChecker {
     /** Update API endpoint (replaceable). */
     private static final String API_URL =
             "https://fake-player-plugin.vercel.app";
-    private static final String MODRINTH_URL = "https://modrinth.com/plugin/fake-player-plugin-(fpp)";
+    // No external download URL required here — use language-based messages
     // Strict version-like pattern: v?1.2.3 etc. Only accept these as valid versions.
     private static final Pattern VERSION_REGEX = Pattern.compile("v?\\d+(?:\\.\\d+)+");
 
@@ -88,13 +88,12 @@ public final class UpdateChecker {
         String latestClean  = info.latestStartsWithV ? info.latest.substring(1) : info.latest;
         String currentClean = info.currentStartsWithV ? info.current.substring(1) : info.current;
         if (!latestClean.equals(currentClean)) {
-            // Concise console warning instead of large ASCII banner
-            FppLogger.warn("Update available: running v" + currentClean + ", latest v" + latestClean + ". Download: " + MODRINTH_URL);
+            // Use language file for consistent plugin style
+            Component console = me.bill.fakePlayerPlugin.lang.Lang.get("update-available", "current", currentClean, "latest", latestClean);
+            String plain = PlainTextComponentSerializer.plainText().serialize(console);
+            FppLogger.warn(plain);
 
-            Component msg = Component.text("[FPP] ").color(NamedTextColor.BLUE)
-                    .append(Component.text("Update available: running v" + currentClean + ", latest v" + latestClean + ". "))
-                    .append(Component.text("Download: ").color(NamedTextColor.YELLOW))
-                    .append(Component.text(MODRINTH_URL).color(NamedTextColor.AQUA));
+            Component msg = me.bill.fakePlayerPlugin.lang.Lang.get("update-available", "current", currentClean, "latest", latestClean);
 
             boolean notified = false;
             for (Player p : plugin.getServer().getOnlinePlayers()) {
@@ -104,14 +103,16 @@ public final class UpdateChecker {
                 }
             }
             if (!notified) Config.debug("UpdateChecker: no online ops/admins to notify.");
-            // Persist the notification so admins who join later receive it
+            // Persist the localized notification so admins who join later receive it
             try {
                 if (plugin instanceof me.bill.fakePlayerPlugin.FakePlayerPlugin fpp) {
                     fpp.setUpdateNotification(msg);
                 }
             } catch (Throwable ignored) {}
         } else {
-            FppLogger.success("Running the latest version: v" + currentClean + "  ✔");
+            Component ok = me.bill.fakePlayerPlugin.lang.Lang.get("update-up-to-date", "current", currentClean);
+            String plainOk = PlainTextComponentSerializer.plainText().serialize(ok);
+            FppLogger.success(plainOk + "  ✔");
             // Clear any previously stored notification
             try {
                 if (plugin instanceof me.bill.fakePlayerPlugin.FakePlayerPlugin fpp) {
