@@ -7,7 +7,7 @@
 ![Platform](https://img.shields.io/badge/platform-Paper-0079FF?style=flat-square)
 ![Java](https://img.shields.io/badge/Java-21-0079FF?style=flat-square)
 [![Modrinth](https://img.shields.io/badge/Modrinth-FPP-00AF5C?style=flat-square&logo=modrinth)](https://modrinth.com/plugin/fake-player-plugin-(fpp))
-[![Discord](https://img.shields.io/badge/Discord-Join%20Server-5865F2?style=flat-square&logo=discord&logoColor=white)](https://discord.gg/ZhsstSJb)
+[![Discord](https://img.shields.io/badge/Discord-Join%20Server-5865F2?style=flat-square&logo=discord&logoColor=white)](https://discord.gg/pzFQWA4TXq)
 
 ---
 
@@ -642,7 +642,7 @@ FPP auto-detects LuckPerms at startup. When installed and `luckperms.use-prefix:
 
 © 2026 Bill_Hub — All Rights Reserved.  
 See [LICENSE](https://github.com/Pepe-tf/Fake-Player-Plugin-Public-/blob/main/LICENSE) for full terms.  
-Contact: [Discord](https://discord.gg/ZhsstSJb) — `Bill_Hub`
+Contact: [Discord](https://discord.gg/pzFQWA4TXq) — `Bill_Hub`
 
 ---
 
