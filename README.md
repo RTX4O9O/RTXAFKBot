@@ -63,7 +63,7 @@ Note: Semi-support is provided for older 1.21 releases (1.21.0 → 1.21.8). On t
 
 ## ✦ Installation
 
-1. Download `fpp-1.3.0.jar` from [Modrinth](https://modrinth.com/plugin/fake-player-plugin-(fpp)).
+1. Download `fpp-1.4.22.jar` from [Modrinth](https://modrinth.com/plugin/fake-player-plugin-(fpp)).
 2. Place it in your server's `plugins/` folder.
 3. Restart the server — default config files are generated automatically.
 4. Edit `plugins/FakePlayerPlugin/config.yml` as desired.
@@ -198,7 +198,7 @@ Located at `plugins/FakePlayerPlugin/config.yml`. Run `/fpp reload` to apply cha
 
 ```yaml
 # ─────────────────────────────────────────────────────────────────────────────
-#  ꜰᴀᴋᴇ ᴘʟᴀʏᴇʀ ᴘʟᴜɢɪɴ  ·  config.yml  ·  v1.4.21
+#  ꜰᴀᴋᴇ ᴘʟᴀʏᴇʀ ᴘʟᴜɢɪɴ    config.yml    v1.4.22
 #  Run /fpp reload to apply changes without restarting the server.
 #  Colors use MiniMessage: <#0079FF>text</#0079FF>  <gray>text</gray>
 # ─────────────────────────────────────────────────────────────────────────────
@@ -502,6 +502,26 @@ FPP auto-detects LuckPerms at startup. When installed and `luckperms.use-prefix:
 ---
 
 ## ✦ Changelog
+
+### v1.4.22 *(2026-03-22)*
+#### New Features
+- **LuckPerms auto-update** — bot display names, tab-list entries, and nametags now update in real-time when LuckPerms group data changes (prefix, weight, colours). No reload or respawn needed.
+- **Full LuckPerms colour support** — all colour formats now render correctly in bot prefixes: MiniMessage tags (`<rainbow>`, `<gradient:#FF0000:#0000FF>`), hex colours (`<#9782ff>`), LuckPerms gradient shorthand (`{#FFFFFF>}text{#FFFFFF<}`), and mixed formats (`&7[<#9782ff>Phantom</#9782ff>&7]`).
+- **LuckPerms weight ordering** — bot tab-list entries sort below all real players by default; bots always use the default group (never inherit spawner permissions or weight).
+- **Multi-platform download links** — update notifications and `/fpp` info screen show clickable links to Modrinth, SpigotMC, PaperMC Hangar, and BuiltByBit.
+- **Enhanced reload command** — `/fpp reload` shows step-by-step progress with a checkmark per subsystem and total reload time on completion.
+- **Update checker improvements** — Modrinth API is now the primary version source; console output is a clean one-liner; in-game notifications use a bordered style matching the help menu.
+- **Tab-list bot visibility** — `tab-list.enabled: true/false` controls whether bots appear in the tab list. When `false`, bots are hidden but still count in the server player count. Hot-reloadable via `/fpp reload`.
+- **No external API requirement** — physical bot bodies no longer depend on any external plugin API; works on any compatible Paper server out of the box.
+
+#### Bug Fixes
+- Fixed join/leave messages rendering raw gradient tags (e.g. `{#FFFFFF>}[PLAYER]{#FFFFFF<}`) instead of the formatted text — LuckPerms gradient shorthand is now fully resolved in all broadcast messages.
+- Fixed bot display names restoring as literal `bot-{spawner}-{num}` placeholder text after a server restart — names are now reconstructed correctly from saved data on restore.
+- Fixed `StackOverflowError` in `visualChain` when spawning large batches of bots with `join-delay: 0` and some bots deleted mid-spawn.
+- Fixed `NullPointerException` in `PlayerWorldChangeListener` on non-Folia servers (replaced Folia-specific `player.getScheduler()` with standard Bukkit scheduler).
+- Fixed unclosed hex colour tags (e.g. `<#9782ff>`) at the end of LuckPerms prefixes causing broken text — trailing unclosed tags are now stripped before parsing.
+- Fixed tab-list migration incorrectly applying `enabled: false` (the old header/footer toggle) as bot visibility for users upgrading from older versions.
+- Fixed startup log pause/lag caused by blocking update checker — now runs asynchronously with a fast timeout.
 
 ### v1.4.21 *(2026-03-21)*
 #### Bug Fixes

@@ -14,6 +14,8 @@
     <properties>
         <java.version>21</java.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <!-- Server plugins folder — override with -Ddeploy.dir=... or edit here -->
+        <deploy.dir>${user.home}/Desktop/dmc/plugins</deploy.dir>
     </properties>
 
     <build>
@@ -68,23 +70,39 @@
                             <executable>java</executable>
                             <arguments>
                                 <argument>-jar</argument>
-                                <argument>${basedir}/proguard.jar</argument>
-                                <argument>@${basedir}/proguard.conf</argument>
+                                <argument>${basedir}/libs/proguard/proguard.jar</argument>
+                                <argument>@${basedir}/libs/proguard/fpp.conf</argument>
                                 <argument>-injars</argument>
                                 <argument>${project.build.directory}/${project.build.finalName}.jar</argument>
                                 <argument>-outjars</argument>
                                 <argument>${project.build.directory}/${project.build.finalName}-obfuscated.jar</argument>
-                                <argument>-libraryjars</argument>
-                                <argument>${java.home}/jmods/java.base.jmod(!**.jar;!module-info.class)</argument>
-                                <argument>-libraryjars</argument>
-                                <argument>${java.home}/jmods/java.sql.jmod(!**.jar;!module-info.class)</argument>
-                                <argument>-libraryjars</argument>
-                                <argument>${java.home}/jmods/java.logging.jmod(!**.jar;!module-info.class)</argument>
-                                <argument>-libraryjars</argument>
-                                <argument>${java.home}/jmods/java.naming.jmod(!**.jar;!module-info.class)</argument>
-                                <argument>-libraryjars</argument>
-                                <argument>${java.home}/jmods/java.management.jmod(!**.jar;!module-info.class)</argument>
                             </arguments>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <!-- Auto-deploy: copy obfuscated JAR to server plugins folder after ProGuard -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <version>3.1.0</version>
+                <executions>
+                    <execution>
+                        <id>deploy-obfuscated-jar</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <configuration>
+                            <target>
+                                <mkdir dir="${deploy.dir}" />
+                                <copy
+                                    file="${project.build.directory}/${project.build.finalName}-obfuscated.jar"
+                                    tofile="${deploy.dir}/fpp.jar"
+                                    overwrite="true"
+                                    failonerror="false" />
+                                <echo message="[FPP] Deployed obfuscated JAR to: ${deploy.dir}/fpp.jar" />
+                            </target>
                         </configuration>
                     </execution>
                 </executions>

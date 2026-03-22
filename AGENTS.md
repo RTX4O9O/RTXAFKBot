@@ -71,18 +71,23 @@ Purpose: help automated agents quickly understand, modify, and verify the FakePl
     - If changing skin behaviour or adding skins: ensure `SkinRepository`/`SkinFetcher` are respected — add skin files to `src/main/resources/skins/` for defaults or `plugins/FakePlayerPlugin/skins/` at runtime and call `/fpp reload` to refresh. The startup code also drops a `skins/README.txt` inside the plugin data folder on first run.
 
 5) Build / run / verify (Windows PowerShell)
-Build (skip tests):
+Build, obfuscate, AND auto-deploy to `%USERPROFILE%\Desktop\dmc\plugins\fpp.jar` in one command:
 ```powershell
 mvn -DskipTests clean package
 ```
-Note: the project requires JDK 21 to compile (see `pom.xml` <java.version>21). FastStats jars are bundled as binary resources in `src/main/resources/faststats/` (not shaded). Build command remains:
+The `maven-antrun-plugin` in `pom.xml` automatically copies `target/fpp-*-obfuscated.jar` to the deploy folder after ProGuard finishes. To deploy to a different path override the property:
 ```powershell
-mvn -DskipTests clean package
+mvn -DskipTests clean package "-Ddeploy.dir=C:\path\to\server\plugins"
 ```
-Copy built jar to your Paper server `plugins` folder (example):
-```powershell
-Copy-Item -Path ".\target\fpp-*.jar" -Destination "C:\path\to\paper\plugins\" -Force
-```
+Note: requires JDK 21+ to compile (`pom.xml` `<java.version>21`). FastStats jars are bundled as binary resources in `src/main/resources/faststats/` (not shaded).
+
+**IntelliJ build tool ("Build Artifacts"):** IntelliJ's native artifact builder bypasses Maven and ProGuard. The `.idea/artifacts/fpp_jar.xml` is configured to extract content from `target/fpp-1.4.22-obfuscated.jar` (the Maven ProGuard output). Workflow:
+1. Run the **"Build Plugin (Obfuscated)"** Maven run configuration (or `mvn clean package`) — this runs ProGuard and auto-deploys
+2. Optionally run **Build › Build Artifacts** to re-pack the already-obfuscated JAR to the output path without recompiling
+- ⚠️ "Build Artifacts" alone (without Maven running first) will fail if `target/fpp-*-obfuscated.jar` does not exist
+
+Double-click `BUILD.bat` in the project root as an alternative to Maven in terminal.
+
 Start server (attach debugger):
 ```powershell
 java -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005 -Xms512M -Xmx2G -jar .\paper-1.21.11.jar nogui
