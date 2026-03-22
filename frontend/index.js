@@ -4,7 +4,6 @@ const fs = require("fs");
 const path = require("path");
 const yaml = require("js-yaml");
 const fetch = require("node-fetch");
-const semver = require("semver");
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -246,24 +245,65 @@ app.get("/api/status", async (req, res) => {
   });
 });
 
-// Update checker
-const UPDATE_API_URL =
-  process.env.UPDATE_API_URL || "https://fake-player-plugin.vercel.app";
+// ── Update checker — mirrors Java UpdateChecker.java ─────────────────────────
+// Primary: Modrinth API (same URL as the plugin uses)
+// Fallback: LATEST_VERSION / PLUGIN_VERSION env var
+const MODRINTH_API  = "https://api.modrinth.com/v2/project/fake-player-plugin-(fpp)/version?limit=1";
+const MODRINTH_PAGE = "https://modrinth.com/plugin/fake-player-plugin-(fpp)";
+const CACHE_TTL_MS  = 5 * 60 * 1000;
+
 let cachedUpdate = null;
-let cachedAt = 0;
-const CACHE_TTL_MS = 5 * 60 * 1000;
+let cachedAt     = 0;
+
+/**
+ * Semantic version comparison — mirrors compareVersions() in UpdateChecker.java.
+ * Returns >0 when a > b, <0 when a < b, 0 when equal.
+ */
+function compareVersions(a, b) {
+  const stripV = v => (v && v.startsWith("v") ? v.slice(1) : v || "");
+  const parts  = v => stripV(v).split(".").map(p => parseInt(p, 10) || 0);
+  const pa = parts(a), pb = parts(b);
+  const len = Math.max(pa.length, pb.length);
+  for (let i = 0; i < len; i++) {
+    const diff = (pa[i] || 0) - (pb[i] || 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+}
 
 async function fetchRemoteUpdate() {
   const now = Date.now();
-  if (cachedUpdate && now - cachedAt < CACHE_TTL_MS) return cachedUpdate;
+  if (cachedUpdate && cachedUpdate.latestVersion && (now - cachedAt) < CACHE_TTL_MS)
+    return cachedUpdate;
+
+  const localVer = readLocalVersion(projectRoot) || "0.0.0";
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 6000);
   try {
-    const r = await fetch(UPDATE_API_URL, { timeout: 5000 });
-    if (!r.ok) throw new Error("HTTP " + r.status);
-    const json = await r.json();
-    cachedUpdate = json;
+    const r = await fetch(MODRINTH_API, {
+      signal: controller.signal,
+      headers: {
+        "Accept":     "application/json",
+        "User-Agent": `FakePlayerPlugin-UpdateChecker/${localVer} (${MODRINTH_PAGE})`,
+      },
+    });
+    clearTimeout(timer);
+    if (!r.ok) return { error: `HTTP ${r.status} from Modrinth` };
+    const arr = await r.json();
+    if (!Array.isArray(arr) || arr.length === 0) return { error: "empty version array from Modrinth" };
+    const first = arr[0];
+    const latestVersion = first.version_number || null;
+    if (!latestVersion) return { error: "no version_number in Modrinth response" };
+    const downloadUrl = (first.files && first.files[0] && first.files[0].url) || MODRINTH_PAGE;
+    const result = { latestVersion, version: latestVersion, downloadUrl, source: "modrinth" };
+    cachedUpdate = result;
     cachedAt = Date.now();
-    return json;
+    return result;
   } catch (e) {
+    clearTimeout(timer);
+    // Env-var fallback when Modrinth is unreachable
+    const pinned = process.env.LATEST_VERSION || process.env.PLUGIN_VERSION;
+    if (pinned) return { latestVersion: pinned, version: pinned, downloadUrl: MODRINTH_PAGE, source: "env" };
     return { error: String(e) };
   }
 }
@@ -294,33 +334,25 @@ function readLocalVersion(root) {
 app.get("/api/check-update", async (req, res) => {
   const remote = await fetchRemoteUpdate();
   if (remote && remote.error)
-    return res.status(502).json({ error: remote.error });
+    return res.status(502).json({ error: remote.error, checkedAt: new Date().toISOString() });
 
-  const localVersion = readLocalVersion(projectRoot);
-  const remoteVersion =
-    remote && remote.version ? String(remote.version) : null;
+  const localVersion  = readLocalVersion(projectRoot);
+  const latestVersion = remote ? (remote.latestVersion || remote.version || null) : null;
+  const downloadUrl   = remote ? (remote.downloadUrl || MODRINTH_PAGE) : MODRINTH_PAGE;
 
-  let updateAvailable = null;
-  try {
-    if (
-      localVersion &&
-      remoteVersion &&
-      semver.valid(localVersion) &&
-      semver.valid(remoteVersion)
-    ) {
-      updateAvailable = semver.lt(localVersion, remoteVersion);
-    } else if (localVersion && remoteVersion) {
-      updateAvailable = localVersion !== remoteVersion;
-    }
-  } catch (e) {
-    updateAvailable = null;
-  }
+  const updateAvailable = (localVersion && latestVersion)
+    ? compareVersions(latestVersion, localVersion) > 0
+    : null;
 
   res.json({
     localVersion,
-    remoteVersion,
+    latestVersion,
+    remoteVersion:  latestVersion,  // Java extractVersion() compat
+    version:        latestVersion,  // Java extractVersion() compat
+    version_number: latestVersion,  // Modrinth-style compat
     updateAvailable,
-    remote,
+    downloadUrl,
+    source:    remote ? remote.source : null,
     checkedAt: new Date().toISOString(),
   });
 });

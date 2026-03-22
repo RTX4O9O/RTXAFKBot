@@ -1,185 +1,110 @@
-const fs = require("fs");
+/**
+ * Vercel serverless function — returns plugin status / version info.
+ *
+ * Resolution order:
+ *   1. Local plugin.yml  — present when the repo is deployed as-is
+ *   2. Modrinth API      — used when running on Vercel without local files
+ *   3. LATEST_VERSION / PLUGIN_VERSION env var — manual override for pinned releases
+ *
+ * The response shape is intentionally minimal and compatible with the Java
+ * extractVersion() / extractDownloadUrl() parsers used in UpdateChecker.java.
+ */
+
+const fs   = require("fs");
 const path = require("path");
 const yaml = require("js-yaml");
 
-// Vercel Serverless function: returns plugin status JSON.
-// Behavior: try reading local plugin resource files (if the repo is deployed as-is).
-// If not found (typical on Vercel), and PLUGIN_API_URL env var is set, proxy to that remote API.
+// ── Constants ─────────────────────────────────────────────────────────────────
+const MODRINTH_API  = "https://api.modrinth.com/v2/project/fake-player-plugin-(fpp)/version?limit=1";
+const MODRINTH_PAGE = "https://modrinth.com/plugin/fake-player-plugin-(fpp)";
 
-async function fetchCandidate(url) {
-  try {
-    const controller = new AbortController();
-    const id = setTimeout(() => controller.abort(), 5000);
-    const res = await fetch(url, { signal: controller.signal });
-    clearTimeout(id);
-    if (!res.ok) return { error: `HTTP ${res.status}` };
-    const contentType = res.headers.get("content-type") || "";
-    if (contentType.includes("application/json")) return await res.json();
-    // try to parse text as JSON
-    const text = await res.text();
-    try {
-      return JSON.parse(text);
-    } catch (e) {
-      return { error: "invalid-json" };
-    }
-  } catch (e) {
-    return { error: String(e) };
-  }
-}
-
+// ── Helpers ───────────────────────────────────────────────────────────────────
 function safeReadYaml(filePath) {
   try {
     if (!fs.existsSync(filePath)) return null;
-    const content = fs.readFileSync(filePath, "utf8");
-    return yaml.load(content);
+    return yaml.load(fs.readFileSync(filePath, "utf8"));
   } catch (e) {
-    return { error: String(e) };
+    return null;
   }
 }
+
+function toSafeString(v) {
+  if (v == null) return null;
+  if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") return String(v);
+  return null;
+}
+
+function mapToMinimal(obj, overrideVersion) {
+  const fallbackUrl = process.env.PLUGIN_DOWNLOAD_URL || MODRINTH_PAGE;
+  if (!obj || typeof obj !== "object") {
+    return { name: null, version: overrideVersion || null, downloadUrl: fallbackUrl, notes: null };
+  }
+  return {
+    name:        toSafeString(obj.name || obj.displayName || obj.title) || null,
+    version:     overrideVersion || toSafeString(obj.version || obj.tag_name || obj.version_number) || null,
+    downloadUrl: toSafeString(obj.downloadUrl || obj.download_url || obj.website) || fallbackUrl,
+    notes:       toSafeString(obj.description || obj.notes || obj.body || obj.summary) || null,
+  };
+}
+
+// ── Modrinth fetch (mirrors Java UpdateChecker primary path) ──────────────────
+async function fetchFromModrinth() {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 6000);
+  try {
+    const r = await fetch(MODRINTH_API, {
+      signal: controller.signal,
+      headers: {
+        "Accept":     "application/json",
+        "User-Agent": "FakePlayerPlugin-StatusEndpoint (https://modrinth.com/plugin/fake-player-plugin-(fpp))",
+      },
+    });
+    clearTimeout(timer);
+    if (!r.ok) return null;
+    const arr = await r.json();
+    if (!Array.isArray(arr) || arr.length === 0) return null;
+    const first = arr[0];
+    const version = first.version_number || null;
+    const downloadUrl = (first.files && first.files[0] && first.files[0].url) || MODRINTH_PAGE;
+    return { version, downloadUrl, name: "Fake Player Plugin (FPP)", notes: null };
+  } catch (e) {
+    clearTimeout(timer);
+    return null;
+  }
+}
+
+// ── Handler ───────────────────────────────────────────────────────────────────
 module.exports = async (req, res) => {
   res.setHeader("Content-Type", "application/json");
-  const projectRoot = path.resolve(process.cwd());
 
-  const pluginYml = path.join(
-    projectRoot,
-    "src",
-    "main",
-    "resources",
-    "plugin.yml"
-  );
+  // Pinned version always wins (set LATEST_VERSION on Vercel when publishing a release)
+  const pinnedVersion = process.env.LATEST_VERSION || process.env.PLUGIN_VERSION || null;
 
-  // Map a plugin object (from YAML or remote JSON) to a minimal public shape
-  // Convert a value to a safe string or null; arrays/objects become null to avoid leaking large content.
-  function toSafeString(v) {
-    if (v === undefined || v === null) return null;
-    if (typeof v === "string") return v;
-    if (typeof v === "number" || typeof v === "boolean") return String(v);
-    // Avoid returning arrays or objects
-    return null;
+  // 1. Local plugin.yml (present in dev or repo-deployed Vercel)
+  const pluginYmlPath = path.join(process.cwd(), "src", "main", "resources", "plugin.yml");
+  if (fs.existsSync(pluginYmlPath)) {
+    const raw = safeReadYaml(pluginYmlPath) || {};
+    const src = (raw.plugin && typeof raw.plugin === "object") ? raw.plugin : raw;
+    return res.status(200).json(mapToMinimal(src, pinnedVersion || toSafeString(src.version)));
   }
 
-  function mapToMinimal(obj) {
-    const fallback = {
-      name: null,
-      version: null,
-      downloadUrl: process.env.PLUGIN_DOWNLOAD_URL || "https://fake-player-plugin.vercel.app/",
-      notes: null,
-    };
-    if (!obj || typeof obj !== "object") return fallback;
-    const name = toSafeString(obj.name || obj.displayName || obj.title) || null;
-    const version =
-      toSafeString(
-        obj.version || obj.tag_name || obj.latest || obj.version_number
-      ) || null;
-    const downloadUrl =
-      toSafeString(obj.downloadUrl || obj.download_url || obj.website) ||
-      process.env.PLUGIN_DOWNLOAD_URL ||
-      "https://fake-player-plugin.vercel.app/";
-    const notes =
-      toSafeString(obj.description || obj.notes || obj.body || obj.summary) ||
-      null;
-    return { name, version, downloadUrl, notes };
+  // 2. Modrinth API (Vercel deployment without local files)
+  const modrinth = await fetchFromModrinth();
+  if (modrinth) {
+    return res.status(200).json(mapToMinimal(modrinth, pinnedVersion || modrinth.version));
   }
 
-  // Some remote APIs return wrapper objects. Try to find the nested object that contains version/name
-  function findBestObject(result) {
-    if (!result || typeof result !== "object") return null;
-    // If result already looks like a plugin info object, use it
-    if (result.version || result.tag_name || result.name || result.latest)
-      return result;
-    // Common wrapper keys
-    const keys = [
-      "plugin",
-      "data",
-      "release",
-      "manifest",
-      "result",
-      "package",
-      "body",
-    ];
-    for (const k of keys) {
-      if (result[k] && typeof result[k] === "object") {
-        const candidate = result[k];
-        if (
-          candidate.version ||
-          candidate.tag_name ||
-          candidate.name ||
-          candidate.latest
-        )
-          return candidate;
-      }
-    }
-    // Search for any nested object with a version/tag_name/name field
-    for (const k of Object.keys(result)) {
-      const v = result[k];
-      if (v && typeof v === "object") {
-        if (v.version || v.tag_name || v.name || v.latest) return v;
-      }
-    }
-    // No obvious candidate — return null to let mapToMinimal handle fallback
-    return null;
-  }
-
-  // If LATEST_VERSION env var is set, it always overrides whatever is in plugin.yml or
-  // the remote API. Set this on Vercel when a new release is published so the update
-  // checker correctly detects outdated installs.
-  const pinnedVersion = process.env.LATEST_VERSION || process.env.PLUGIN_VERSION;
-
-  // If local plugin.yml exists, return concise info (only minimal fields)
-  if (fs.existsSync(pluginYml)) {
-    const raw = safeReadYaml(pluginYml) || {};
-    const bestLocal =
-      findBestObject(raw) ||
-      (raw.plugin && typeof raw.plugin === "object" ? raw.plugin : raw);
-    const mapped = mapToMinimal(bestLocal);
-    // Pinned version takes priority over what's in plugin.yml
-    if (pinnedVersion) mapped.version = pinnedVersion;
-    return res.status(200).json(mapped);
-  }
-
-  // No local files — proxy to configured PLUGIN_API_URL
-  const pluginApi =
-    process.env.PLUGIN_API_URL || process.env.NEXT_PUBLIC_PLUGIN_API_URL;
-  if (!pluginApi) {
+  // 3. Env-var only fallback
+  if (pinnedVersion) {
     return res.status(200).json({
-      name: null,
-      version: null,
-      downloadUrl: null,
-      notes: null,
-      error: "No plugin info available. Set PLUGIN_API_URL in environment.",
+      name: "Fake Player Plugin (FPP)", version: pinnedVersion,
+      downloadUrl: MODRINTH_PAGE, notes: null,
     });
   }
 
-  const candidates = [
-    pluginApi,
-    pluginApi.endsWith("/")
-      ? pluginApi + "api/status"
-      : pluginApi + "/api/status",
-    pluginApi.endsWith("/")
-      ? pluginApi + "api/check-update"
-      : pluginApi + "/api/check-update",
-    pluginApi.endsWith("/") ? pluginApi + "status" : pluginApi + "/status",
-    pluginApi.endsWith("/") ? pluginApi + "latest" : pluginApi + "/latest",
-  ];
-
-  for (const c of candidates) {
-    const result = await fetchCandidate(c);
-    if (result && !result.error) {
-      // Normalize possible wrapper objects
-      const best =
-        findBestObject(result) ||
-        (typeof result === "object"
-          ? result
-          : { version: String(result).trim() });
-      return res.status(200).json(mapToMinimal(best));
-    }
-  }
-
-  return res.status(502).json({
-    name: null,
-    version: null,
-    downloadUrl: null,
-    notes: null,
-    error: "Could not retrieve plugin info from PLUGIN_API_URL",
+  return res.status(200).json({
+    name: null, version: null,
+    downloadUrl: MODRINTH_PAGE, notes: null,
+    error: "No plugin info available. Set LATEST_VERSION in Vercel environment variables.",
   });
 };
