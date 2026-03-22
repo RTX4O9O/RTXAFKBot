@@ -127,11 +127,10 @@ tp-not-found:     "{prefix}<red>ɴᴏ ᴀᴄᴛɪᴠᴇ ʙᴏᴛ ɴᴀᴍᴇᴅ 
 tp-failed:        "{prefix}<red>ᴄᴏᴜʟᴅ ɴᴏᴛ ᴛᴇʟᴇᴘᴏʀᴛ ᴛᴏ <white>{name}<red> — ᴇɴᴛɪᴛʏ ɪɴᴠᴀʟɪᴅ."
 
 # ── Update checker ────────────────────────────────────────────────────────────
-# {current}      — installed version
-# {latest}       — latest version
-# {download_url} — download link (from API response or fallback Modrinth URL)
-update-available:  "{prefix}<bold><#0079FF>UPDATE AVAILABLE</#0079FF></bold> <gray>— <white>v{current} <gray>→ <white>v{latest}</white>\n{prefix}<gray>Download: <#0079FF>{download_url}</#0079FF>"
-update-up-to-date: "{prefix}<#66CC66>Plugin is up to date</#66CC66> <dark_gray>(<#0079FF>v{current}</#0079FF>)<dark_gray>"
+# {current} — installed version
+# {latest}  — latest version
+update-available:  "<dark_gray><st>━━━━━━━━━</st> <bold><#0079FF>ᴜᴘᴅᴀᴛᴇ ᴀᴠᴀɪʟᴀʙʟᴇ</#0079FF></bold> <dark_gray><st>━━━━━━━━━</st>\n  <gray>Installed <dark_gray>: <white>v{current}\n  <gray>Latest    <dark_gray>: <#0079FF>v{latest}</#0079FF>\n  <gray>Download  <dark_gray>: <click:open_url:'https://modrinth.com/plugin/fake-player-plugin-(fpp)'><#0079FF><underlined>Modrinth</underlined></#0079FF></click><gray>, <click:open_url:'https://www.spigotmc.org/resources/fake-player-plugin-fpp.133572/'><#0079FF><underlined>SpigotMC</underlined></#0079FF></click><gray>, <click:open_url:'https://hangar.papermc.io/Pepe-tf/FakePlayerPlugin'><#0079FF><underlined>PaperMC</underlined></#0079FF></click><gray>, <click:open_url:'https://builtbybit.com/resources/fake-player-plugin.98704/'><#0079FF><underlined>BuiltByBit</underlined></#0079FF></click>\n<dark_gray><st>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</st>"
+update-up-to-date: "{prefix}<#66CC66>Plugin is up to date</#66CC66> <dark_gray>(<#0079FF>v{current}</#0079FF><dark_gray>)"
 update-failed:     "{prefix}<gray>ᴄᴏᴜʟᴅ ɴᴏᴛ ᴄʜᴇᴄᴋ ꜰᴏʀ ᴜᴘᴅᴀᴛᴇꜱ."
 
 # In-game compatibility warning shown to admins when the server/runtime is restricted

@@ -279,6 +279,7 @@ public final class FakePlayerBody {
     }
 
     private static void resendTab(FakePlayer fp) {
+        if (!Config.tabListEnabled()) return;
         List<Player> online = new ArrayList<>(Bukkit.getOnlinePlayers());
         for (Player p : online) PacketHelper.sendTabListAdd(p, fp);
     }

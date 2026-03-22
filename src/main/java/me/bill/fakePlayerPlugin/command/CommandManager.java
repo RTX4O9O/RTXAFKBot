@@ -116,10 +116,6 @@ public class CommandManager implements CommandExecutor, TabCompleter {
 
     // ── Plugin info screen ────────────────────────────────────────────────────
 
-    // Modrinth page — URL is fixed and intentionally not configurable
-    private static final String MODRINTH_URL =
-            "https://modrinth.com/plugin/fake-player-plugin-(fpp)";
-
     /**
      * Shown when the player types bare {@code /fpp} — a compact, themed info panel.
      */
@@ -131,9 +127,6 @@ public class CommandManager implements CommandExecutor, TabCompleter {
         // Use the shared divider and header from lang
         Component divider = TextUtil.colorize(Lang.raw("divider"));
         Component header  = TextUtil.colorize(Lang.raw("info-screen-header"));
-
-        // Label for the Modrinth link — admins can rename it in en.yml
-        String modrinthLabel = Lang.raw("modrinth-label");
 
         sender.sendMessage(divider);
         sender.sendMessage(header);
@@ -149,18 +142,34 @@ public class CommandManager implements CommandExecutor, TabCompleter {
             sender.sendMessage(row("ᴀᴄᴛɪᴠᴇ ʙᴏᴛꜱ", String.valueOf(fpm.getCount())));
         }
 
-        // Modrinth link — short clickable label, URL hidden from chat
+        // Download links — all 4 platforms as clickable text
         sender.sendMessage(Component.empty()
                 .append(Component.text("  ").color(DARK_GRAY))
-                .append(Component.text("ᴘᴀɢᴇ ").color(GRAY))
+                .append(Component.text("ᴅᴏᴡɴʟᴏᴀᴅ ").color(GRAY))
                 .append(Component.text("→ ").color(DARK_GRAY))
-                .append(Component.text(modrinthLabel)
+                .append(Component.text("Modrinth")
                         .color(ACCENT)
                         .decorate(TextDecoration.UNDERLINED)
-                        .clickEvent(ClickEvent.openUrl(MODRINTH_URL))
-                        .hoverEvent(HoverEvent.showText(
-                                Component.text("Click to open the Modrinth page")
-                                         .color(GRAY)))));
+                        .clickEvent(ClickEvent.openUrl("https://modrinth.com/plugin/fake-player-plugin-(fpp)"))
+                        .hoverEvent(HoverEvent.showText(Component.text("Click to open Modrinth").color(GRAY))))
+                .append(Component.text(", ").color(GRAY))
+                .append(Component.text("SpigotMC")
+                        .color(ACCENT)
+                        .decorate(TextDecoration.UNDERLINED)
+                        .clickEvent(ClickEvent.openUrl("https://www.spigotmc.org/resources/fake-player-plugin-fpp.133572/"))
+                        .hoverEvent(HoverEvent.showText(Component.text("Click to open SpigotMC").color(GRAY))))
+                .append(Component.text(", ").color(GRAY))
+                .append(Component.text("PaperMC")
+                        .color(ACCENT)
+                        .decorate(TextDecoration.UNDERLINED)
+                        .clickEvent(ClickEvent.openUrl("https://hangar.papermc.io/Pepe-tf/FakePlayerPlugin"))
+                        .hoverEvent(HoverEvent.showText(Component.text("Click to open PaperMC Hangar").color(GRAY))))
+                .append(Component.text(", ").color(GRAY))
+                .append(Component.text("BuiltByBit")
+                        .color(ACCENT)
+                        .decorate(TextDecoration.UNDERLINED)
+                        .clickEvent(ClickEvent.openUrl("https://builtbybit.com/resources/fake-player-plugin.98704/"))
+                        .hoverEvent(HoverEvent.showText(Component.text("Click to open BuiltByBit").color(GRAY)))));
 
         sender.sendMessage(Component.empty());
 

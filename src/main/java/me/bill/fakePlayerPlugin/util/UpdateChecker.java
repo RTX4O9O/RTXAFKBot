@@ -18,26 +18,37 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Checks a remote update API for a newer version of FakePlayerPlugin.
+ * Checks for a newer version of FakePlayerPlugin.
+ *
+ * <h3>Source priority</h3>
+ * <ol>
+ *   <li><b>Modrinth API</b> — always reflects the latest published release regardless
+ *       of what version is running or deployed to any web service.</li>
+ *   <li>Vercel status API — used as a fallback when Modrinth is unreachable.</li>
+ * </ol>
  *
  * <h3>Key behaviours</h3>
  * <ul>
- *   <li>Semantic version comparison — {@code 1.4.14 > 1.4.9} is handled correctly.</li>
+ *   <li>Semantic version comparison — {@code 1.4.14 > 1.4.9} handled correctly.</li>
  *   <li>Result cache with a 5-minute TTL so repeated {@code /fpp reload} calls do not
  *       hammer the network.</li>
  *   <li>Download URL extracted from the API response and passed to the language file.</li>
- *   <li>Admin notification uses {@link Perm#ALL} consistently.</li>
- *   <li>Endpoint order: dedicated {@code /api/check-update} tried first.</li>
+ *   <li>All outcomes (update available / up-to-date / failed) are visible in the console
+ *       without enabling debug mode.</li>
  * </ul>
  */
 public final class UpdateChecker {
 
-    /** Base URL of the Vercel update API. */
-    private static final String API_BASE = "https://fake-player-plugin.vercel.app";
+    /** Modrinth API — returns a JSON array of versions sorted newest-first. */
+    private static final String MODRINTH_API =
+            "https://api.modrinth.com/v2/project/fake-player-plugin-(fpp)/version?limit=1";
 
-    /** Fallback download URL when the API does not return one. */
-    private static final String FALLBACK_DOWNLOAD_URL =
+    /** Modrinth download page used when the API does not return a direct file URL. */
+    private static final String MODRINTH_PAGE =
             "https://modrinth.com/plugin/fake-player-plugin-(fpp)";
+
+    /** Vercel status API — secondary/fallback source. */
+    private static final String VERCEL_API_BASE = "https://fake-player-plugin.vercel.app";
 
     /** Matches version tokens like {@code 1.2.3} or {@code v1.2.3}. */
     private static final Pattern VERSION_REGEX = Pattern.compile("v?\\d+(?:\\.\\d+)+");
@@ -45,7 +56,6 @@ public final class UpdateChecker {
     // ── Result cache ──────────────────────────────────────────────────────────
     private static volatile UpdateInfo cachedResult   = null;
     private static volatile long       cacheTimestamp = 0L;
-    /** Do not hit the network more often than this (ms). */
     private static final long CACHE_TTL_MS = 5L * 60L * 1000L;
 
     private UpdateChecker() {}
@@ -92,33 +102,42 @@ public final class UpdateChecker {
 
     /**
      * Handles a fetched result on the main server thread.
-     * Logs to console and notifies online admins; persists the notification for
-     * admins who join later.
+     * <ul>
+     *   <li>Console — always produces a clean single-line message (no borders).</li>
+     *   <li>In-game — sends the full bordered {@code update-available} message to
+     *       all online admins and stores it for late-joining admins.</li>
+     * </ul>
      */
     public static void handleResultOnMainThread(Plugin plugin, UpdateInfo info) {
         if (info == null) return;
+
         if (info.error != null) {
-            Config.debug("UpdateChecker: " + info.error);
+            // Always visible in console
+            Component failMsg = me.bill.fakePlayerPlugin.lang.Lang.get("update-failed");
+            FppLogger.warn(stripLangPrefix(
+                    PlainTextComponentSerializer.plainText().serialize(failMsg))
+                    + " (" + info.error + ")");
+            // Notify online admins in-game
+            for (Player p : plugin.getServer().getOnlinePlayers()) {
+                if (Perm.hasOrOp(p, Perm.ALL)) p.sendMessage(failMsg);
+            }
             return;
         }
 
         String latestClean  = stripV(info.latest);
         String currentClean = stripV(info.current);
 
-        // Semantic comparison — positive means latest > current
         boolean updateAvailable = compareVersions(info.latest, info.current) > 0;
 
         if (updateAvailable) {
-            String dlUrl = (info.downloadUrl != null && !info.downloadUrl.isBlank())
-                    ? info.downloadUrl : FALLBACK_DOWNLOAD_URL;
+            // Console — simple one-liner pointing to Modrinth
+            FppLogger.warn("Update available! v" + currentClean + " → v" + latestClean
+                    + " | Download: " + MODRINTH_PAGE);
 
+            // In-game — full bordered message with clickable links to all platforms
             Component msg = me.bill.fakePlayerPlugin.lang.Lang.get("update-available",
-                    "current", currentClean, "latest", latestClean, "download_url", dlUrl);
+                    "current", currentClean, "latest", latestClean);
 
-            // Console — strip the plugin prefix since FppLogger already prepends a tag
-            FppLogger.warn(stripLangPrefix(PlainTextComponentSerializer.plainText().serialize(msg)));
-
-            // Notify online admins
             for (Player p : plugin.getServer().getOnlinePlayers()) {
                 if (Perm.hasOrOp(p, Perm.ALL)) p.sendMessage(msg);
             }
@@ -129,10 +148,11 @@ public final class UpdateChecker {
             }
 
         } else {
+            // Console — simple success line
             Component ok = me.bill.fakePlayerPlugin.lang.Lang.get(
                     "update-up-to-date", "current", currentClean);
             FppLogger.success(
-                    stripLangPrefix(PlainTextComponentSerializer.plainText().serialize(ok)) + "  ✔");
+                    stripLangPrefix(PlainTextComponentSerializer.plainText().serialize(ok)));
 
             if (plugin instanceof me.bill.fakePlayerPlugin.FakePlayerPlugin fpp) {
                 fpp.setUpdateNotification(null);
@@ -143,7 +163,6 @@ public final class UpdateChecker {
     /**
      * Invalidates the cached result so the next {@link #check} or
      * {@link #checkBlocking} call always performs a fresh network request.
-     * Call this from {@code /fpp reload} so admins always get current info.
      */
     public static void invalidateCache() {
         cachedResult   = null;
@@ -160,18 +179,14 @@ public final class UpdateChecker {
         public String  current;
         public boolean currentStartsWithV;
         public String  error;
-        /** Download URL from the API response, or {@code null} when not provided. */
         public String  downloadUrl;
     }
 
     // ── Internals ─────────────────────────────────────────────────────────────
 
-    /** Returns cached result if still fresh; fetches from the network otherwise. */
     private static UpdateInfo fetchOrCached(Plugin plugin) {
         long now = System.currentTimeMillis();
         if (cachedResult != null && (now - cacheTimestamp) < CACHE_TTL_MS) {
-            // Keep current version in sync with the running plugin (shouldn't change
-            // at runtime, but ensures the object reflects a post-reload state correctly).
             cachedResult.current            = plugin.getPluginMeta().getVersion();
             cachedResult.currentStartsWithV = cachedResult.current.startsWith("v");
             Config.debug("UpdateChecker: using cached result (age "
@@ -187,8 +202,7 @@ public final class UpdateChecker {
     }
 
     /**
-     * Semantically compares two version strings ({@code "v1.4.14"}, {@code "1.4.9"}, …).
-     *
+     * Compares two version strings semantically.
      * @return positive when {@code a > b}, negative when {@code a < b}, 0 when equal.
      */
     static int compareVersions(String a, String b) {
@@ -208,7 +222,6 @@ public final class UpdateChecker {
         String[] raw = v.split("\\.", -1);
         int[] parts = new int[raw.length];
         for (int i = 0; i < raw.length; i++) {
-            // Accept only leading digits — handles pre-release tags like "14-SNAPSHOT"
             Matcher m = Pattern.compile("^(\\d+)").matcher(raw[i]);
             parts[i] = m.find() ? Integer.parseInt(m.group(1)) : 0;
         }
@@ -219,7 +232,6 @@ public final class UpdateChecker {
         return (v != null && v.startsWith("v")) ? v.substring(1) : (v != null ? v : "");
     }
 
-    /** Removes the lang prefix from a plain-text string so FppLogger doesn't double it. */
     private static String stripLangPrefix(String plain) {
         try {
             String prefixRaw   = me.bill.fakePlayerPlugin.lang.Lang.raw("prefix");
@@ -237,103 +249,166 @@ public final class UpdateChecker {
         info.current            = plugin.getPluginMeta().getVersion();
         info.currentStartsWithV = info.current.startsWith("v");
 
-        // Dedicated endpoint first; root URL last (serves HTML, not JSON)
-        String[] candidates = {
-                API_BASE + "/api/check-update",
-                API_BASE + "/api/status",
-                API_BASE + "/latest",
-                API_BASE + "/api/latest",
-                API_BASE,
+        // ── 1. Modrinth API (primary — always reflects actual published releases) ──
+        UpdateInfo modrinthResult = tryFetch(info.current, MODRINTH_API, true);
+        if (modrinthResult != null && modrinthResult.error == null) {
+            Config.debug("UpdateChecker: Modrinth → latest=" + stripV(modrinthResult.latest));
+            return modrinthResult;
+        }
+        Config.debug("UpdateChecker: Modrinth unavailable — " +
+                (modrinthResult != null ? modrinthResult.error : "null result"));
+
+        // ── 2. Vercel API (fallback) ──────────────────────────────────────────
+        String[] vercelCandidates = {
+                VERCEL_API_BASE + "/api/check-update",
+                VERCEL_API_BASE + "/api/status",
+                VERCEL_API_BASE + "/api/latest",
         };
-
-        for (String url : candidates) {
-            try {
-                HttpURLConnection conn =
-                        (HttpURLConnection) URI.create(url).toURL().openConnection();
-                conn.setRequestMethod("GET");
-                conn.setConnectTimeout(5_000);
-                conn.setReadTimeout(5_000);
-                conn.setRequestProperty("Accept", "application/json");
-                conn.setRequestProperty("User-Agent",
-                        "FakePlayerPlugin-UpdateChecker/" + info.current);
-
-                if (conn.getResponseCode() != 200) {
-                    Config.debug("UpdateChecker: HTTP " + conn.getResponseCode() + " — " + url);
-                    continue;
-                }
-
-                StringBuilder sb = new StringBuilder();
-                try (BufferedReader r = new BufferedReader(
-                        new InputStreamReader(conn.getInputStream()))) {
-                    String line;
-                    while ((line = r.readLine()) != null) sb.append(line);
-                }
-                String body = sb.toString().trim();
-                if (body.isEmpty()) { Config.debug("UpdateChecker: empty body — " + url); continue; }
-
-                String latest      = extractVersion(body);
-                String downloadUrl = extractDownloadUrl(body);
-
-                if (latest == null || latest.isBlank()) {
-                    Config.debug("UpdateChecker: no version found in response from " + url);
-                    continue;
-                }
-
-                info.latest            = latest;
-                info.latestStartsWithV = latest.startsWith("v");
-                info.downloadUrl       = downloadUrl;
-                Config.debug("UpdateChecker: latest=" + stripV(latest) + " from " + url
-                        + (downloadUrl != null ? " dl=" + downloadUrl : ""));
-                return info;
-
-            } catch (java.net.SocketTimeoutException e) {
-                Config.debug("UpdateChecker: timeout — " + url);
-            } catch (Exception e) {
-                Config.debug("UpdateChecker: " + e.getClass().getSimpleName()
-                        + " — " + url + ": " + e.getMessage());
+        for (String url : vercelCandidates) {
+            UpdateInfo result = tryFetch(info.current, url, false);
+            if (result != null && result.error == null) {
+                Config.debug("UpdateChecker: Vercel → latest=" + stripV(result.latest)
+                        + " from " + url);
+                return result;
             }
         }
 
-        info.error = "no successful response from any update API endpoint";
+        info.error = "could not reach Modrinth or Vercel API";
         return info;
     }
 
     /**
-     * Extracts the latest version string from a raw JSON body.
+     * Performs a single HTTP GET to {@code url} and returns an {@link UpdateInfo}.
      *
-     * <p>Priority order:
-     * <ol>
-     *   <li>{@code remoteVersion} / {@code remote_version} — from {@code /api/check-update}</li>
-     *   <li>{@code tag_name}, {@code version}, {@code latest}, {@code name} — common shapes</li>
-     *   <li>Same keys inside a nested {@code "remote"} or {@code "data"} object</li>
-     *   <li>Regex fallback — first version-like token in the body</li>
-     * </ol>
+     * @param currentVersion the running plugin version (for logging and the returned object)
+     * @param url            the URL to query
+     * @param arrayResponse  {@code true} when the endpoint returns a JSON array (Modrinth)
+     * @return populated {@link UpdateInfo} or one with {@code error} set on failure
      */
+    private static UpdateInfo tryFetch(String currentVersion, String url, boolean arrayResponse) {
+        UpdateInfo info = new UpdateInfo();
+        info.current            = currentVersion;
+        info.currentStartsWithV = currentVersion.startsWith("v");
+        try {
+            HttpURLConnection conn =
+                    (HttpURLConnection) URI.create(url).toURL().openConnection();
+            conn.setRequestMethod("GET");
+            conn.setConnectTimeout(6_000);
+            conn.setReadTimeout(6_000);
+            conn.setRequestProperty("Accept", "application/json");
+            conn.setRequestProperty("User-Agent",
+                    "FakePlayerPlugin-UpdateChecker/" + currentVersion
+                    + " (https://modrinth.com/plugin/fake-player-plugin-(fpp))");
+
+            int code = conn.getResponseCode();
+            if (code != 200) {
+                info.error = "HTTP " + code + " from " + url;
+                return info;
+            }
+
+            StringBuilder sb = new StringBuilder();
+            try (BufferedReader r = new BufferedReader(
+                    new InputStreamReader(conn.getInputStream()))) {
+                String line;
+                while ((line = r.readLine()) != null) sb.append(line);
+            }
+            String body = sb.toString().trim();
+            if (body.isEmpty()) {
+                info.error = "empty response from " + url;
+                return info;
+            }
+
+            String latest;
+            String downloadUrl;
+
+            if (arrayResponse) {
+                // Modrinth returns [{...}, ...] — parse first element
+                String firstObj = extractFirstArrayElement(body);
+                if (firstObj == null) {
+                    info.error = "empty version array from " + url;
+                    return info;
+                }
+                latest      = extractJsonString(firstObj, "version_number");
+                downloadUrl = extractFirstFileUrl(firstObj);
+                // If no direct file URL, fall back to the Modrinth page
+                if (downloadUrl == null || downloadUrl.isBlank()) {
+                    downloadUrl = MODRINTH_PAGE;
+                }
+            } else {
+                // Vercel / generic JSON object
+                latest = extractVersion(body);
+                downloadUrl = extractDownloadUrl(body);
+            }
+
+            if (latest == null || latest.isBlank()) {
+                info.error = "no version found in response from " + url;
+                return info;
+            }
+
+            info.latest            = latest;
+            info.latestStartsWithV = latest.startsWith("v");
+            info.downloadUrl       = downloadUrl;
+            return info;
+
+        } catch (java.net.SocketTimeoutException e) {
+            info.error = "timeout connecting to " + url;
+        } catch (Exception e) {
+            info.error = e.getClass().getSimpleName() + ": " + e.getMessage() + " — " + url;
+        }
+        return info;
+    }
+
+    // ── JSON helpers ──────────────────────────────────────────────────────────
+
+    /**
+     * Extracts the first JSON object from a JSON array string.
+     * Returns {@code null} when the input is not an array or is empty.
+     */
+    private static String extractFirstArrayElement(String body) {
+        String trimmed = body.trim();
+        if (!trimmed.startsWith("[")) return null;
+        int start = trimmed.indexOf('{');
+        if (start < 0) return null;
+        int end = findMatchingBrace(trimmed, start);
+        return end > start ? trimmed.substring(start, end + 1) : null;
+    }
+
+    /**
+     * Extracts the URL of the first file from a Modrinth version object.
+     * Looks for {@code "files":[{"url":"..."}]} structure.
+     */
+    private static String extractFirstFileUrl(String obj) {
+        int filesIdx = obj.indexOf("\"files\"");
+        if (filesIdx < 0) return null;
+        int arrStart = obj.indexOf('[', filesIdx);
+        if (arrStart < 0) return null;
+        int objStart = obj.indexOf('{', arrStart);
+        if (objStart < 0) return null;
+        int objEnd = findMatchingBrace(obj, objStart);
+        if (objEnd <= objStart) return null;
+        return extractJsonString(obj.substring(objStart, objEnd + 1), "url");
+    }
+
+    /** Extracts a version string from a generic JSON object response (Vercel/fallback). */
     private static String extractVersion(String body) {
         for (String key : new String[]{"remoteVersion", "remote_version",
-                                       "tag_name", "version", "latest", "name"}) {
+                                       "version_number", "tag_name", "version", "latest", "name"}) {
             String val = extractJsonString(body, key);
             if (val != null && VERSION_REGEX.matcher(val).find()) return val;
         }
-        // Check inside the nested "remote" or "data" wrapper objects
         for (String wrapper : new String[]{"remote", "data"}) {
             String nested = extractNestedObject(body, wrapper);
             if (nested != null) {
-                for (String key : new String[]{"version", "tag_name", "latest"}) {
+                for (String key : new String[]{"version", "version_number", "tag_name", "latest"}) {
                     String val = extractJsonString(nested, key);
                     if (val != null && VERSION_REGEX.matcher(val).find()) return val;
                 }
             }
         }
-        // Regex fallback
         Matcher m = VERSION_REGEX.matcher(body);
         return m.find() ? m.group() : null;
     }
 
-    /**
-     * Extracts a download URL from a raw JSON body.
-     * Checks top-level first, then inside {@code "remote"} and {@code "data"} wrappers.
-     */
     private static String extractDownloadUrl(String body) {
         for (String key : new String[]{"downloadUrl", "download_url", "website"}) {
             String val = extractJsonString(body, key);
@@ -351,10 +426,6 @@ public final class UpdateChecker {
         return null;
     }
 
-    /**
-     * Extracts the string value of a JSON key from a raw body (non-recursive, single pass).
-     * Returns {@code null} when the key is absent or the value is not a JSON string.
-     */
     private static String extractJsonString(String body, String key) {
         int idx = body.indexOf('"' + key + '"');
         if (idx < 0) return null;
@@ -363,7 +434,7 @@ public final class UpdateChecker {
         int q1 = colon + 1;
         while (q1 < body.length() && body.charAt(q1) != '"') {
             char c = body.charAt(q1);
-            if (c == '{' || c == '[') return null; // value is object/array, not string
+            if (c == '{' || c == '[') return null;
             q1++;
         }
         if (q1 >= body.length()) return null;
@@ -372,10 +443,6 @@ public final class UpdateChecker {
         return body.substring(q1 + 1, q2).trim();
     }
 
-    /**
-     * Returns the raw JSON of the first object assigned to {@code key} in {@code body},
-     * or {@code null} when not found.
-     */
     private static String extractNestedObject(String body, String key) {
         int idx = body.indexOf('"' + key + '"');
         if (idx < 0) return null;
@@ -385,7 +452,6 @@ public final class UpdateChecker {
         return end > start ? body.substring(start, end + 1) : null;
     }
 
-    /** Returns the index of the closing brace that matches the opening brace at {@code openIdx}. */
     private static int findMatchingBrace(String s, int openIdx) {
         int depth = 0;
         for (int i = openIdx; i < s.length(); i++) {

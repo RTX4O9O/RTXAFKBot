@@ -71,6 +71,7 @@ public class FakePlayerManager {
         // Every 20 ticks (1 s) re-send display names for all bots to all players.
         // Uses the lighter UPDATE_DISPLAY_NAME-only packet to override TAB plugin resets.
         Bukkit.getScheduler().runTaskTimer(plugin, () -> {
+            if (!Config.tabListEnabled()) return;
             if (activePlayers.isEmpty()) return;
             List<Player> online = new ArrayList<>(Bukkit.getOnlinePlayers());
             if (online.isEmpty()) return;
@@ -284,17 +285,23 @@ public class FakePlayerManager {
     /**
      * Visually spawns the bot at {@code index} in {@code batch}, then
      * schedules the next one after a random join delay.
+     *
+     * <p><b>Stack-safety:</b> deleted bots are skipped with a {@code while} loop
+     * (not recursion) so a mass-delete cannot cause a {@link StackOverflowError}.
+     * Continuation is always via {@link org.bukkit.scheduler.BukkitScheduler#runTask} or
+     * {@link org.bukkit.scheduler.BukkitScheduler#runTaskLater} — never a direct call.
      */
     private void visualChain(List<FakePlayer> batch, int index, Location location) {
-        if (batch == null || index >= batch.size()) return;
+        if (batch == null) return;
+
+        // Skip any bots that were deleted while skins were loading — use a loop,
+        // not recursion, to avoid StackOverflowError on large batch deletions.
+        while (index < batch.size() && !activePlayers.containsKey(batch.get(index).getUuid())) {
+            index++;
+        }
+        if (index >= batch.size()) return;
 
         FakePlayer fp = batch.get(index);
-        // Guard: bot may have been deleted while skins were loading
-        if (!activePlayers.containsKey(fp.getUuid())) {
-            visualChain(batch, index + 1, location);
-            return;
-        }
-
         finishSpawn(fp, location);
 
         // join-delay values in config are in seconds — convert to ticks
@@ -302,19 +309,22 @@ public class FakePlayerManager {
         int delayMaxSecs = Math.max(delayMinSecs, Config.joinDelayMax());
         long delayTicks;
         if (delayMaxSecs <= 0) {
-            // no stagger: continue immediately on same tick
             delayTicks = 0L;
         } else {
             int spread = delayMaxSecs - delayMinSecs;
             int secs = delayMinSecs + (spread > 0
                     ? ThreadLocalRandom.current().nextInt(spread + 1)
                     : 0);
-            // convert seconds to ticks (20 ticks = 1s)
             delayTicks = Math.max(1L, (long) secs * 20L);
         }
 
-        Bukkit.getScheduler().runTaskLater(plugin,
-                () -> visualChain(batch, index + 1, location), delayTicks);
+        final int next = index + 1;
+        if (delayTicks <= 0) {
+            // Use runTask so continuation is always a fresh stack frame, never a direct call.
+            Bukkit.getScheduler().runTask(plugin, () -> visualChain(batch, next, location));
+        } else {
+            Bukkit.getScheduler().runTaskLater(plugin, () -> visualChain(batch, next, location), delayTicks);
+        }
     }
 
     private void finishSpawn(FakePlayer fp, Location spawnLoc) {
@@ -346,24 +356,28 @@ public class FakePlayerManager {
 
             // 2. Send tab list — now carries the correct skin texture
             List<Player> online = new ArrayList<>(Bukkit.getOnlinePlayers());
-            Config.debug("Sending tab-list add for '" + fp.getName() + "' display='" + fp.getDisplayName() + "' packet='" + fp.getPacketProfileName() + "'");
-            for (Player p : online) PacketHelper.sendTabListAdd(p, fp);
+            if (Config.tabListEnabled()) {
+                Config.debug("Sending tab-list add for '" + fp.getName() + "' display='" + fp.getDisplayName() + "' packet='" + fp.getPacketProfileName() + "'");
+                for (Player p : online) PacketHelper.sendTabListAdd(p, fp);
 
-            // Send immediate UPDATE_DISPLAY_NAME to try and override TAB plugins
-            for (Player p : online) PacketHelper.sendTabListDisplayNameUpdate(p, fp);
+                // Send immediate UPDATE_DISPLAY_NAME to try and override TAB plugins
+                for (Player p : online) PacketHelper.sendTabListDisplayNameUpdate(p, fp);
 
-            // 3. Re-send after 3 ticks and again after 20 ticks in case TAB plugin overwrites it
-            Bukkit.getScheduler().runTaskLater(plugin, () -> {
-                Config.debug("Re-sending tab-list add (3t) for '" + fp.getName() + "' display='" + fp.getDisplayName() + "' packet='" + fp.getPacketProfileName() + "'");
-                for (Player p : Bukkit.getOnlinePlayers()) PacketHelper.sendTabListAdd(p, fp);
-                for (Player p : Bukkit.getOnlinePlayers()) PacketHelper.sendTabListDisplayNameUpdate(p, fp);
-            }, 3L);
+                // 3. Re-send after 3 ticks and again after 20 ticks in case TAB plugin overwrites it
+                Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                    Config.debug("Re-sending tab-list add (3t) for '" + fp.getName() + "' display='" + fp.getDisplayName() + "' packet='" + fp.getPacketProfileName() + "'");
+                    for (Player p : Bukkit.getOnlinePlayers()) PacketHelper.sendTabListAdd(p, fp);
+                    for (Player p : Bukkit.getOnlinePlayers()) PacketHelper.sendTabListDisplayNameUpdate(p, fp);
+                }, 3L);
 
-            Bukkit.getScheduler().runTaskLater(plugin, () -> {
-                Config.debug("Re-sending tab-list add (20t) for '" + fp.getName() + "' display='" + fp.getDisplayName() + "' packet='" + fp.getPacketProfileName() + "'");
-                for (Player p : Bukkit.getOnlinePlayers()) PacketHelper.sendTabListAdd(p, fp);
-                for (Player p : Bukkit.getOnlinePlayers()) PacketHelper.sendTabListDisplayNameUpdate(p, fp);
-            }, 20L);
+                Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                    Config.debug("Re-sending tab-list add (20t) for '" + fp.getName() + "' display='" + fp.getDisplayName() + "' packet='" + fp.getPacketProfileName() + "'");
+                    for (Player p : Bukkit.getOnlinePlayers()) PacketHelper.sendTabListAdd(p, fp);
+                    for (Player p : Bukkit.getOnlinePlayers()) PacketHelper.sendTabListDisplayNameUpdate(p, fp);
+                }, 20L);
+            } else {
+                Config.debug("Tab-list disabled — skipping tab add for '" + fp.getName() + "'");
+            }
 
             // 4. Broadcast join message
             if (Config.joinMessage()) {
@@ -788,8 +802,40 @@ public class FakePlayerManager {
      * tab-list entries must be re-sent (Minecraft clears them on world transitions).
      */
     public void syncToPlayer(Player player) {
+        if (!Config.tabListEnabled()) return;
         for (FakePlayer fp : activePlayers.values()) {
             PacketHelper.sendTabListAdd(player, fp);
+        }
+    }
+
+    /**
+     * Called after {@code /fpp reload} to apply the {@code tab-list.enabled} toggle immediately.
+     * <ul>
+     *   <li>If {@code enabled} is now {@code true}  — re-adds all active bots to every
+     *       online player's tab list so they appear instantly without needing to respawn.</li>
+     *   <li>If {@code enabled} is now {@code false} — removes all active bots from every
+     *       online player's tab list.</li>
+     * </ul>
+     */
+    public void applyTabListConfig() {
+        List<Player> online = new ArrayList<>(Bukkit.getOnlinePlayers());
+        if (online.isEmpty() || activePlayers.isEmpty()) return;
+
+        if (Config.tabListEnabled()) {
+            for (FakePlayer fp : activePlayers.values()) {
+                for (Player p : online) {
+                    PacketHelper.sendTabListAdd(p, fp);
+                    PacketHelper.sendTabListDisplayNameUpdate(p, fp);
+                }
+            }
+            Config.debug("applyTabListConfig: re-added " + activePlayers.size() + " bots to tab list.");
+        } else {
+            for (FakePlayer fp : activePlayers.values()) {
+                for (Player p : online) {
+                    PacketHelper.sendTabListRemove(p, fp);
+                }
+            }
+            Config.debug("applyTabListConfig: removed " + activePlayers.size() + " bots from tab list.");
         }
     }
 

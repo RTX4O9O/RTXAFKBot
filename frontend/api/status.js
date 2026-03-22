@@ -62,7 +62,7 @@ module.exports = async (req, res) => {
     const fallback = {
       name: null,
       version: null,
-      downloadUrl: process.env.PLUGIN_DOWNLOAD_URL || "https://api.fpp.com/",
+      downloadUrl: process.env.PLUGIN_DOWNLOAD_URL || "https://fake-player-plugin.vercel.app/",
       notes: null,
     };
     if (!obj || typeof obj !== "object") return fallback;
@@ -74,7 +74,7 @@ module.exports = async (req, res) => {
     const downloadUrl =
       toSafeString(obj.downloadUrl || obj.download_url || obj.website) ||
       process.env.PLUGIN_DOWNLOAD_URL ||
-      "https://api.fpp.com/";
+      "https://fake-player-plugin.vercel.app/";
     const notes =
       toSafeString(obj.description || obj.notes || obj.body || obj.summary) ||
       null;
@@ -120,14 +120,21 @@ module.exports = async (req, res) => {
     return null;
   }
 
+  // If LATEST_VERSION env var is set, it always overrides whatever is in plugin.yml or
+  // the remote API. Set this on Vercel when a new release is published so the update
+  // checker correctly detects outdated installs.
+  const pinnedVersion = process.env.LATEST_VERSION || process.env.PLUGIN_VERSION;
+
   // If local plugin.yml exists, return concise info (only minimal fields)
   if (fs.existsSync(pluginYml)) {
     const raw = safeReadYaml(pluginYml) || {};
-    // Some YAML layouts embed the real plugin info under a wrapper key — find it.
     const bestLocal =
       findBestObject(raw) ||
       (raw.plugin && typeof raw.plugin === "object" ? raw.plugin : raw);
-    return res.status(200).json(mapToMinimal(bestLocal));
+    const mapped = mapToMinimal(bestLocal);
+    // Pinned version takes priority over what's in plugin.yml
+    if (pinnedVersion) mapped.version = pinnedVersion;
+    return res.status(200).json(mapped);
   }
 
   // No local files — proxy to configured PLUGIN_API_URL

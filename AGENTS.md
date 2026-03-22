@@ -32,7 +32,7 @@ Purpose: help automated agents quickly understand, modify, and verify the FakePl
 
 3) Key patterns & concrete examples (copy-ready pointers)
 - Migration runs before config init: `ConfigMigrator.migrateIfNeeded(this)` in `onEnable` (see `FakePlayerPlugin.java`).
-- Config usage: call `Config.init(this)` then use accessors like `Config.fakeChatEnabled()` in code.
+- Config usage: call `Config.init(this)` then use accessors like `Config.fakeChatEnabled()` in code. New accessor added: `Config.tabListShowBots()` (key `tab-list.show-bots`, default `true`) — when `false`, bots are never added to any player's tab list; the 20-tick display-name refresh loop, `syncToPlayer`, `resendTab` in `FakePlayerBody`, and the respawn re-add in `FakePlayerEntityListener` all check this flag before sending any `sendTabListAdd` packets. Toggling via `/fpp reload` calls `FakePlayerManager.applyTabListConfig()` which immediately removes or re-adds all active bots' tab entries for all online players.
 - Language messages: always use `Lang.get("key")` (returns Adventure `Component`) or `Lang.raw("key")` (returns `String`) — never hard-code user-facing text. Named placeholders: `Lang.get("freeze-frozen", "name", fp.getDisplayName())`. All keys live in `src/main/resources/language/en.yml`.
 - Permission checks: use `Perm.has(sender, Perm.SPAWN)` or `Perm.hasOrOp(sender, Perm.ALL)` — never hard-code node strings. Per-user bot limits resolved via `Perm.resolveUserBotLimit(sender)` (scans `fpp.bot.1` … `fpp.bot.100`; returns -1 if none set, caller falls back to `Config.userBotLimit()`).
 - Command registration: plugin registers commands via `commandManager.register(new SpawnCommand(...))` and then `getCommand("fpp").setExecutor(commandManager)` (see `onEnable`).

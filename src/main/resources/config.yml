@@ -1,11 +1,11 @@
 # ─────────────────────────────────────────────────────────────────────────────
-#  ꜰᴀᴋᴇ ᴘʟᴀʏᴇʀ ᴘʟᴜɢɪɴ  ·  config.yml  ·  v1.4.20
+#  ꜰᴀᴋᴇ ᴘʟᴀʏᴇʀ ᴘʟᴜɢɪɴ  ·  config.yml  ·  v1.4.21
 #  Run /fpp reload to apply changes without restarting the server.
 #  Colors use MiniMessage: <#0079FF>text</#0079FF>  <gray>text</gray>
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Internal — managed by the migration system. Do NOT edit.
-config-version: 21
+config-version: 24
 # Internal migration version — updated automatically. Do not edit.
 
 language: en         # Language file to use (language/<lang>.yml)
@@ -213,16 +213,13 @@ fake-chat:
     max: 10   # Seconds between messages (max)
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  TAB LIST HEADER / FOOTER
-#  Optional tab-list header and footer showing real vs fake player counts.
-#  Placeholders: {bot_count}  {real_count}  {total_count}  {max_bots}
-#  Colors use MiniMessage: <#0079FF>text</#0079FF>
+#  TAB LIST
+#  Controls whether bots appear as entries in the player tab list.
+#  true  = bots show in the tab list (default)
+#  false = bots are invisible in the tab list (server-count still counts them)
 # ─────────────────────────────────────────────────────────────────────────────
 tab-list:
-  enabled: false
-  update-interval: 40   # Ticks between refreshes (40 = 2 s)
-  header: "<dark_gray>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n<#0079FF><bold>ꜱᴇʀᴠᴇʀ ɴᴀᴍᴇ</#0079FF>\n<gray>Players: <white>{real_count} <dark_gray>+ <#0079FF>{bot_count} ʙᴏᴛꜱ\n<dark_gray>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  footer: "<dark_gray>ᴘᴏᴡᴇʀᴇᴅ ʙʏ <#0079FF>ꜰᴀᴋᴇ ᴘʟᴀʏᴇʀ ᴘʟᴜɢɪɴ</#0079FF>"
+  enabled: true
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  DATABASE

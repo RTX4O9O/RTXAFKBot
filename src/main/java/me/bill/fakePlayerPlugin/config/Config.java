@@ -77,24 +77,14 @@ public final class Config {
 
     // ── Tab list  (tab-list.*) ────────────────────────────────────────────────
 
-    /** Whether the tab-list header/footer manager is active. */
+    /**
+     * Whether bots appear as entries in the player tab list.
+     * {@code true}  = bots are visible in the tab list (default).
+     * {@code false} = bots are hidden from the tab list; they still count
+     * toward the server player count shown in the multiplayer screen.
+     */
     public static boolean tabListEnabled() {
-        return cfg.getBoolean("tab-list.enabled", false);
-    }
-
-    /** MiniMessage text for the tab-list header. Supports {bot_count}, {real_count}, {total_count}, {max_bots}. */
-    public static String tabListHeader() {
-        return cfg.getString("tab-list.header", "");
-    }
-
-    /** MiniMessage text for the tab-list footer. Same placeholders as header. */
-    public static String tabListFooter() {
-        return cfg.getString("tab-list.footer", "");
-    }
-
-    /** How often (ticks) to refresh the tab-list header/footer. Default 40 (2 s). */
-    public static int tabListUpdateInterval() {
-        return cfg.getInt("tab-list.update-interval", 40);
+        return cfg.getBoolean("tab-list.enabled", true);
     }
 
     // ── Bot Limits  (limits.*) ────────────────────────────────────────────────

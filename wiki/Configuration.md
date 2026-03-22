@@ -29,6 +29,7 @@ All changes take effect immediately after running `/fpp reload` — no server re
 | [`fake-player.collision`](#collision--push) | Push physics |
 | [`fake-player.swap`](#swap-system) | Bot rotation settings |
 | [`fake-chat`](#fake-chat) | Bot chat AI |
+| [`tab-list`](#tab-list) | Tab-list header/footer and bot visibility toggle |
 | [`database`](#database) | SQLite / MySQL storage |
 
 ---
@@ -320,6 +321,21 @@ fake-chat:
 ```
 
 See [Fake Chat](Fake-Chat.md) for a full explanation.
+
+---
+
+## Tab List
+
+```yaml
+tab-list:
+  enabled: true
+```
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `enabled` | boolean | `true` | **Whether bots appear as entries in the player tab list.** `true` = bots show in the tab list. `false` = bots are invisible in the tab list; they still count toward the server player count shown in the multiplayer server-list screen. Hot-reloadable via `/fpp reload`. |
+
+> **For custom tab-list headers and footers**, use a dedicated tab-list plugin (e.g. TAB, BetterTabList). FPP no longer manages header/footer text.
 
 ---
 

@@ -2,6 +2,7 @@ package me.bill.fakePlayerPlugin.listener;
 
 import me.bill.fakePlayerPlugin.FakePlayerPlugin;
 import me.bill.fakePlayerPlugin.fakeplayer.FakePlayerManager;
+import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -38,11 +39,11 @@ public class PlayerWorldChangeListener implements Listener {
 
         // Re-sync tab list entries after a short delay (3 ticks) so the
         // client has finished its own world-transition state reset.
-        player.getScheduler().runDelayed(plugin, task -> {
+        // Use Bukkit.getScheduler() (not player.getScheduler()) for compatibility
+        // with non-Folia platforms such as Cardboard / Fabric-based servers.
+        Bukkit.getScheduler().runTaskLater(plugin, () -> {
             if (!player.isOnline()) return;
             manager.syncToPlayer(player);
-        }, null, 3L);
+        }, 3L);
     }
 }
-
-

@@ -122,21 +122,23 @@ public class FakePlayerEntityListener implements Listener {
                     }
                     fp.setPhysicsEntity(newBody);
                     manager.registerEntityIndex(newBody.getEntityId(), fp);
-                    Bukkit.getScheduler().runTaskLater(plugin, () -> {
-                        if (!newBody.isValid()) return;
-                        FakePlayerBody.applyResolvedSkin(plugin, fp, newBody);
-                        fp.setNametagEntity(FakePlayerBody.spawnNametag(fp, newBody));
                         Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                            if (!newBody.isValid()) return;
+                            FakePlayerBody.applyResolvedSkin(plugin, fp, newBody);
+                            fp.setNametagEntity(FakePlayerBody.spawnNametag(fp, newBody));
+                            Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                                if (Config.tabListEnabled())
+                                    for (Player p : Bukkit.getOnlinePlayers())
+                                        PacketHelper.sendTabListAdd(p, fp);
+                            }, 20L);
+                        }, 1L);
+                    } else {
+                        // Body disabled but bot should "respawn" — re-add to tab list
+                        fp.setNametagEntity(null);
+                        if (Config.tabListEnabled())
                             for (Player p : Bukkit.getOnlinePlayers())
                                 PacketHelper.sendTabListAdd(p, fp);
-                        }, 20L);
-                    }, 1L);
-                } else {
-                    // Body disabled but bot should "respawn" — re-add to tab list
-                    fp.setNametagEntity(null);
-                    for (Player p : Bukkit.getOnlinePlayers())
-                        PacketHelper.sendTabListAdd(p, fp);
-                }
+                    }
 
                 fp.setSpawnLocation(respawnLoc);
             }, delay);

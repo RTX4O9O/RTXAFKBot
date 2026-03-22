@@ -2,7 +2,7 @@
 
 > Spawn realistic fake players on your Paper server — complete with tab list, server list count, join/leave/kill messages, staggered join/leave delays, in-world physics bodies, real-player-equivalent chunk loading, guaranteed skin support, bot swap/rotation, fake chat, session database tracking, LuckPerms integration, and full hot-reload configuration.
 
-![Version](https://img.shields.io/badge/version-1.4.21-0079FF?style=flat-square)
+![Version](https://img.shields.io/badge/version-1.4.22-0079FF?style=flat-square)
 ![MC](https://img.shields.io/badge/Minecraft-1.21.x-0079FF?style=flat-square)
 ![Platform](https://img.shields.io/badge/platform-Paper-0079FF?style=flat-square)
 ![Java](https://img.shields.io/badge/Java-21-0079FF?style=flat-square)
@@ -334,10 +334,7 @@ fake-chat:
 #  Optional animated tab-list header and footer.
 #  Placeholders: {bot_count}  {real_count}  {total_count}  {max_bots}
 tab-list:
-  enabled: false
-  update-interval: 40   # Ticks between refreshes (40 = 2 s)
-  header: "<dark_gray>━━━━━━━━━━\n<#0079FF><bold>ꜱᴇʀᴠᴇʀ ɴᴀᴍᴇ</#0079FF>\n<gray>Players: <white>{real_count} <dark_gray>+ <#0079FF>{bot_count} ʙᴏᴛꜱ\n<dark_gray>━━━━━━━━━━"
-  footer: "<dark_gray>ᴘᴏᴡᴇʀᴇᴅ ʙʏ <#0079FF>ꜰᴀᴋᴇ ᴘʟᴀʏᴇʀ ᴘʟᴜɢɪɴ</#0079FF>"
+  enabled: true         # false = bots hidden from the tab list (still count in server player count)
 
 # ── Database ───────────────────────────────────────────────────────────────
 #  SQLite: zero-config — plugins/FakePlayerPlugin/data/fpp.db
@@ -646,4 +643,4 @@ Contact: [Discord](https://discord.gg/pzFQWA4TXq) — `Bill_Hub`
 
 ---
 
-*Built for Paper 1.21.x · Java 21 · FPP v1.4.21 · [Modrinth](https://modrinth.com/plugin/fake-player-plugin-(fpp)) - [Spigotmc](https://www.spigotmc.org/resources/fake-player-plugin-fpp.133572/) - [Papermc](https://hangar.papermc.io/Pepe-tf/FakePlayerPlugin)*
+*Built for Paper 1.21.x · Java 21 · FPP v1.4.22 · [Modrinth](https://modrinth.com/plugin/fake-player-plugin-(fpp)) - [Spigotmc](https://www.spigotmc.org/resources/fake-player-plugin-fpp.133572/) - [Papermc](https://hangar.papermc.io/Pepe-tf/FakePlayerPlugin)*

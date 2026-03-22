@@ -6,7 +6,7 @@
 
     <groupId>me.bill</groupId>
     <artifactId>fpp</artifactId>
-    <version>1.4.21</version>
+    <version>1.4.22</version>
     <packaging>jar</packaging>
 
     <name>fpp</name>
@@ -53,6 +53,42 @@
                     </execution>
                 </executions>
             </plugin>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.1.0</version>
+                <executions>
+                    <execution>
+                        <id>proguard-obfuscation</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <executable>java</executable>
+                            <arguments>
+                                <argument>-jar</argument>
+                                <argument>${basedir}/proguard.jar</argument>
+                                <argument>@${basedir}/proguard.conf</argument>
+                                <argument>-injars</argument>
+                                <argument>${project.build.directory}/${project.build.finalName}.jar</argument>
+                                <argument>-outjars</argument>
+                                <argument>${project.build.directory}/${project.build.finalName}-obfuscated.jar</argument>
+                                <argument>-libraryjars</argument>
+                                <argument>${java.home}/jmods/java.base.jmod(!**.jar;!module-info.class)</argument>
+                                <argument>-libraryjars</argument>
+                                <argument>${java.home}/jmods/java.sql.jmod(!**.jar;!module-info.class)</argument>
+                                <argument>-libraryjars</argument>
+                                <argument>${java.home}/jmods/java.logging.jmod(!**.jar;!module-info.class)</argument>
+                                <argument>-libraryjars</argument>
+                                <argument>${java.home}/jmods/java.naming.jmod(!**.jar;!module-info.class)</argument>
+                                <argument>-libraryjars</argument>
+                                <argument>${java.home}/jmods/java.management.jmod(!**.jar;!module-info.class)</argument>
+                            </arguments>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
         <resources>
             <!-- Regular resources: YAML, properties, etc. — text filtering enabled -->
@@ -92,7 +128,18 @@
             <id>faststats-releases</id>
             <url>https://repo.faststats.dev/releases</url>
         </repository>
+        <repository>
+            <id>guardsquare</id>
+            <url>https://repository.guardsquare.com/content/repositories/releases</url>
+        </repository>
     </repositories>
+
+    <pluginRepositories>
+        <pluginRepository>
+            <id>guardsquare</id>
+            <url>https://repository.guardsquare.com/content/repositories/releases</url>
+        </pluginRepository>
+    </pluginRepositories>
 
     <dependencies>
         <!-- Paper public API — the only compile-time dependency needed -->

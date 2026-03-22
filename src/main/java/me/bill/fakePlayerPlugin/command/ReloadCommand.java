@@ -12,9 +12,33 @@ import me.bill.fakePlayerPlugin.util.ConfigValidator;
 import me.bill.fakePlayerPlugin.util.FppLogger;
 import me.bill.fakePlayerPlugin.util.LuckPermsHelper;
 import me.bill.fakePlayerPlugin.util.UpdateChecker;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
+import net.kyori.adventure.text.format.TextColor;
 import org.bukkit.command.CommandSender;
 
+/**
+ * Reloads all plugin configuration and runtime state without requiring a server restart.
+ *
+ * <h3>Reload sequence</h3>
+ * <ol>
+ *   <li>Config YAML files (config.yml, bot-names.yml, bot-messages.yml)</li>
+ *   <li>Language file (language/en.yml)</li>
+ *   <li>Skin cache and skin repository (folder + pool)</li>
+ *   <li>Tab-list manager (header/footer/bot visibility toggle)</li>
+ *   <li>Active bot state (body spawn, swap cancellation, tab-list sync)</li>
+ *   <li>LuckPerms cache invalidation (prefix/weight changes)</li>
+ *   <li>Config validation (warnings for misconfigurations)</li>
+ *   <li>Update checker (fresh version check)</li>
+ * </ol>
+ *
+ * <p>All changes take effect immediately — no server restart required.
+ */
 public class ReloadCommand implements FppCommand {
+
+    private static final TextColor ACCENT = TextColor.fromHexString("#0079FF");
+    private static final TextColor GRAY   = NamedTextColor.GRAY;
+    private static final TextColor GREEN  = NamedTextColor.GREEN;
 
     private final FakePlayerPlugin plugin;
 
@@ -29,63 +53,79 @@ public class ReloadCommand implements FppCommand {
     public boolean execute(CommandSender sender, String[] args) {
         long start = System.currentTimeMillis();
 
-        Config.debug("Reload triggered by " + sender.getName() + ".");
-        Config.reload();
-        Config.debug("Config reloaded.");
-        Lang.reload();
-        Config.debug("Language file reloaded.");
-        BotNameConfig.reload();
-        Config.debug("Bot name pool reloaded (" + BotNameConfig.getNames().size() + " names).");
-        BotMessageConfig.reload();
-        Config.debug("Bot message pool reloaded (" + BotMessageConfig.getMessages().size() + " messages).");
+        // Show progress to the user with step-by-step feedback
+        sender.sendMessage(Component.text("Reloading FakePlayerPlugin...").color(ACCENT));
 
-        // Clear skin cache so bots get fresh skins after reload (fetch mode)
+        // ── 1. Core config files ──────────────────────────────────────────────
+        Config.reload();
+        Lang.reload();
+        BotNameConfig.reload();
+        BotMessageConfig.reload();
+        sendStep(sender, "Config & language files reloaded");
+
+        // ── 2. Skin system ────────────────────────────────────────────────────
         if (Config.skinClearCacheOnReload()) {
             SkinFetcher.clearCache();
-            Config.debug("Skin cache cleared (" + Config.skinMode() + " mode).");
         }
-        // Reinitialise the skin repository (picks up new folder files + config pool)
         SkinRepository.get().reload();
-        Config.debug("Skin repository reloaded (mode=" + Config.skinMode()
-                + ", folder=" + SkinRepository.get().getFolderSkinCount()
-                + ", pool=" + SkinRepository.get().getPoolSkinCount() + ").");
+        sendStep(sender, "Skin system updated (" + Config.skinMode() + " mode, "
+                + SkinRepository.get().getFolderSkinCount() + " folder + "
+                + SkinRepository.get().getPoolSkinCount() + " pool skins)");
 
-        long ms = System.currentTimeMillis() - start;
-        Config.debug("Reload finished in " + ms + "ms.");
-
-        // Reload tab-list header/footer (picks up new toggle + interval)
+        // ── 3. Tab-list manager ───────────────────────────────────────────────
         if (plugin.getTabListManager() != null) {
             plugin.getTabListManager().reload();
-            Config.debug("TabListManager reloaded.");
         }
+        sendStep(sender, "Tab-list config applied (bots " 
+                + (Config.tabListEnabled() ? "visible" : "hidden") + ")");
 
-        // Apply runtime-state changes that must take effect immediately:
-        // • If swap was disabled, cancel all pending session timers so no bots leave
-        // • If body.enabled was turned off, remove Mannequin bodies from active bots now
+        // ── 4. Active bot runtime state ───────────────────────────────────────
         me.bill.fakePlayerPlugin.fakeplayer.FakePlayerManager fpm = plugin.getFakePlayerManager();
         if (fpm != null) {
+            int activeCount = fpm.getCount();
+            
             if (!Config.swapEnabled()) {
                 fpm.cancelAllSwap();
-                Config.debug("Swap disabled — cancelled all pending session timers.");
+                sendStep(sender, "Swap disabled — cancelled all pending timers");
             }
+            
             fpm.applyBodyConfig();
-            Config.debug("Body config applied to active bots.");
+            fpm.applyTabListConfig();
+            
+            if (activeCount > 0) {
+                sendStep(sender, activeCount + " active bot(s) updated");
+            }
         }
 
-        // Re-validate config and warn if issues found
+        // ── 5. LuckPerms cache invalidation ───────────────────────────────────
+        LuckPermsHelper.invalidateCache();
+        sendStep(sender, "LuckPerms cache cleared");
+
+        // ── 6. Config validation ──────────────────────────────────────────────
         int issues = ConfigValidator.validate();
         if (issues > 0) {
-            FppLogger.warn("Reload completed with " + issues + " config issue(s) — see above.");
+            sender.sendMessage(Component.text("⚠ " + issues + " config issue(s) detected — check console")
+                    .color(NamedTextColor.YELLOW));
         }
 
-        FppLogger.success("Plugin reloaded by " + sender.getName() + " in " + ms + "ms.");
-        sender.sendMessage(Lang.get("reload-success", "ms", String.valueOf(ms)));
-        // Invalidate LP cache so any group/prefix changes in LuckPerms are picked up
-        LuckPermsHelper.invalidateCache();
-
-        // Invalidate cached update result then re-run check so admins always see current status
+        // ── 7. Update checker (async, non-blocking) ───────────────────────────
         UpdateChecker.invalidateCache();
         UpdateChecker.check(plugin);
+
+        long ms = System.currentTimeMillis() - start;
+        
+        // Final success message
+        Component successMsg = Component.text("✓ Reload complete in " + ms + "ms")
+                .color(GREEN);
+        sender.sendMessage(successMsg);
+        FppLogger.success("Plugin reloaded by " + sender.getName() + " in " + ms + "ms.");
+        
         return true;
+    }
+
+    /** Sends a compact step message with a checkmark prefix. */
+    private void sendStep(CommandSender sender, String message) {
+        sender.sendMessage(Component.text("  ✓ ").color(GREEN)
+                .append(Component.text(message).color(GRAY)));
     }
 }

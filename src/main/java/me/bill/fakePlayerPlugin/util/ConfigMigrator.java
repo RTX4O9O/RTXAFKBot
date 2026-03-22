@@ -42,7 +42,7 @@ public final class ConfigMigrator {
      * The config-version value written by this build.
      * <b>Increment this whenever config.yml structure changes.</b>
      */
-    public static final int CURRENT_VERSION = 21;
+    public static final int CURRENT_VERSION = 24;
 
     /**
      * Mirrors the {@code debug} flag read directly from the raw YAML during migration.
@@ -113,6 +113,9 @@ public final class ConfigMigrator {
         if (stored < 18) anyChange |= v17to18(cfg);
         if (stored < 19) anyChange |= v18to19(cfg);
         if (stored < 20) anyChange |= v19to20(cfg);
+        if (stored < 22) anyChange |= v21to22(cfg);
+        if (stored < 23) anyChange |= v22to23(cfg);
+        if (stored < 24) anyChange |= v23to24(cfg);
 
         // ── Fill any remaining missing keys from jar defaults ──────────────────
         fillDefaults(plugin, cfg);
@@ -566,6 +569,74 @@ public final class ConfigMigrator {
         if (!cfg.contains("luckperms.weight-offset")) {
             cfg.set("luckperms.weight-offset", -10);
             log("v19→v20", "added luckperms.weight-offset = -10");
+            any = true;
+        }
+        return any;
+    }
+
+    /**
+     * v21 → v22: Add {@code tab-list.show-bots} (now superseded by v22→v23).
+     */
+    private static boolean v21to22(YamlConfiguration cfg) {
+        boolean any = false;
+        if (!cfg.contains("tab-list.show-bots")) {
+            cfg.set("tab-list.show-bots", true);
+            log("v21→v22", "added tab-list.show-bots = true");
+            any = true;
+        }
+        return any;
+    }
+
+    /**
+     * v22 → v23: Simplify tab-list config.
+     * <ul>
+     *   <li>Header/footer/update-interval feature removed — drop those keys.</li>
+     *   <li>{@code tab-list.enabled} now controls bot tab-list visibility.
+     *       The old value (which toggled header/footer, default {@code false}) is
+     *       <b>ignored</b> — we always write the correct new value.</li>
+     *   <li>If {@code show-bots: false} was explicitly set, honour it by setting
+     *       {@code enabled: false} so bots stay hidden after migration.</li>
+     * </ul>
+     */
+    private static boolean v22to23(YamlConfiguration cfg) {
+        boolean any = false;
+
+        // The old tab-list.enabled meant "show header/footer" (default: false).
+        // The new meaning is "show bots in tab list" (default: true).
+        // ALWAYS overwrite with the correct new value — the old value is meaningless here.
+        boolean wantHidden = cfg.contains("tab-list.show-bots")
+                && !cfg.getBoolean("tab-list.show-bots", true);
+        cfg.set("tab-list.enabled", !wantHidden);
+        log("v22→v23", "set tab-list.enabled = " + !wantHidden
+                + (wantHidden ? " (show-bots was false)" : " (new default)"));
+        any = true;
+
+        // Remove deprecated keys
+        for (String dead : new String[]{"tab-list.show-bots", "tab-list.header",
+                                        "tab-list.footer", "tab-list.update-interval"}) {
+            if (cfg.contains(dead)) {
+                cfg.set(dead, null);
+                log("v22→v23", "removed deprecated key: " + dead);
+            }
+        }
+        return any;
+    }
+
+    /**
+     * v23 → v24: Corrective pass — ensures {@code tab-list.enabled} is {@code true}
+     * for any installation where the v22→v23 migration left the old {@code false}
+     * (header/footer toggle) value in place.  Only changes the value when it is
+     * currently {@code false} AND the deprecated {@code show-bots} key no longer
+     * exists (meaning the user never explicitly hid bots).
+     */
+    private static boolean v23to24(YamlConfiguration cfg) {
+        boolean any = false;
+        // If enabled is still false but show-bots is gone (meaning the old header/footer
+        // default was never intentionally "hide bots"), correct it to true.
+        if (!cfg.getBoolean("tab-list.enabled", true)
+                && !cfg.contains("tab-list.show-bots")) {
+            cfg.set("tab-list.enabled", true);
+            log("v23→v24", "corrected tab-list.enabled false→true (old header/footer default)");
             any = true;
         }
         return any;

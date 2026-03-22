@@ -2,7 +2,7 @@
 
 > Spawn realistic fake players on your Paper server — with tab list presence, server list count, join/leave messages, in-world bodies, guaranteed skins, chunk loading, bot swap/rotation, fake chat, and full hot-reload support.
 
-![Version](https://img.shields.io/badge/version-1.4.21-0079FF?style=flat-square)
+![Version](https://img.shields.io/badge/version-1.4.22-0079FF?style=flat-square)
 ![MC](https://img.shields.io/badge/Minecraft-1.21.x-0079FF?style=flat-square)
 ![Platform](https://img.shields.io/badge/platform-Paper-0079FF?style=flat-square)
 ![Java](https://img.shields.io/badge/Java-21-0079FF?style=flat-square)
@@ -146,7 +146,7 @@ Located at `plugins/FakePlayerPlugin/config.yml`. Run `/fpp reload` after any ch
 | `head-ai` | Enable/disable, look range, turn speed |
 | `swap` | Auto rotation — session length, farewell/greeting chat, AFK simulation |
 | `fake-chat` | Enable, message chance, interval |
-| `tab-list` | Optional animated tab-list header/footer with bot count placeholders |
+| `tab-list` | Optional animated tab-list header/footer with bot count placeholders; `show-bots` controls whether bots appear as tab-list entries |
 | `metrics` | Opt-out toggle for anonymous FastStats usage statistics |
 | `database` | SQLite (default) or MySQL |
 
@@ -210,7 +210,19 @@ When LuckPerms is installed and `luckperms.use-prefix: true`:
 
 ## ✦ Changelog
 
-### v1.4.21 *(2026-03-21)*
+### v1.4.22 *(2026-03-22)*
+- **Tab-list bot visibility** — `tab-list.enabled: true/false` now controls whether bots appear in the player tab list (simplified from v1.4.21). When `false`, bots are completely hidden from the tab list but still count toward the server player count. Hot-reloadable via `/fpp reload`.
+- **Multi-platform download links** — update notifications and `/fpp` info screen now show clickable links to all 4 platforms: Modrinth, SpigotMC, PaperMC Hangar, and BuiltByBit.
+- **Enhanced reload command** — `/fpp reload` now shows step-by-step progress with checkmarks for each subsystem (config, skins, tab-list, active bots, LuckPerms cache, validation). Reload time displayed at completion.
+- **Update checker improvements** — Modrinth API is now the primary source for version checks (always reflects actual published releases). Console output is a clean one-liner; in-game messages show a bordered notification with clickable download links matching the help menu style.
+- **Bug fixes:**
+  - Fixed tab-list migration bug where users upgrading from v1.4.20 would have `enabled: false` (header/footer toggle) incorrectly applied as bot visibility. Migration v23→v24 corrects this automatically.
+  - Fixed `StackOverflowError` in `visualChain` when spawning large batches of bots with `join-delay: 0` and some bots deleted mid-spawn.
+  - Fixed `NullPointerException` in `PlayerWorldChangeListener` on Cardboard/Fabric-based servers (replaced Folia-specific `player.getScheduler()` with `Bukkit.getScheduler()`).
+  - Fixed LuckPerms gradient shorthand not rendering correctly for bot prefixes (e.g. `{#FFFFFF>}text{#FFFFFF<}`).
+
+### v1.3.0 *(2026-03-15)*
+- **`tab-list.show-bots`** — new config toggle. Set `show-bots: false` to hide bots from the player tab list entirely (they still count in the server player count). Default `true`. Hot-reloadable via `/fpp reload`.
 - **Bug fix** — bots restored after a server restart no longer show literal `{spawner}`, `{num}`, or `{bot_name}` in their display name; stale saves from older versions are detected and the display name is rebuilt correctly.
 - **Bug fix** — trailing unclosed hex color tags (e.g. `<#9782ff>`) at the end of LuckPerms prefixes are now stripped before parsing, preventing broken text in nametags and the tab list.
 
@@ -292,4 +304,4 @@ When LuckPerms is installed and `luckperms.use-prefix: true`:
 
 ---
 
-*Built for Paper 1.21.x · Java 21 · FPP v1.4.21 · [Modrinth](https://modrinth.com/plugin/fake-player-plugin-(fpp)) - [Spigotmc](https://www.spigotmc.org/resources/fake-player-plugin-fpp.133572/) - [Papermc](https://hangar.papermc.io/Pepe-tf/FakePlayerPlugin) - [BuiltByBit](https://builtbybit.com/resources/fake-player-plugin.98704/)*
+*Built for Paper 1.21.x · Java 21 · FPP v1.4.22 · [Modrinth](https://modrinth.com/plugin/fake-player-plugin-(fpp)) - [Spigotmc](https://www.spigotmc.org/resources/fake-player-plugin-fpp.133572/) - [Papermc](https://hangar.papermc.io/Pepe-tf/FakePlayerPlugin) - [BuiltByBit](https://builtbybit.com/resources/fake-player-plugin.98704/)*
