@@ -101,6 +101,15 @@ public final class FakePlayer {
      */
     private boolean frozen = false;
 
+    /**
+     * Sequential index for user-tier bots (the {@code {num}} placeholder value).
+     * Set to {@code -1} for admin-spawned bots.
+     * Stored so that {@link me.bill.fakePlayerPlugin.fakeplayer.FakePlayerManager#updateAllBotPrefixes()}
+     * can correctly rebuild display names after a LuckPerms group change without
+     * leaving {@code {spawner}} or {@code {num}} as literal text.
+     */
+    private int botIndex = -1;
+
     /** Last world name — used for fast orphan/cross-world detection. */
     private String lastKnownWorld = null;
 
@@ -185,7 +194,8 @@ public final class FakePlayer {
     public void setAlive(boolean alive)          { this.alive = alive; }
     public void incrementTabRefresh()            { tabRefreshCount++; }
     public void setFrozen(boolean frozen)        { this.frozen = frozen; }
-    public void setLastKnownWorld(String world)  { this.lastKnownWorld = world; }
+    public int  getBotIndex()                    { return botIndex; }
+    public void setBotIndex(int index)           { this.botIndex = index; }
 
     // ── Chunk tracking (for ChunkLoader fast-path) ────────────────────────────
     public int getLastChunkX()                   { return lastChunkX; }

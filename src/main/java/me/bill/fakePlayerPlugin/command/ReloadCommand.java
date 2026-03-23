@@ -97,9 +97,14 @@ public class ReloadCommand implements FppCommand {
             }
         }
 
-        // ── 5. LuckPerms cache invalidation ───────────────────────────────────
+        // ── 5. LuckPerms cache invalidation + live prefix reapply ─────────────
         LuckPermsHelper.invalidateCache();
-        sendStep(sender, "LuckPerms cache cleared");
+        int lpUpdated = 0;
+        if (fpm != null && fpm.getCount() > 0) {
+            lpUpdated = fpm.updateAllBotPrefixes();
+        }
+        sendStep(sender, "LuckPerms cache cleared"
+                + (lpUpdated > 0 ? ", " + lpUpdated + " bot prefix(es) refreshed" : ""));
 
         // ── 6. Config validation ──────────────────────────────────────────────
         int issues = ConfigValidator.validate();

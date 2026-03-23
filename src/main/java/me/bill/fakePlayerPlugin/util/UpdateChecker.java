@@ -127,7 +127,9 @@ public final class UpdateChecker {
         String latestClean  = stripV(info.latest);
         String currentClean = stripV(info.current);
 
-        boolean updateAvailable = compareVersions(info.latest, info.current) > 0;
+        int  cmp            = compareVersions(info.current, info.latest);
+        boolean updateAvailable = cmp < 0;  // running < latest  → update exists
+        boolean isBeta          = cmp > 0;  // running > latest  → pre-release / beta
 
         if (updateAvailable) {
             // Console — simple one-liner pointing to Modrinth
@@ -143,6 +145,23 @@ public final class UpdateChecker {
             }
 
             // Persist for admins who join after startup
+            if (plugin instanceof me.bill.fakePlayerPlugin.FakePlayerPlugin fpp) {
+                fpp.setUpdateNotification(msg);
+            }
+
+        } else if (isBeta) {
+            // Running a pre-release / beta newer than the latest stable published version
+            FppLogger.warn("Running BETA v" + currentClean
+                    + " (latest stable: v" + latestClean + "). "
+                    + "Download stable: " + MODRINTH_PAGE);
+
+            Component msg = me.bill.fakePlayerPlugin.lang.Lang.get("update-beta",
+                    "current", currentClean, "latest", latestClean);
+
+            for (Player p : plugin.getServer().getOnlinePlayers()) {
+                if (Perm.hasOrOp(p, Perm.ALL)) p.sendMessage(msg);
+            }
+
             if (plugin instanceof me.bill.fakePlayerPlugin.FakePlayerPlugin fpp) {
                 fpp.setUpdateNotification(msg);
             }

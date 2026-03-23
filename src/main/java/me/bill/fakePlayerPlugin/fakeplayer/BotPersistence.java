@@ -208,7 +208,18 @@ public final class BotPersistence {
 
     /** Spawns one saved bot and schedules the next with a random join-delay. */
     private void restoreChain(FakePlayerManager manager, List<SavedBot> saved, int index) {
-        if (index >= saved.size()) return;
+        if (index >= saved.size()) {
+            // All bots have been queued — schedule one final prefix refresh 1 second later.
+            // This re-runs LP data resolution with a clean cache so every restored bot
+            // gets its correct coloured rank even if LP hadn't fully settled at restore time.
+            Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                me.bill.fakePlayerPlugin.util.LuckPermsHelper.invalidateCache();
+                int n = manager.updateAllBotPrefixes();
+                if (n > 0)
+                    FppLogger.info("Post-restore prefix refresh: " + n + " bot(s) updated.");
+            }, 20L);
+            return;
+        }
 
         SavedBot sb = saved.get(index);
 
@@ -225,20 +236,18 @@ public final class BotPersistence {
         // Spawn with restored UUID and display name — pass saved display name for proper restoration
         manager.spawnRestored(sb.name, sb.uuid, sb.displayName, sb.spawnedBy, sb.spawnedByUuid, loc);
 
-        // Stagger: use the configured join-delay range (config values are seconds)
-        int delayMinSecs = Config.joinDelayMin();
-        int delayMaxSecs = Math.max(delayMinSecs, Config.joinDelayMax());
+        // Stagger: use the configured join-delay range — values are TICKS (20 = 1 second)
+        int delayMinTicks = Config.joinDelayMin();
+        int delayMaxTicks = Math.max(delayMinTicks, Config.joinDelayMax());
         long delayTicks;
-        if (delayMaxSecs <= 0) {
-            // immediate-ish: schedule next on the next tick so world updates propagate
-            delayTicks = 1L;
+        if (delayMaxTicks <= 0) {
+            delayTicks = 1L; // at least 1 tick so world updates propagate
         } else {
-            int spread = delayMaxSecs - delayMinSecs;
-            int secs = delayMinSecs + (spread > 0
+            int spread = delayMaxTicks - delayMinTicks;
+            int t = delayMinTicks + (spread > 0
                     ? java.util.concurrent.ThreadLocalRandom.current().nextInt(spread + 1)
                     : 0);
-            // convert seconds -> ticks (20 ticks = 1s) and ensure at least 1 tick
-            delayTicks = Math.max(1L, (long) secs * 20L);
+            delayTicks = Math.max(1L, (long) t);
         }
 
         Bukkit.getScheduler().runTaskLater(plugin,

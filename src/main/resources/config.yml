@@ -1,11 +1,11 @@
 # ─────────────────────────────────────────────────────────────────────────────
-#  ꜰᴀᴋᴇ ᴘʟᴀʏᴇʀ ᴘʟᴜɢɪɴ  ·  config.yml  ·  v1.4.22
+#  ꜰᴀᴋᴇ ᴘʟᴀʏᴇʀ ᴘʟᴜɢɪɴ  ·  config.yml  ·  v1.4.23
 #  Run /fpp reload to apply changes without restarting the server.
 #  Colors use MiniMessage: <#0079FF>text</#0079FF>  <gray>text</gray>
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Internal — managed by the migration system. Do NOT edit.
-config-version: 24
+config-version: 25
 # Internal migration version — updated automatically. Do not edit.
 
 language: en         # Language file to use (language/<lang>.yml)
@@ -113,8 +113,10 @@ persistence:
   enabled: true
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  JOIN / LEAVE TIMING  (ticks — 20 ticks = 1 second)
-#  Each bot joins/leaves after a random delay in this range.
+#  JOIN / LEAVE TIMING
+#  Values are in TICKS.  20 ticks = 1 second.
+#  Each bot joins/leaves after a random tick delay in this range.
+#  Examples: 0 = instant   20 = 1 s   40 = 2 s   100 = 5 s
 # ─────────────────────────────────────────────────────────────────────────────
 join-delay:
   min: 0

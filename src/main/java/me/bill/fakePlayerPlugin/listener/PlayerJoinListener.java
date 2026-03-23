@@ -2,10 +2,12 @@ package me.bill.fakePlayerPlugin.listener;
 
 import me.bill.fakePlayerPlugin.FakePlayerPlugin;
 import me.bill.fakePlayerPlugin.fakeplayer.FakePlayerManager;
+import org.bukkit.Bukkit;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
+import org.bukkit.event.player.PlayerQuitEvent;
 
 /**
  * Syncs all currently active fake players to any real player who joins,
@@ -58,5 +60,21 @@ public class PlayerJoinListener implements Listener {
         org.bukkit.Bukkit.getScheduler().runTaskLater(plugin, () -> {
             try { manager.syncToPlayer(event.getPlayer()); } catch (Throwable ignored) {}
         }, 5L);
+    }
+
+    /**
+     * When a spawner disconnects, validate all their user bots' display names to ensure
+     * no unresolved {@code {placeholder}} tokens remain.  This is a safety net for the
+     * rare edge case where a bot's display name was not fully resolved at spawn/restore time.
+     */
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onQuit(PlayerQuitEvent event) {
+        if (manager.getCount() == 0) return;
+        java.util.UUID uuid = event.getPlayer().getUniqueId();
+        String name         = event.getPlayer().getName();
+        // Run one tick later so LP has a chance to process the disconnect first
+        Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            try { manager.validateUserBotNames(uuid, name); } catch (Throwable ignored) {}
+        }, 2L);
     }
 }

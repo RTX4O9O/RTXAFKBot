@@ -2,7 +2,7 @@
 
 > Spawn realistic fake players on your Paper server — complete with tab list, server list count, join/leave/kill messages, staggered join/leave delays, in-world physics bodies, real-player-equivalent chunk loading, guaranteed skin support, bot swap/rotation, fake chat, session database tracking, LuckPerms integration, and full hot-reload configuration.
 
-![Version](https://img.shields.io/badge/version-1.4.22-0079FF?style=flat-square)
+![Version](https://img.shields.io/badge/version-1.4.23-0079FF?style=flat-square)
 ![MC](https://img.shields.io/badge/Minecraft-1.21.x-0079FF?style=flat-square)
 ![Platform](https://img.shields.io/badge/platform-Paper-0079FF?style=flat-square)
 ![Java](https://img.shields.io/badge/Java-21-0079FF?style=flat-square)
@@ -63,7 +63,7 @@ Note: Semi-support is provided for older 1.21 releases (1.21.0 → 1.21.8). On t
 
 ## ✦ Installation
 
-1. Download `fpp-1.4.22.jar` from [Modrinth](https://modrinth.com/plugin/fake-player-plugin-(fpp)).
+1. Download `fpp-1.4.23.jar` from [Modrinth](https://modrinth.com/plugin/fake-player-plugin-(fpp)).
 2. Place it in your server's `plugins/` folder.
 3. Restart the server — default config files are generated automatically.
 4. Edit `plugins/FakePlayerPlugin/config.yml` as desired.
@@ -85,7 +85,7 @@ All sub-commands are under `/fpp` (aliases: `/fakeplayer`, `/fp`).
 |---|---|---|
 | `/fpp help [page]` | `fpp.help` | Paginated help menu with clickable ← / → navigation |
 | `/fpp spawn [amount] [--name <name>]` | `fpp.spawn` | Spawn fake player(s) at your location |
-| `/fpp delete <name\|all>` | `fpp.delete` | Delete a bot by name, or delete all bots at once |
+| `/fpp delete <name\|all\|random [n]>` | `fpp.delete` | Delete a bot by name, delete all bots, or remove a random selection |
 | `/fpp list` | `fpp.list` | List all active bots with name, uptime, world, coordinates, and spawner |
 | `/fpp chat [on\|off\|status]` | `fpp.chat` | Toggle or query the fake-chat system |
 | `/fpp swap [on\|off\|status]` | `fpp.swap` | Toggle or query the bot swap/rotation system |
@@ -115,6 +115,8 @@ All sub-commands are under `/fpp` (aliases: `/fakeplayer`, `/fp`).
 /fpp spawn --name Steve     — spawn 1 bot named "Steve"
 /fpp delete Steve           — remove bot "Steve" with a leave message
 /fpp delete all             — remove all bots with staggered leave messages
+/fpp delete random          — remove 1 random bot
+/fpp delete random 5        — remove 5 random bots
 /fpp list                   — show all active bots with uptime and location
 /fpp chat on / off / status — toggle or check fake chat
 /fpp swap on / off / status — toggle or check bot swap
@@ -198,12 +200,12 @@ Located at `plugins/FakePlayerPlugin/config.yml`. Run `/fpp reload` to apply cha
 
 ```yaml
 # ─────────────────────────────────────────────────────────────────────────────
-#  ꜰᴀᴋᴇ ᴘʟᴀʏᴇʀ ᴘʟᴜɢɪɴ    config.yml    v1.4.22
+#  ꜰᴀᴋᴇ ᴘʟᴀʏᴇʀ ᴘʟᴜɢɪɴ    config.yml    v1.4.23
 #  Run /fpp reload to apply changes without restarting the server.
 #  Colors use MiniMessage: <#0079FF>text</#0079FF>  <gray>text</gray>
 # ─────────────────────────────────────────────────────────────────────────────
 
-config-version: 19   # Internal — do NOT edit
+config-version: 25   # Internal — do NOT edit
 
 language: en         # Language file (language/<lang>.yml)
 debug: false         # Verbose console logging
@@ -503,6 +505,19 @@ FPP auto-detects LuckPerms at startup. When installed and `luckperms.use-prefix:
 
 ## ✦ Changelog
 
+### v1.4.23 *(2026-03-23)*
+#### Bug Fixes
+- **Bot rank colour preserved after restart** — bot display names now always reconstruct from the current LuckPerms prefix + name format on restore; colours are no longer stripped when saving to the database, and a post-restore prefix refresh runs automatically after all bots are re-queued.
+- **Join / leave delay timing fixed** — config values (`join-delay` / `leave-delay`) were being multiplied by 20 internally, making all delays 20× too long. Values are now treated as ticks directly as documented (e.g. `max: 20` = 1 second).
+- **`/fpp reload` now refreshes all bot prefixes** — LP cache is invalidated and `updateAllBotPrefixes()` is called, so prefix changes take effect immediately without a restart.
+
+#### New Features
+- **`/fpp despawn random [amount]`** — removes a random selection of active bots (default 1). Useful for gradual scale-down.
+- **Beta version detection** — when the running version is newer than the latest published release, admins see a styled in-game warning identifying the build as a beta. The message is also delivered to admins who join after the check completes, identical to how update-available notifications work.
+
+#### Internals
+- Config-version bumped to **25** (housekeeping stamp — no structural changes).
+
 ### v1.4.22 *(2026-03-22)*
 #### New Features
 - **LuckPerms auto-update** — bot display names, tab-list entries, and nametags now update in real-time when LuckPerms group data changes (prefix, weight, colours). No reload or respawn needed.
@@ -663,4 +678,4 @@ Contact: [Discord](https://discord.gg/pzFQWA4TXq) — `Bill_Hub`
 
 ---
 
-*Built for Paper 1.21.x · Java 21 · FPP v1.4.22 · [Modrinth](https://modrinth.com/plugin/fake-player-plugin-(fpp)) - [Spigotmc](https://www.spigotmc.org/resources/fake-player-plugin-fpp.133572/) - [Papermc](https://hangar.papermc.io/Pepe-tf/FakePlayerPlugin)*
+*Built for Paper 1.21.x · Java 21 · FPP v1.4.23 · [Modrinth](https://modrinth.com/plugin/fake-player-plugin-(fpp)) - [Spigotmc](https://www.spigotmc.org/resources/fake-player-plugin-fpp.133572/) - [Papermc](https://hangar.papermc.io/Pepe-tf/FakePlayerPlugin)*
