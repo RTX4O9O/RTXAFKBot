@@ -9,6 +9,7 @@ import me.bill.fakePlayerPlugin.util.BackupManager;
 import me.bill.fakePlayerPlugin.util.ConfigMigrator;
 import me.bill.fakePlayerPlugin.util.DataMigrator;
 import me.bill.fakePlayerPlugin.util.TextUtil;
+import me.bill.fakePlayerPlugin.util.YamlFileSyncer;
 import org.bukkit.command.CommandSender;
 
 import java.io.File;
@@ -45,7 +46,7 @@ public class MigrateCommand implements FppCommand {
     }
 
     @Override public String getName()        { return "migrate"; }
-    @Override public String getUsage()       { return "<backup|status|config|db>"; }
+    @Override public String getUsage()       { return "<backup|status|config|lang|names|messages|db>"; }
     @Override public String getDescription() { return "Manages config/data migration and backups."; }
     @Override public String getPermission()  { return Perm.ADMIN_MIGRATE; }
 
@@ -62,12 +63,15 @@ public class MigrateCommand implements FppCommand {
         }
 
         switch (args[0].toLowerCase()) {
-            case "backup"  -> doBackup(sender);
-            case "backups" -> doBackupsList(sender);
-            case "status"  -> doStatus(sender);
-            case "config"  -> doConfig(sender);
-            case "db"      -> doDb(sender, args);
-            default        -> sendHelp(sender);
+            case "backup"   -> doBackup(sender);
+            case "backups"  -> doBackupsList(sender);
+            case "status"   -> doStatus(sender);
+            case "config"   -> doConfig(sender);
+            case "lang"     -> doFileSync(sender, "language/en.yml",  "language/en.yml",  "Language file (en.yml)");
+            case "names"    -> doFileSync(sender, "bot-names.yml",    "bot-names.yml",    "Bot names (bot-names.yml)");
+            case "messages" -> doFileSync(sender, "bot-messages.yml", "bot-messages.yml", "Bot messages (bot-messages.yml)");
+            case "db"       -> doDb(sender, args);
+            default         -> sendHelp(sender);
         }
         return true;
     }
@@ -108,6 +112,28 @@ public class MigrateCommand implements FppCommand {
         // Config
         msg(sender, GRAY + "  Config version : " + configVer + " / " + ConfigMigrator.CURRENT_VERSION
                 + (configCurrent ? "  " + GREEN + "✔ current" : "  " + RED + "✘ outdated — run /fpp migrate config"));
+
+        // ── YAML file sync health ─────────────────────────────────────────────
+        msg(sender, COLOR + "  ꜰɪʟᴇ ꜱʏɴᴄ ꜱᴛᴀᴛᴜꜱ" + C_CLOSE);
+        // { diskRelPath, jarPath, displayLabel, subCommand }
+        String[][] syncFiles = {
+            {"language/en.yml",  "language/en.yml",  "  en.yml       ", "lang"},
+            {"bot-names.yml",    "bot-names.yml",     "  bot-names    ", "names"},
+            {"bot-messages.yml", "bot-messages.yml",  "  bot-messages ", "messages"},
+        };
+        for (String[] f : syncFiles) {
+            int missing = YamlFileSyncer.countMissingKeys(plugin, f[0], f[1]);
+            int total   = YamlFileSyncer.countJarKeys(plugin, f[1]);
+            if (missing < 0) {
+                msg(sender, GRAY + f[2] + ": " + RED + "✘ file missing (run /fpp reload to extract)");
+            } else if (missing == 0) {
+                msg(sender, GRAY + f[2] + ": " + GREEN + "✔ up to date"
+                        + GRAY + " (" + total + " keys)");
+            } else {
+                msg(sender, GRAY + f[2] + ": " + "<yellow>⚠ " + missing + " / " + total
+                        + " key(s) missing — run /fpp migrate " + f[3]);
+            }
+        }
 
         // Database
         DatabaseManager db = plugin.getDatabaseManager();
@@ -159,6 +185,49 @@ public class MigrateCommand implements FppCommand {
             msg(sender, GREEN + "✔ Config stamped as v" + ConfigMigrator.CURRENT_VERSION
                     + " (defaults filled).");
         }
+    }
+
+    /**
+     * Generic file-sync handler for language, bot-names, and bot-messages.
+     * Creates a config-files backup, then runs {@link YamlFileSyncer#syncMissingKeys}
+     * and reports the result.
+     */
+    private void doFileSync(CommandSender sender,
+                             String diskPath, String jarPath, String label) {
+        int missing = YamlFileSyncer.countMissingKeys(plugin, diskPath, jarPath);
+
+        if (missing == 0) {
+            msg(sender, GREEN + "✔ " + label + " is already up to date — no missing keys.");
+            return;
+        }
+        if (missing < 0) {
+            msg(sender, GRAY + label + " does not exist yet — extracting from JAR…");
+        } else {
+            msg(sender, GRAY + "Backing up config files before sync…");
+            plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
+                BackupManager.createConfigFilesBackup(plugin, "pre-sync");
+                sync(sender, GRAY + "Backup created. Syncing " + label + "…");
+                YamlFileSyncer.SyncResult result =
+                        YamlFileSyncer.syncMissingKeys(plugin, diskPath, jarPath);
+                if (result.hasChanges()) {
+                    sync(sender, GREEN + "✔ Added " + result.count() + " key(s) to " + label + ":");
+                    result.keysAdded().forEach(k ->
+                            sync(sender, GRAY + "    + " + k));
+                    sync(sender, GRAY + "  Run " + COLOR + "/fpp reload" + C_CLOSE
+                            + GRAY + " to apply the updated file.");
+                } else {
+                    sync(sender, GREEN + "✔ " + label + " is up to date — no changes made.");
+                }
+            });
+            return;   // async path handles messaging
+        }
+
+        // Sync synchronously for the "file missing" case (fast — just extracts)
+        YamlFileSyncer.SyncResult result =
+                YamlFileSyncer.syncMissingKeys(plugin, diskPath, jarPath);
+        msg(sender, GREEN + "✔ " + label + " extracted from JAR ("
+                + result.count() + " keys). Run " + COLOR + "/fpp reload" + C_CLOSE
+                + GRAY + " to load it.");
     }
 
     private void doDb(CommandSender sender, String[] args) {
@@ -244,7 +313,9 @@ public class MigrateCommand implements FppCommand {
     @Override
     public List<String> tabComplete(CommandSender sender, String[] args) {
         if (!sender.hasPermission(Perm.ADMIN_MIGRATE)) return List.of();
-        if (args.length == 1) return filter(List.of("backup", "backups", "status", "config", "db"), args[0]);
+        if (args.length == 1) return filter(
+                List.of("backup", "backups", "status", "config",
+                        "lang", "names", "messages", "db"), args[0]);
         if (args.length == 2 && args[0].equalsIgnoreCase("db"))
             return filter(List.of("merge", "export", "tomysql"), args[1]);
         if (args.length == 3 && args[0].equalsIgnoreCase("db") && args[1].equalsIgnoreCase("merge"))
@@ -256,13 +327,16 @@ public class MigrateCommand implements FppCommand {
 
     private void sendHelp(CommandSender sender) {
         msg(sender, COLOR + "ᴍɪɢʀᴀᴛɪᴏɴ & ʙᴀᴄᴋᴜᴘ ꜱʏꜱᴛᴇᴍ" + C_CLOSE);
-        row(sender, "/fpp migrate backup",          "Create a manual backup now");
-        row(sender, "/fpp migrate backups",          "List stored backups");
-        row(sender, "/fpp migrate status",           "Show migration & DB status");
-        row(sender, "/fpp migrate config",           "Re-run config migration chain");
-        row(sender, "/fpp migrate db merge [file]",  "Merge old fpp.db into current DB");
-        row(sender, "/fpp migrate db export",        "Export sessions to CSV");
-        row(sender, "/fpp migrate db tomysql",       "Migrate SQLite → MySQL");
+        row(sender, "/fpp migrate backup",           "Create a manual backup now");
+        row(sender, "/fpp migrate backups",           "List stored backups");
+        row(sender, "/fpp migrate status",            "Show migration & file sync status");
+        row(sender, "/fpp migrate config",            "Re-run config.yml migration chain");
+        row(sender, "/fpp migrate lang",              "Sync missing keys in language/en.yml");
+        row(sender, "/fpp migrate names",             "Sync missing keys in bot-names.yml");
+        row(sender, "/fpp migrate messages",          "Sync missing keys in bot-messages.yml");
+        row(sender, "/fpp migrate db merge [file]",   "Merge old fpp.db into current DB");
+        row(sender, "/fpp migrate db export",         "Export sessions to CSV");
+        row(sender, "/fpp migrate db tomysql",        "Migrate SQLite → MySQL");
     }
 
     private void row(CommandSender sender, String cmd, String desc) {

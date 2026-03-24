@@ -7,6 +7,7 @@ Purpose: help automated agents quickly understand, modify, and verify the FakePl
 - `src/main/resources/` — default `config.yml`, `plugin.yml`, `bot-names.yml`, `bot-messages.yml`
 - `src/main/resources/language/en.yml` — all user-facing messages (loaded by `Lang.java`)
 - `pom.xml` — build + jar metadata (`target/fpp-*.jar` produced)
+- `frontend/`, root `package.json`, and `vercel.json` — separate Node/Vercel status + update API sidecar used by the plugin’s update-check fallback; not part of the Maven plugin jar build.
 - `wiki/` — feature docs (Commands.md, Configuration.md, Getting-Started.md, Database.md, Language.md, Permissions.md, Skin-System.md, Swap-System.md, Bot-Behaviour.md, Bot-Messages.md, Bot-Names.md, Fake-Chat.md, FAQ.md, Migration.md, Home.md)
 - `src/main/java/me/bill/fakePlayerPlugin/util/` — helper subsystems and utilities (e.g. `FppMetrics`, `FppLogger`, `FppPlaceholderExpansion`, `TabListManager`, `BackupManager`, `UpdateChecker`, `ConfigValidator`, `DataMigrator`, `TextUtil`, `ConfigMigrator`, `LuckPermsHelper`, `CompatibilityChecker`).
 - `src/main/java/me/bill/fakePlayerPlugin/listener/` — Bukkit event listeners (`PlayerJoinListener`, `FakePlayerEntityListener`, `LuckPermsUpdateListener`, `BotCollisionListener`, `PlayerWorldChangeListener`, `ServerListListener`).
@@ -36,7 +37,7 @@ Purpose: help automated agents quickly understand, modify, and verify the FakePl
 - Config usage: call `Config.init(this)` then use accessors like `Config.fakeChatEnabled()` in code. Tab-list visibility accessor: `Config.tabListEnabled()` (key `tab-list.enabled`, default `true`) — when `false`, bots are never added to any player's tab list; the 20-tick display-name refresh loop, `syncToPlayer`, `resendTab` in `FakePlayerBody`, and the respawn re-add in `FakePlayerEntityListener` all check this flag before sending any `sendTabListAdd` packets. Toggling via `/fpp reload` calls `FakePlayerManager.applyTabListConfig()` which immediately removes or re-adds all active bots' tab entries for all online players.
 - Language messages: always use `Lang.get("key")` (returns Adventure `Component`) or `Lang.raw("key")` (returns `String`) — never hard-code user-facing text. Named placeholders: `Lang.get("freeze-frozen", "name", fp.getDisplayName())`. All keys live in `src/main/resources/language/en.yml`.
 - Permission checks: use `Perm.has(sender, Perm.SPAWN)` or `Perm.hasOrOp(sender, Perm.ALL)` — never hard-code node strings. Per-user bot limits resolved via `Perm.resolveUserBotLimit(sender)` (scans `fpp.bot.1` … `fpp.bot.100`; returns -1 if none set, caller falls back to `Config.userBotLimit()`).
-- Command registration: plugin registers commands via `commandManager.register(new SpawnCommand(...))` and then `getCommand("fpp").setExecutor(commandManager)` (see `onEnable`).
+- Command registration: plugin registers commands via `commandManager.register(new SpawnCommand(...))`; `HelpCommand` is auto-registered inside `CommandManager`, and `/fpp help` reads live from the registered command list, so new sub-commands need no separate help-menu wiring. The plugin then calls `getCommand("fpp").setExecutor(commandManager)` (see `onEnable`).
 - Listener registration: `getServer().getPluginManager().registerEvents(new PlayerJoinListener(this, fakePlayerManager), this)` — listeners receive plugin + manager references.
 - Persistence lifecycle: restore on enable via `botPersistence.purgeOrphanedBodiesAndRestore(fakePlayerManager)` and save on disable via `botPersistence.save(fakePlayerManager.getActivePlayers())`.
 - Metrics & soft-deps: metrics are initialized with `FppMetrics` when `Config.metricsEnabled()`; PlaceholderAPI expansion registered conditionally in `onEnable`.
@@ -46,7 +47,7 @@ Purpose: help automated agents quickly understand, modify, and verify the FakePl
 - Entity stack: each bot is two entities — a `Mannequin` (physics body + skin, tagged `FakePlayerBody.VISUAL_PDC_VALUE`) with an invisible `ArmorStand` riding it (nametag, tagged `FakePlayerBody.NAMETAG_PDC_VALUE`). Use these PDC values to identify bot entities during event handling.
 - Database gate: check `Config.databaseEnabled()` before any `DatabaseManager` call; `databaseManager` may be `null` at runtime (disabled or failed to init). `databaseManager.recordAllShutdown()` must be called in `onDisable` before `databaseManager.close()`.
 - Text formatting: `TextUtil.colorize(string)` parses MiniMessage tags and legacy `&`/`§` codes into an Adventure `Component`. `TextUtil.format(string)` additionally applies small-caps Unicode conversion. **Supports all modern color formats:** MiniMessage tags (`<rainbow>`, `<gradient:#FF0000:#0000FF>`), hex colors (`<#9782ff>`), LuckPerms gradient shorthand (`{#fffff>}text{#00000<}`), and mixed formats (`&7[<#9782ff>Phantom</#9782ff>&7]`).
-- LuckPerms integration: `LuckPermsHelper` resolves bot prefixes and weights from LP groups. Fully supports all LuckPerms color formats including gradients, rainbow, hex, and legacy codes. Call `LuckPermsHelper.getBotLpData(ownerUuid)` to get prefix + weight, or `LuckPermsHelper.invalidateCache()` on reload. **Auto-update feature:** `LuckPermsUpdateListener` automatically updates all bot prefixes in real-time when LuckPerms group data changes (no reload/respawn needed). Updates bot nametags, tab-list entries, and ordering instantly.
+- LuckPerms integration: `LuckPermsHelper` resolves bot prefixes and weights from LP groups. Fully supports all LuckPerms color formats including gradients, rainbow, hex, and legacy codes. Call `LuckPermsHelper.getBotLpData(ownerUuid)` to get prefix + weight, or `LuckPermsHelper.invalidateCache()` on reload. Tab ordering and packet-name behaviour are controlled via `Config.luckpermsWeightOrderingEnabled()`, `Config.luckpermsBotGroup()`, `Config.luckpermsPacketPrefixChar()`, and `Config.luckpermsWeightOffset()`. Use `/fpp lpinfo [bot-name]` as the in-game diagnostic command for prefix / weight / ordering issues. **Auto-update feature:** `LuckPermsUpdateListener` automatically updates all bot prefixes in real-time when LuckPerms group data changes (no reload/respawn needed). Updates bot nametags, tab-list entries, and ordering instantly.
 - Listener registration: `getServer().getPluginManager().registerEvents(new PlayerJoinListener(this, fakePlayerManager), this)` — listeners receive plugin + manager references. LuckPerms listener registered conditionally via `luckPermsUpdateListener.register()` when LP is detected.
 - `onDisable` sequence: save persistence → `chunkLoader.releaseAll()` → `botSwapAI.cancelAll()` → `luckPermsUpdateListener.unregister()` → `fakePlayerManager.removeAllSync()` → `tabListManager.shutdown()` → `databaseManager.recordAllShutdown()` + `close()` → `fppMetrics.shutdown()`.
 - Update notifications to late-joining admins: stored as a `Component` on `FakePlayerPlugin.getUpdateNotification()` / `setUpdateNotification()`; `PlayerJoinListener` delivers it to players with `Perm.ALL`.
@@ -55,6 +56,7 @@ Purpose: help automated agents quickly understand, modify, and verify the FakePl
 - Add a new command:
   - Create `src/main/java/me/bill/fakePlayerPlugin/command/MyCommand.java` implementing the command interface used by `CommandManager`.
   - Register it in `FakePlayerPlugin.onEnable()` with `commandManager.register(new MyCommand(...))`.
+  - No manual help update is needed — `HelpCommand` reads live from `CommandManager`.
   - Ensure `plugin.yml` contains the `fpp` command or sub-command docs (command parsing done by `CommandManager`).
 - Add a config option:
   - Add default to `src/main/resources/config.yml`.
@@ -82,12 +84,14 @@ mvn -DskipTests clean package "-Ddeploy.dir=C:\path\to\server\plugins"
 ```
 Note: requires JDK 21+ to compile (`pom.xml` `<java.version>21`). FastStats jars are bundled as binary resources in `src/main/resources/faststats/` (not shaded).
 
-**IntelliJ build tool ("Build Artifacts"):** IntelliJ's native artifact builder bypasses Maven and ProGuard. The `.idea/artifacts/fpp_jar.xml` is configured to extract content from `target/fpp-1.4.22-obfuscated.jar` (the Maven ProGuard output). Workflow:
+**IntelliJ build tool ("Build Artifacts"):** IntelliJ's native artifact builder bypasses Maven and ProGuard. Treat `target/fpp-*-obfuscated.jar` as the source artifact and use `pom.xml` as the source of truth for the current version; some repo docs/scripts still mention `1.4.22`. Workflow:
 1. Run the **"Build Plugin (Obfuscated)"** Maven run configuration (or `mvn clean package`) — this runs ProGuard and auto-deploys
 2. Optionally run **Build › Build Artifacts** to re-pack the already-obfuscated JAR to the output path without recompiling
 - ⚠️ "Build Artifacts" alone (without Maven running first) will fail if `target/fpp-*-obfuscated.jar` does not exist
 
 Double-click `BUILD.bat` in the project root as an alternative to Maven in terminal.
+
+For the optional Node/Vercel sidecar (`frontend/`), use the root `package.json` scripts: `npm install`, then `npm start` (local Express server via `frontend/index.js`) or `npm run dev`.
 
 Start server (attach debugger):
 ```powershell
@@ -110,6 +114,7 @@ In-server quick checks: `/fpp list`, `/fpp spawn`, `/fpp reload` and watch conso
 7) Integration & soft-dependencies
 - PlaceholderAPI: `util.FppPlaceholderExpansion` registered if plugin present.
 - LuckPerms: detected for prefix formatting (`FakePlayerPlugin` defers detection 1 tick).
+- Vercel / Node API: `UpdateChecker` falls back from Modrinth to `https://fake-player-plugin.vercel.app`; `frontend/api/check-update.js` and `frontend/api/status.js` intentionally emit Java-compatible keys such as `remoteVersion`, `version`, `version_number`, and `downloadUrl`.
 - Metrics: `util/FppMetrics` wraps FastStats and is conditional via `config.yml` flag (`Config.metricsEnabled()`).
 
 8) Useful repo search queries (quick semantic/grep targets)
@@ -126,6 +131,7 @@ In-server quick checks: `/fpp list`, `/fpp spawn`, `/fpp reload` and watch conso
 - "DatabaseManager" — database call sites
 
 9) Where to read docs
+- `docs/` — internal build/setup/release notes (`BUILD_INSTRUCTIONS.md`, `INTELLIJ_BUILD_SETUP.md`, `PROJECT_ORGANIZATION.md`, `RELEASE-1.4.23.md`); cross-check versioned jar names against `pom.xml` because some docs still reference `1.4.22`.
 - `wiki/` — developer-facing docs (Commands.md, Configuration.md, Getting-Started.md, Database.md, Language.md, Permissions.md, Skin-System.md, Swap-System.md, Bot-Behaviour.md, Bot-Messages.md, Bot-Names.md, Fake-Chat.md, FAQ.md, Migration.md, Home.md)
 - `README.md` — general usage and release notes
 

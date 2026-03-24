@@ -42,7 +42,7 @@ public final class ConfigMigrator {
      * The config-version value written by this build.
      * <b>Increment this whenever config.yml structure changes.</b>
      */
-    public static final int CURRENT_VERSION = 25;
+    public static final int CURRENT_VERSION = 26;
 
     /**
      * Mirrors the {@code debug} flag read directly from the raw YAML during migration.
@@ -117,6 +117,7 @@ public final class ConfigMigrator {
         if (stored < 23) anyChange |= v22to23(cfg);
         if (stored < 24) anyChange |= v23to24(cfg);
         if (stored < 25) anyChange |= v24to25(cfg);
+        if (stored < 26) anyChange |= v25to26(cfg);
 
         // ── Fill any remaining missing keys from jar defaults ──────────────────
         fillDefaults(plugin, cfg);
@@ -654,6 +655,20 @@ public final class ConfigMigrator {
     private static boolean v24to25(YamlConfiguration cfg) {
         // No structural changes in this release — stamp only.
         log("v24→v25", "housekeeping stamp for v1.4.23 (no structural changes)");
+        return false;
+    }
+
+    /**
+     * v25 → v26: Housekeeping stamp for v1.4.24.
+     * <ul>
+     *   <li>No structural changes — version bump only.</li>
+     *   <li>Ensures existing installations are stamped at the current schema version
+     *       so future migrations have a clean baseline.</li>
+     * </ul>
+     */
+    private static boolean v25to26(YamlConfiguration cfg) {
+        // No structural changes in this release — stamp only.
+        log("v25→v26", "housekeeping stamp for v1.4.24 (no structural changes)");
         return false;
     }
 

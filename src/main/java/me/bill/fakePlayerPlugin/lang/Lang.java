@@ -3,6 +3,7 @@ package me.bill.fakePlayerPlugin.lang;
 import me.bill.fakePlayerPlugin.FakePlayerPlugin;
 import me.bill.fakePlayerPlugin.config.Config;
 import me.bill.fakePlayerPlugin.util.TextUtil;
+import me.bill.fakePlayerPlugin.util.YamlFileSyncer;
 import net.kyori.adventure.text.Component;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
@@ -32,6 +33,12 @@ public final class Lang {
     }
 
     public static void reload() {
+        // Sync missing keys from the JAR into the disk file before loading.
+        // New message keys added by plugin updates are automatically written to
+        // the user's en.yml so they become visible and customisable.
+        // Existing user values are never overwritten.
+        YamlFileSyncer.syncMissingKeys(plugin, "language/en.yml", "language/en.yml");
+
         // Save the default from the JAR if the file doesn't exist on disk yet
         File file = new File(plugin.getDataFolder(), "language/en.yml");
         if (!file.exists()) {

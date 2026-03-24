@@ -1,6 +1,7 @@
 package me.bill.fakePlayerPlugin.config;
 
 import me.bill.fakePlayerPlugin.FakePlayerPlugin;
+import me.bill.fakePlayerPlugin.util.YamlFileSyncer;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 
@@ -31,6 +32,9 @@ public final class BotMessageConfig {
     }
 
     public static void reload() {
+        // Sync missing keys (ensures root 'messages' list is present on disk).
+        YamlFileSyncer.syncMissingKeys(plugin, "bot-messages.yml", "bot-messages.yml");
+
         File file = new File(plugin.getDataFolder(), "bot-messages.yml");
         if (!file.exists()) {
             plugin.saveResource("bot-messages.yml", false);

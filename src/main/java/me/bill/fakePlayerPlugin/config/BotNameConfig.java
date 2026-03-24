@@ -1,6 +1,7 @@
 package me.bill.fakePlayerPlugin.config;
 
 import me.bill.fakePlayerPlugin.FakePlayerPlugin;
+import me.bill.fakePlayerPlugin.util.YamlFileSyncer;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 
@@ -31,6 +32,9 @@ public final class BotNameConfig {
     }
 
     public static void reload() {
+        // Sync missing keys (ensures root 'name' list is present on disk).
+        YamlFileSyncer.syncMissingKeys(plugin, "bot-names.yml", "bot-names.yml");
+
         File file = new File(plugin.getDataFolder(), "bot-names.yml");
         if (!file.exists()) {
             plugin.saveResource("bot-names.yml", false);

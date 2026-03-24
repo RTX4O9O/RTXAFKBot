@@ -40,6 +40,46 @@ public final class BackupManager {
 
     private BackupManager() {}
 
+    /**
+     * Creates a lightweight backup of only the YAML config files —
+     * {@code config.yml}, {@code bot-names.yml}, {@code bot-messages.yml}, and
+     * all files under {@code language/}.
+     *
+     * <p>Use this before non-destructive sync operations (e.g. {@code /fpp migrate lang})
+     * where a full database backup is unnecessary.
+     *
+     * @param plugin Plugin instance.
+     * @param reason Short label appended to the directory name.
+     * @return The  backup directory that was created.
+     */
+    public static File createConfigFilesBackup(FakePlayerPlugin plugin, String reason) {
+        String safeReason = reason.replaceAll("[^a-zA-Z0-9_\\-]", "_");
+        String timestamp  = LocalDateTime.now().format(DATE_FMT);
+        File backupDir    = new File(plugin.getDataFolder(), "backups/" + timestamp + "_" + safeReason);
+        backupDir.mkdirs();
+
+        File dataFolder = plugin.getDataFolder();
+
+        copyFile(new File(dataFolder, "config.yml"),       new File(backupDir, "config.yml"));
+        copyFile(new File(dataFolder, "bot-names.yml"),    new File(backupDir, "bot-names.yml"));
+        copyFile(new File(dataFolder, "bot-messages.yml"), new File(backupDir, "bot-messages.yml"));
+
+        File langDir = new File(dataFolder, "language");
+        if (langDir.isDirectory()) {
+            File langBackup = new File(backupDir, "language");
+            langBackup.mkdirs();
+            File[] langFiles = langDir.listFiles((d, n) -> n.endsWith(".yml"));
+            if (langFiles != null) {
+                for (File lf : langFiles) copyFile(lf, new File(langBackup, lf.getName()));
+            }
+        }
+
+        writeManifest(backupDir, plugin, reason);
+        pruneOldBackups(new File(dataFolder, "backups"));
+        FppLogger.success("Config-files backup created → backups/" + backupDir.getName() + "/");
+        return backupDir;
+    }
+
     // ── Public API ────────────────────────────────────────────────────────────
 
     /**
