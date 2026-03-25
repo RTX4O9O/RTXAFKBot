@@ -48,7 +48,7 @@ Note: Semi-support is available for older 1.21 releases (1.21.0 → 1.21.8). On 
 
 ## ✦ Installation
 
-1. Download `fpp-1.4.27.jar` from [Modrinth](https://modrinth.com/plugin/fake-player-plugin-(fpp)) and place it in your `plugins/` folder.
+1. Download the latest `fpp-*.jar` from [![Version](https://img.shields.io/modrinth/v/fake-player-plugin-%28fpp%29?style=flat-square&label=Modrinth&color=00AF5C&logo=modrinth)](https://modrinth.com/plugin/fake-player-plugin-(fpp)/versions) and place it in your `plugins/` folder.
 2. Download [PacketEvents](https://modrinth.com/plugin/packetevents) and place it in `plugins/` too.
 3. Restart your server — config files are created automatically.
 4. Edit `plugins/FakePlayerPlugin/config.yml` to your liking.
@@ -326,12 +326,25 @@ When LuckPerms is installed and `luckperms.use-prefix: true`:
 
 ---
 
+## ✦ Support the Project
+
+If you enjoy FPP and want to help keep it going, consider buying me a coffee over on Ko-fi:
+
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-Support%20FPP-FF5E5B?style=flat-square&logo=ko-fi&logoColor=white)](https://ko-fi.com/fakeplayerplugin)
+
+Donations are completely optional and don't come with any guaranteed rewards — though I may add small perks like beta access in the future. Every contribution goes directly toward improving the plugin.
+
+Thank you all for using Fake Player Plugin. Without you, it wouldn't be where it is today ❤️
+
+---
+
 ## ✦ Links
 
 - [Modrinth](https://modrinth.com/plugin/fake-player-plugin-(fpp)) — download
 - [Spigotmc](https://www.spigotmc.org/resources/fake-player-plugin-fpp.133572/) - download
 - [Papermc](https://hangar.papermc.io/Pepe-tf/FakePlayerPlugin) - download
 - [BuiltByBit](https://builtbybit.com/resources/fake-player-plugin.98704/) - download
+- [Ko-fi](https://ko-fi.com/fakeplayerplugin) — support the project
 - [Discord](https://discord.gg/QSN7f67nkJ) — support & feedback
 - [GitHub](https://github.com/Pepe-tf/Fake-Player-Plugin-Public-) — source & issues
 
