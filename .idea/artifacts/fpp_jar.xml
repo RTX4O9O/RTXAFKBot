@@ -3,6 +3,11 @@
     <output-path>$USER_HOME$/Desktop/dmc/plugins</output-path>
     <root id="archive" name="fpp.jar">
       <element id="module-output" name="fpp" />
+      <element id="extracted-dir" path="$MAVEN_REPOSITORY$/com/mysql/mysql-connector-j/8.3.0/mysql-connector-j-8.3.0.jar" path-in-jar="/" />
+      <element id="extracted-dir" path="$MAVEN_REPOSITORY$/dev/faststats/metrics/bukkit/0.18.1/bukkit-0.18.1.jar" path-in-jar="/" />
+      <element id="extracted-dir" path="$MAVEN_REPOSITORY$/dev/faststats/metrics/core/0.18.1/core-0.18.1.jar" path-in-jar="/" />
+      <element id="extracted-dir" path="$MAVEN_REPOSITORY$/org/xerial/sqlite-jdbc/3.47.1.0/sqlite-jdbc-3.47.1.0.jar" path-in-jar="/" />
+      <element id="extracted-dir" path="$MAVEN_REPOSITORY$/org/apache/commons/commons-lang3/3.18.0/commons-lang3-3.18.0.jar" path-in-jar="/" />
     </root>
   </artifact>
 </component>

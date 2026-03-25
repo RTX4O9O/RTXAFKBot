@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────────────────────────────────────
-#  ꜰᴀᴋᴇ ᴘʟᴀʏᴇʀ ᴘʟᴜɢɪɴ  ·  config.yml  ·  v1.4.24
+#  ꜰᴀᴋᴇ ᴘʟᴀʏᴇʀ ᴘʟᴜɢɪɴ  ·  config.yml  ·  v1.4.26
 #  Run /fpp reload to apply changes without restarting the server.
 #  Colors use MiniMessage: <#0079FF>text</#0079FF>  <gray>text</gray>
 # ─────────────────────────────────────────────────────────────────────────────
@@ -48,25 +48,42 @@ bot-name:
   user-format:  'bot-{spawner}-{num}'   # /fpp spawn (user tier)
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  LUCKPERMS
+#  LUCKPERMS INTEGRATION
+#  Advanced tab-list ordering that places bots at the bottom while preserving
+#  rank hierarchy within the bot section.
 # ─────────────────────────────────────────────────────────────────────────────
 luckperms:
-  use-prefix: true   # Prepend the default-group prefix to every bot display name
-  # When true, encode LuckPerms group weight into the tab-list packet profile
-  # name so bots can be ordered according to rank weight. Set false to disable.
+  # Prepend the LuckPerms group prefix to every bot's display name
+  use-prefix: true
+  
+  # ── Tab-List Ordering System ───────────────────────────────────────────────
+  # When true, bots are ordered by LuckPerms group weight within their own
+  # section at the bottom of the tab list. Higher weight groups appear ABOVE
+  # lower weight groups (e.g., admin bots above default bots).
   weight-ordering-enabled: true
-  # Optional: force bots to be treated as members of this LuckPerms group.
-  # If set to an existing group name, bots will use that group's prefix and
-  # weight for display and tab-list ordering. Leave blank to use default/auto.
+  
+  # Optional: force all bots to use this LuckPerms group's prefix and weight.
+  # Leave blank ("") to use the default group or spawner's group for user bots.
   bot-group: ""
-  # Optional single character prefixed before the numeric weight index.
-  # Leave empty to use only numeric index (e.g. "00_"). When set to '~' the
-  # plugin will try to place bots after regular player names by using '~00_'.
+  
+  # ── Tab-List Position Control ──────────────────────────────────────────────
+  # Character used to position the entire bot section in the tab list.
+  # The plugin uses a hidden "~fpp" scoreboard team that ensures bots always
+  # appear AFTER all real players, regardless of this prefix character.
+  # 
+  # Common values:
+  #   "{"  (ASCII 123, default) — aesthetic choice, sorts after letters
+  #   "~"  (ASCII 126) — sorts even later (after { } |)
+  #   "!"  (ASCII 33)  — would sort first, but team override still applies
+  #   ""   (empty)     — plugin auto-uses "~" when weight-ordering is enabled
+  #
+  # Within the bot section: Higher LP weight = rank 00 (top), lower weight = rank 02 (bottom).
+  # Example: Admin bot (weight=100) = {00_AdminBot, Default bot (weight=1) = {02_DefaultBot
   packet-prefix-char: "{"
-  # Weight offset applied to bots — negative values demote bots below players of the same group.
-  # Example: if your rank has weight 100, setting -10 gives bots effective weight 90,
-  # so they appear AFTER you in the tab list.  Set to 0 for no penalty.
-  weight-offset: -10
+  
+  # Legacy option kept for backward compatibility. No longer affects ordering
+  # since the scoreboard team system ensures bots always appear below real players.
+  weight-offset: 0
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  SKIN

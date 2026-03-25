@@ -38,7 +38,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class DatabaseManager {
 
     // ── Schema version ────────────────────────────────────────────────────────
-    private static final int SCHEMA_VERSION = 4;
+    private static final int SCHEMA_VERSION = 5;
 
     // ── DDL — session history ─────────────────────────────────────────────────
     private static final String CREATE_SESSIONS_SQLITE =
@@ -107,7 +107,8 @@ public class DatabaseManager {
             "  pos_z           DOUBLE NOT NULL," +
             "  pos_yaw         FLOAT  NOT NULL DEFAULT 0," +
             "  pos_pitch       FLOAT  NOT NULL DEFAULT 0," +
-            "  updated_at      BIGINT NOT NULL" +
+            "  updated_at      BIGINT NOT NULL," +
+            "  luckperms_group VARCHAR(64)  DEFAULT NULL" +
             ")";
 
     private static final String CREATE_ACTIVE_MYSQL =
@@ -123,7 +124,8 @@ public class DatabaseManager {
             "  pos_z           DOUBLE NOT NULL," +
             "  pos_yaw         FLOAT  NOT NULL DEFAULT 0," +
             "  pos_pitch       FLOAT  NOT NULL DEFAULT 0," +
-            "  updated_at      BIGINT NOT NULL" +
+            "  updated_at      BIGINT NOT NULL," +
+            "  luckperms_group VARCHAR(64)  DEFAULT NULL" +
             ")";
 
     // ── DDL — schema version ──────────────────────────────────────────────────
@@ -147,7 +149,10 @@ public class DatabaseManager {
           "CREATE INDEX IF NOT EXISTS idx_sessions_spawned_by  ON fpp_bot_sessions(spawned_by)",
           "CREATE INDEX IF NOT EXISTS idx_sessions_removed_at  ON fpp_bot_sessions(removed_at)",
           "CREATE INDEX IF NOT EXISTS idx_sessions_spawned_at  ON fpp_bot_sessions(spawned_at)",
-          "CREATE INDEX IF NOT EXISTS idx_sessions_bot_uuid    ON fpp_bot_sessions(bot_uuid)" }
+          "CREATE INDEX IF NOT EXISTS idx_sessions_bot_uuid    ON fpp_bot_sessions(bot_uuid)" },
+        // v4 → v5: add luckperms_group column for per-bot rank persistence
+        { "ALTER TABLE fpp_bot_sessions ADD COLUMN luckperms_group VARCHAR(64) DEFAULT NULL",
+          "ALTER TABLE fpp_active_bots  ADD COLUMN luckperms_group VARCHAR(64) DEFAULT NULL" }
     };
 
     // ── State ─────────────────────────────────────────────────────────────────
@@ -329,12 +334,17 @@ public class DatabaseManager {
      * for the audit trail.
      */
     public void recordSpawn(BotRecord record) {
-        recordSpawn(record, null);
+        recordSpawn(record, null, null);
     }
 
     public void recordSpawn(BotRecord record, String displayName) {
+        recordSpawn(record, displayName, null);
+    }
+
+    public void recordSpawn(BotRecord record, String displayName, String luckpermsGroup) {
         activeRecords.put(record.getBotUuid().toString(), record);
         final String display = displayName;
+        final String lpGroup = luckpermsGroup;
         enqueue(() -> {
             if (!isAlive()) return;
             // 1. Session history row
@@ -364,7 +374,31 @@ public class DatabaseManager {
                     record.getSpawnedBy(), record.getSpawnedByUuid().toString(),
                     record.getWorldName(),
                     record.getSpawnX(), record.getSpawnY(), record.getSpawnZ(),
-                    record.getSpawnYaw(), record.getSpawnPitch());
+                    record.getSpawnYaw(), record.getSpawnPitch(), lpGroup);
+        });
+    }
+
+    /**
+     * Persists a bot's LuckPerms group override to the database.
+     * Call this whenever {@code FakePlayer.setLuckpermsGroup()} is changed at runtime
+     * (e.g. via {@code /fpp rank set}) so the value survives a server restart.
+     *
+     * @param botUuid      the bot's UUID
+     * @param luckpermsGroup the LP group name, or {@code null} to clear the override
+     */
+    public void updateBotLpGroup(UUID botUuid, String luckpermsGroup) {
+        if (botUuid == null) return;
+        String uuidStr = botUuid.toString();
+        enqueue(() -> {
+            if (!isAlive()) return;
+            String sql = "UPDATE fpp_active_bots SET luckperms_group=? WHERE bot_uuid=?";
+            try (PreparedStatement ps = connection.prepareStatement(sql)) {
+                if (luckpermsGroup != null) ps.setString(1, luckpermsGroup);
+                else ps.setNull(1, java.sql.Types.VARCHAR);
+                ps.setString(2, uuidStr);
+                ps.executeUpdate();
+                Config.debug("DB updateBotLpGroup: " + uuidStr + " → " + luckpermsGroup);
+            } catch (SQLException e) { FppLogger.error("DB updateBotLpGroup: " + e.getMessage()); }
         });
     }
 
@@ -460,13 +494,17 @@ public class DatabaseManager {
         try (Statement st = connection.createStatement();
              ResultSet rs = st.executeQuery("SELECT * FROM fpp_active_bots ORDER BY updated_at ASC")) {
             while (rs.next()) {
+                // luckperms_group may be absent on pre-v5 DBs; catch gracefully
+                String lpGroup = null;
+                try { lpGroup = rs.getString("luckperms_group"); } catch (SQLException ignored) {}
                 list.add(new ActiveBotRow(
                         rs.getString("bot_uuid"), rs.getString("bot_name"),
-                        rs.getString("bot_display"),  // Read display name from database
+                        rs.getString("bot_display"),
                         rs.getString("spawned_by"), rs.getString("spawned_by_uuid"),
                         rs.getString("world_name"),
                         rs.getDouble("pos_x"), rs.getDouble("pos_y"), rs.getDouble("pos_z"),
-                        rs.getFloat("pos_yaw"), rs.getFloat("pos_pitch")
+                        rs.getFloat("pos_yaw"), rs.getFloat("pos_pitch"),
+                        lpGroup
                 ));
             }
         } catch (SQLException e) { FppLogger.error("DB getActiveBots: " + e.getMessage()); }
@@ -647,22 +685,25 @@ public class DatabaseManager {
     private void upsertActiveBotSync(String uuid, String name, String display,
                                      String spawnedBy, String spawnedByUuid, String world,
                                      double x, double y, double z,
-                                     float yaw, float pitch) {
+                                     float yaw, float pitch, String luckpermsGroup) {
         long now = Instant.now().toEpochMilli();
         String sql = isMysql
                 ? "INSERT INTO fpp_active_bots(bot_uuid,bot_name,bot_display,spawned_by,spawned_by_uuid," +
-                  "world_name,pos_x,pos_y,pos_z,pos_yaw,pos_pitch,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?) " +
+                  "world_name,pos_x,pos_y,pos_z,pos_yaw,pos_pitch,updated_at,luckperms_group) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?) " +
                   "ON DUPLICATE KEY UPDATE bot_name=VALUES(bot_name),bot_display=VALUES(bot_display)," +
                   "spawned_by=VALUES(spawned_by),spawned_by_uuid=VALUES(spawned_by_uuid)," +
                   "world_name=VALUES(world_name),pos_x=VALUES(pos_x),pos_y=VALUES(pos_y)," +
-                  "pos_z=VALUES(pos_z),pos_yaw=VALUES(pos_yaw),pos_pitch=VALUES(pos_pitch),updated_at=VALUES(updated_at)"
+                  "pos_z=VALUES(pos_z),pos_yaw=VALUES(pos_yaw),pos_pitch=VALUES(pos_pitch)," +
+                  "updated_at=VALUES(updated_at),luckperms_group=VALUES(luckperms_group)"
                 : "INSERT OR REPLACE INTO fpp_active_bots(bot_uuid,bot_name,bot_display,spawned_by,spawned_by_uuid," +
-                  "world_name,pos_x,pos_y,pos_z,pos_yaw,pos_pitch,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)";
+                  "world_name,pos_x,pos_y,pos_z,pos_yaw,pos_pitch,updated_at,luckperms_group) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)";
         try (PreparedStatement ps = connection.prepareStatement(sql)) {
             ps.setString(1, uuid);  ps.setString(2, name);  ps.setString(3, display);
             ps.setString(4, spawnedBy); ps.setString(5, spawnedByUuid);
             ps.setString(6, world); ps.setDouble(7, x); ps.setDouble(8, y); ps.setDouble(9, z);
             ps.setFloat(10, yaw);   ps.setFloat(11, pitch); ps.setLong(12, now);
+            if (luckpermsGroup != null) ps.setString(13, luckpermsGroup);
+            else ps.setNull(13, java.sql.Types.VARCHAR);
             ps.executeUpdate();
         } catch (SQLException e) { FppLogger.error("DB upsertActiveBot: " + e.getMessage()); }
     }
@@ -849,7 +890,8 @@ public class DatabaseManager {
             String botUuid, String botName, String botDisplay,
             String spawnedBy, String spawnedByUuid,
             String world, double x, double y, double z,
-            float yaw, float pitch
+            float yaw, float pitch,
+            String luckpermsGroup
     ) {}
 
     /**

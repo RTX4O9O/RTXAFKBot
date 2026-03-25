@@ -26,7 +26,7 @@ public final class TextUtil {
             "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
     private static final String SMALL_CAPS =
             "ᴀʙᴄᴅᴇꜰɢʜɪᴊᴋʟᴍɴᴏᴘQʀꜱᴛᴜᴠᴡxʏᴢ" +   // lower  (a-z)
-            "ᴀʙᴄᴅᴇꜰɢʜɪᴊᴋʟᴍɴᴏᴘQʀꜱᴛᴜᴠᴡxʏᴢ";  // upper  (A-Z)
+            "ᴀʙᴄᴅᴠᴡxʏᴢ";  // upper  (A-Z)
 
     /**
      * Converts every ASCII letter in {@code text} to its small-caps Unicode equivalent.
@@ -86,6 +86,10 @@ public final class TextUtil {
      */
     public static String legacyToMiniMessage(String s) {
         if (s == null || s.isEmpty()) return s;
+        
+        // Step 0: Expand 3-digit hex codes to 6-digit format
+        // Example: <#000> → <#000000>, <#abc> → <#aabbcc>, </#f0f> → </#f0f0f0>
+        s = expand3DigitHexCodes(s);
         
         // Step 1: Convert LuckPerms {#RRGGBB>}...{#RRGGBB<} gradient/hex shorthand
         // to proper MiniMessage <gradient:...> tags
@@ -213,6 +217,57 @@ public final class TextUtil {
     }
 
     // ── LuckPerms colour-tag conversion ──────────────────────────────────────
+
+    /**
+     * Expands 3-digit hex codes to 6-digit format for MiniMessage compatibility.
+     * <p>
+     * CSS/MiniMessage shorthand: {@code #RGB} expands to {@code #RRGGBB}
+     * <ul>
+     *   <li>{@code <#000>} → {@code <#000000>} (black)</li>
+     *   <li>{@code <#fff>} → {@code <#ffffff>} (white)</li>
+     *   <li>{@code <#abc>} → {@code <#aabbcc>} (light blue)</li>
+     *   <li>{@code </#f0f>} → {@code </#f0f0f0>} (closing tag)</li>
+     * </ul>
+     * 
+     * @param s input string that may contain 3-digit hex codes
+     * @return string with all 3-digit hex codes expanded to 6 digits
+     */
+    private static String expand3DigitHexCodes(String s) {
+        if (s == null || s.indexOf('#') < 0) return s;
+        
+        // Pattern for 3-digit hex codes in opening tags: <#RGB>
+        Pattern openTag3Digit = Pattern.compile("<#([0-9A-Fa-f]{3})>");
+        Matcher m = openTag3Digit.matcher(s);
+        StringBuffer sb = new StringBuffer();
+        while (m.find()) {
+            String hex3 = m.group(1);
+            // Expand each digit: RGB → RRGGBB
+            String hex6 = String.format("%c%c%c%c%c%c",
+                    hex3.charAt(0), hex3.charAt(0),
+                    hex3.charAt(1), hex3.charAt(1),
+                    hex3.charAt(2), hex3.charAt(2));
+            m.appendReplacement(sb, "<#" + hex6 + ">");
+        }
+        m.appendTail(sb);
+        s = sb.toString();
+        
+        // Pattern for 3-digit hex codes in closing tags: </#RGB>
+        Pattern closeTag3Digit = Pattern.compile("</#([0-9A-Fa-f]{3})>");
+        m = closeTag3Digit.matcher(s);
+        sb = new StringBuffer();
+        while (m.find()) {
+            String hex3 = m.group(1);
+            // Expand each digit: RGB → RRGGBB
+            String hex6 = String.format("%c%c%c%c%c%c",
+                    hex3.charAt(0), hex3.charAt(0),
+                    hex3.charAt(1), hex3.charAt(1),
+                    hex3.charAt(2), hex3.charAt(2));
+            m.appendReplacement(sb, "</#" + hex6 + ">");
+        }
+        m.appendTail(sb);
+        
+        return sb.toString();
+    }
 
     /**
      * Pre-compiled pattern for LuckPerms gradient pairs:

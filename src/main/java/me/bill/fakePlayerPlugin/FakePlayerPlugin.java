@@ -1,19 +1,6 @@
 package me.bill.fakePlayerPlugin;
 
-import me.bill.fakePlayerPlugin.command.ChatCommand;
-import me.bill.fakePlayerPlugin.command.CommandManager;
-import me.bill.fakePlayerPlugin.command.DeleteCommand;
-import me.bill.fakePlayerPlugin.command.FreezeCommand;
-import me.bill.fakePlayerPlugin.command.InfoCommand;
-import me.bill.fakePlayerPlugin.command.ListCommand;
-import me.bill.fakePlayerPlugin.command.LpInfoCommand;
-import me.bill.fakePlayerPlugin.command.MigrateCommand;
-import me.bill.fakePlayerPlugin.command.ReloadCommand;
-import me.bill.fakePlayerPlugin.command.SpawnCommand;
-import me.bill.fakePlayerPlugin.command.StatsCommand;
-import me.bill.fakePlayerPlugin.command.SwapCommand;
-import me.bill.fakePlayerPlugin.command.TpCommand;
-import me.bill.fakePlayerPlugin.command.TphCommand;
+import me.bill.fakePlayerPlugin.command.*;
 import me.bill.fakePlayerPlugin.config.BotMessageConfig;
 import me.bill.fakePlayerPlugin.config.BotNameConfig;
 import me.bill.fakePlayerPlugin.config.Config;
@@ -32,6 +19,7 @@ import me.bill.fakePlayerPlugin.listener.PlayerJoinListener;
 import me.bill.fakePlayerPlugin.listener.PlayerWorldChangeListener;
 import me.bill.fakePlayerPlugin.listener.ServerListListener;
 import me.bill.fakePlayerPlugin.util.BackupManager;
+import me.bill.fakePlayerPlugin.util.BotTabTeam;
 import me.bill.fakePlayerPlugin.util.CompatibilityChecker;
 import me.bill.fakePlayerPlugin.util.ConfigMigrator;
 import me.bill.fakePlayerPlugin.util.ConfigValidator;
@@ -59,6 +47,7 @@ public final class FakePlayerPlugin extends JavaPlugin {
     private BotSwapAI         botSwapAI;
     private FppMetrics        fppMetrics;
     private TabListManager    tabListManager;
+    private BotTabTeam        botTabTeam;
     private me.bill.fakePlayerPlugin.listener.LuckPermsUpdateListener luckPermsUpdateListener;
     /** When true the plugin detected an unsupported server/runtime and restrains some features */
     private boolean compatibilityRestricted = false;
@@ -163,6 +152,7 @@ public final class FakePlayerPlugin extends JavaPlugin {
         commandManager.register(new StatsCommand(fakePlayerManager, databaseManager));
         commandManager.register(new FreezeCommand(fakePlayerManager));
         commandManager.register(new LpInfoCommand(this, fakePlayerManager));
+        commandManager.register(new RankCommand(this, fakePlayerManager));
         FppLogger.debug("Commands registered: " + commandManager.getCommands().size() + " total.");
 
         var fppCmd = getCommand("fpp");
@@ -203,6 +193,18 @@ public final class FakePlayerPlugin extends JavaPlugin {
         // ── Tab list header/footer ────────────────────────────────────────────
         tabListManager = new TabListManager(this, fakePlayerManager);
         tabListManager.start();
+
+        // ── Bot scoreboard team ───────────────────────────────────────────────
+        // Places all bots in the ~fpp scoreboard team so they sort below real players
+        // in every player's tab list (team ~fpp sorts after all letter/digit teams).
+        try {
+            botTabTeam = new BotTabTeam();
+            botTabTeam.init();
+            fakePlayerManager.setBotTabTeam(botTabTeam);
+            FppLogger.success("Bot tab team initialized — bots will appear in ~fpp section.");
+        } catch (Exception e) {
+            FppLogger.warn("Bot tab team init failed — " + e.getMessage());
+        }
 
         // ── PlaceholderAPI soft-dependency ────────────────────────────────────
         if (Bukkit.getPluginManager().getPlugin("PlaceholderAPI") != null) {
@@ -347,6 +349,8 @@ public final class FakePlayerPlugin extends JavaPlugin {
         if (fakePlayerManager != null) fakePlayerManager.removeAllSync();
         // Shut down tab list header/footer
         if (tabListManager != null) tabListManager.shutdown();
+        // Destroy bot tab team
+        if (botTabTeam != null) botTabTeam.destroy();
 
         // Flush DB — mark all open sessions as SHUTDOWN before closing
         boolean dbFlushed = false;
@@ -369,6 +373,7 @@ public final class FakePlayerPlugin extends JavaPlugin {
     public FakePlayerManager getFakePlayerManager() { return fakePlayerManager; }
     public DatabaseManager   getDatabaseManager()   { return databaseManager; }
     public TabListManager    getTabListManager()     { return tabListManager; }
+    public BotTabTeam        getBotTabTeam()         { return botTabTeam; }
 
     /** Returns true when the plugin detected an unsupported server/runtime. */
     public boolean isCompatibilityRestricted() { return compatibilityRestricted; }

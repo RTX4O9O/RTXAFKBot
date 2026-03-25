@@ -150,8 +150,13 @@ public final class Perm {
     /** Freeze or unfreeze bots with /fpp freeze <bot|all> [on|off]. */
     public static final String FREEZE        = "fpp.freeze";
 
+    /** View LuckPerms diagnostic info for a bot via /fpp lpinfo <bot>. */
+    public static final String LP_INFO       = "fpp.lpinfo";
 
-    /** Bypass per-user spawn cooldown. */
+    /** Assign LuckPerms groups to bots via /fpp rank. */
+    public static final String RANK          = "fpp.rank";
+
+    /** Bypass the spawn cooldown timer. */
     public static final String BYPASS_COOLDOWN = "fpp.bypass.cooldown";
 
     // ── Static helpers ────────────────────────────────────────────────────────

@@ -1,5 +1,5 @@
 name: FakePlayerPlugin
-version: '1.4.24'
+version: '1.4.27'
 main: me.bill.fakePlayerPlugin.FakePlayerPlugin
 api-version: '1.21'
 authors: [ El_Pepes ]
@@ -38,6 +38,8 @@ permissions:
       fpp.admin.migrate:    true
       fpp.stats:            true
       fpp.freeze:           true
+      fpp.lpinfo:           true
+      fpp.rank:             true
       fpp.user.*:           true
 
   # ── User wildcard ──────────────────────────────────────────────────────────
@@ -230,3 +232,18 @@ permissions:
       Automatically granted to admins via fpp.*.
     default: op
 
+  # ── LuckPerms Info ────────────────────────────────────────────────────────
+  fpp.lpinfo:
+    description: >
+      View LuckPerms diagnostic info for a bot with /fpp lpinfo <bot-name>.
+      Shows: prefix, weight, rank, packet profile name, and group hierarchy.
+      Useful for debugging tab-list ordering issues.
+    default: op
+
+  # ── Rank (LuckPerms Group Assignment) ─────────────────────────────────────
+  fpp.rank:
+    description: >
+      Assign LuckPerms groups to individual bots with /fpp rank.
+      Subcommands: set <bot> <group>, random <group> <count>, clear <bot>, list.
+      Allows mixing bot ranks (admin bots, VIP bots, default bots) on the same server.
+    default: op

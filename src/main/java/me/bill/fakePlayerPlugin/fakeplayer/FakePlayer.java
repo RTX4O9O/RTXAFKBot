@@ -113,6 +113,21 @@ public final class FakePlayer {
     /** Last world name — used for fast orphan/cross-world detection. */
     private String lastKnownWorld = null;
 
+    /**
+     * Optional LuckPerms group override for this specific bot.
+     * When set, this bot will use this LP group's prefix and weight instead of
+     * the global {@code luckperms.bot-group} config or default group.
+     * Set via {@code /fpp rank set <bot> <group>}.
+     */
+    private String luckpermsGroup = null;
+
+    /**
+     * When {@code true}, this bot spawns without a physical body.
+     * Used for console-spawned bots with incomplete location data.
+     * Bots still appear in tab list and chat, but have no entity in the world.
+     */
+    private boolean bodyless = false;
+
     public FakePlayer(UUID uuid, String name, PlayerProfile profile) {
         this.uuid    = uuid;
         this.name    = name;
@@ -233,4 +248,30 @@ public final class FakePlayer {
     }
     public void setDbRecord(BotRecord record)    { this.dbRecord  = record; }
     public void setSpawnTime(Instant t)          { this.spawnTime = t; }
+
+    // ── LuckPerms group override ──────────────────────────────────────────────
+    /**
+     * Returns the LuckPerms group override for this bot, or {@code null} if using
+     * the global config/default group.
+     */
+    public String getLuckpermsGroup() { return luckpermsGroup; }
+
+    /**
+     * Sets a LuckPerms group override for this bot.
+     * Pass {@code null} to clear the override and use global config/default.
+     */
+    public void setLuckpermsGroup(String group) { this.luckpermsGroup = group; }
+
+    // ── Bodyless spawn ────────────────────────────────────────────────────────
+    /**
+     * Returns {@code true} if this bot spawns without a physical body
+     * (tab-list and chat only, no entity in world).
+     */
+    public boolean isBodyless() { return bodyless; }
+
+    /**
+     * Sets whether this bot should spawn without a physical body.
+     * Used for console spawns without location data.
+     */
+    public void setBodyless(boolean bodyless) { this.bodyless = bodyless; }
 }

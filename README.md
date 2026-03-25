@@ -48,7 +48,7 @@ Note: Semi-support is available for older 1.21 releases (1.21.0 → 1.21.8). On 
 
 ## ✦ Installation
 
-1. Download `fpp-1.4.22.jar` from [Modrinth](https://modrinth.com/plugin/fake-player-plugin-(fpp)) and place it in your `plugins/` folder.
+1. Download `fpp-1.4.27.jar` from [Modrinth](https://modrinth.com/plugin/fake-player-plugin-(fpp)) and place it in your `plugins/` folder.
 2. Download [PacketEvents](https://modrinth.com/plugin/packetevents) and place it in `plugins/` too.
 3. Restart your server — config files are created automatically.
 4. Edit `plugins/FakePlayerPlugin/config.yml` to your liking.
@@ -72,6 +72,8 @@ All commands are under `/fpp` (aliases: `/fakeplayer`, `/fp`).
 | `/fpp chat [on\|off\|status]` | Toggle the fake chat system |
 | `/fpp swap [on\|off\|status]` | Toggle the bot swap/rotation system |
 | `/fpp freeze <name\|all> [on\|off]` | Freeze or unfreeze a bot — body becomes immovable; shown with ❄ in list/stats |
+| `/fpp rank set <bot> <luckperms-group>` | Assign a specific bot to a LuckPerms group |
+| `/fpp rank random <luckperms-group> [count\|all]` | Assign random bots (or all bots) to a LuckPerms group |
 | `/fpp stats` | Live statistics panel — bots, frozen count, system status, DB totals, TPS |
 | `/fpp reload` | Hot-reload all config, language, skins, and name/message pools |
 | `/fpp info [bot <name> \| spawner <name>]` | Query the session database |
@@ -93,6 +95,7 @@ All commands are under `/fpp` (aliases: `/fakeplayer`, `/fp`).
 | `fpp.chat` | Toggle fake chat |
 | `fpp.swap` | Toggle bot swap |
 | `fpp.freeze` | Freeze / unfreeze any bot or all bots |
+| `fpp.rank` | Assign bots to LuckPerms groups (set or random) |
 | `fpp.stats` | View the `/fpp stats` live statistics panel |
 | `fpp.reload` | Reload configuration |
 | `fpp.info` | Query the database |
@@ -209,6 +212,23 @@ When LuckPerms is installed and `luckperms.use-prefix: true`:
 ---
 
 ## ✦ Changelog
+
+### v1.4.27 *(2026-03-25)*
+- **Unified spawn syntax** — in-game `/fpp spawn` now supports the same flexible positional syntax as console: `[count] [world] [x y z] [--name <name>]`. Count can be leading or trailing; coordinates can be space-separated (`-609 71 -67`) or comma-separated (`-609,71,-67`). Player without a world arg still spawns at their own location.
+- **Improved `/fpp reload` output** — box-drawing lines (`┌ │ └`), per-step detail (skin counts, LP prefix count, bot count, team size), yellow warning line for config issues, and a final timing line.
+- **`/fpp reload` canUse fix** — now correctly delegates to `Perm.hasOrOp` so operators without explicit nodes can also reload.
+
+### v1.4.26 *(2026-03-25)*
+- **Tab-list weight ordering completely overhauled** — bots now perfectly respect LuckPerms group weights and always appear in correct rank order in tab list
+- **New rank command system** — `/fpp rank set <bot> <luckperms-group>` assigns a specific bot to a LuckPerms group; `/fpp rank random <luckperms-group> [count]` assigns random bots; both support `all` parameter for bulk operations
+- **Restoration bug fixed** — bots restored after server restart now maintain correct weights and ranks (no longer appear with incorrect prefixes)
+- **BotTabTeam system enhanced** — Minecraft client now correctly matches tab entries to scoreboard team members using packet profile names with weight prefixes
+- **Targeted cache invalidation** — LuckPerms data cache now uses targeted group invalidation instead of full cache clearing, preserving rank ordering accuracy
+- **Auto-update on group change** — when LuckPerms group data changes, all bot prefixes and tab ordering update in real-time (no reload/respawn needed)
+- **Performance improvements** — tab-list synchronization optimized to prevent unnecessary packet flooding
+
+### v1.4.25 *(2026-03-25)*
+- Internal build/testing version — not released
 
 ### v1.4.24 *(2026-03-24)*
 - New: YAML file syncer — missing keys from plugin updates are automatically merged into `language/en.yml`, `bot-names.yml`, and `bot-messages.yml` on startup and `/fpp reload` (no existing values are overwritten)

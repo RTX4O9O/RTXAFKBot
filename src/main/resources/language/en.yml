@@ -69,6 +69,7 @@ spawn-no-names-left:      "{prefix}<red>ᴀʟʟ ɴᴀᴍᴇꜱ ɪɴ ᴛʜᴇ ᴘ
 # {world} — the world name that was not found
 spawn-console-no-world:   "{prefix}<red>ɴᴏ ᴡᴏʀʟᴅ ɪꜱ ʟᴏᴀᴅᴇᴅ — ᴄᴀɴɴᴏᴛ ᴅᴇᴛᴇʀᴍɪɴᴇ ᴀ ꜱᴘᴀᴡɴ ʟᴏᴄᴀᴛɪᴏɴ."
 spawn-world-not-found:    "{prefix}<red>ᴡᴏʀʟᴅ '<white>{world}<red>' ᴅᴏᴇꜱ ɴᴏᴛ ᴇxɪꜱᴛ ᴏʀ ɪꜱ ɴᴏᴛ ʟᴏᴀᴅᴇᴅ."
+spawn-invalid-coords:     "{prefix}<red>ɪɴᴠᴀʟɪᴅ ᴄᴏᴏʀᴅɪɴᴀᴛᴇꜱ. <gray>ᴜꜱᴇ ꜰᴏʀᴍᴀᴛ: <white>x,y,z <gray><dark_gray>(ᴇ.ɢ. <white>100,64,200<gray>)"
 
 # ── Delete ────────────────────────────────────────────────────────────────────
 # {name}  — bot name
@@ -163,5 +164,25 @@ freeze-all-unfrozen:  "{prefix}<#0079FF>{count}</#0079FF> <gray>ʙᴏᴛ(ꜱ) �
 
 # ── Spawn cooldown ────────────────────────────────────────────────────────────
 # {seconds} — seconds remaining on cooldown
-spawn-cooldown: "{prefix}<red>ᴘʟᴇᴀꜱᴇ ᴡᴀɪᴛ <white>{seconds}s<red> ʙᴇꜰᴏʀᴇ ꜱᴘᴀᴡɴɪɴɢ ᴀɢᴀɪɴ."
+spawn-cooldown: "{prefix}<red>ᴘʟᴇᴀꜱᴇ ᴡᴀɪᴛ <white>{seconds}s<red> ʙᴇꜰᴏʀᴇ ꜱᴘᴀᴡɴɪɴɢ ᴀɡᴀɪɴ."
 
+# ── Rank (LuckPerms group assignment) ─────────────────────────────────────────
+# {bot}   — bot display name
+# {group} — LuckPerms group name
+# {count} — number of bots assigned
+rank-no-luckperms:     "{prefix}<red>ʟᴜᴄᴋᴘᴇʀᴍꜱ ɪꜱ ɴᴏᴛ ɪɴꜱᴛᴀʟʟᴇᴅ ᴏʀ ᴇɴᴀʙʟᴇᴅ."
+rank-usage:            "{prefix}<red>ᴜꜱᴀɢᴇ<gray>: <#0079FF>/fpp rank <set|random|clear|list></#0079FF><gray>."
+rank-set-usage:        "{prefix}<red>ᴜꜱᴀɢᴇ<gray>: <#0079FF>/fpp rank set <bot> <group></#0079FF><gray>."
+rank-random-usage:     "{prefix}<red>ᴜꜱᴀɢᴇ<gray>: <#0079FF>/fpp rank random <group> <count|all></#0079FF><gray>."
+rank-clear-usage:      "{prefix}<red>ᴜꜱᴀɢᴇ<gray>: <#0079FF>/fpp rank clear <bot></#0079FF><gray>."
+rank-bot-not-found:    "{prefix}<red>ɴᴏ ᴀᴄᴛɪᴠᴇ ʙᴏᴛ ɴᴀᴍᴇᴅ <white>{name}<red>."
+rank-group-not-found:  "{prefix}<red>ʟᴜᴄᴋᴘᴇʀᴍꜱ ɢʀᴏᴜᴘ <white>{group}<red> ᴅᴏᴇꜱ ɴᴏᴛ ᴇxɪꜱᴛ."
+rank-invalid-count:    "{prefix}<red>ɪɴᴠᴀʟɪᴅ ᴄᴏᴜɴᴛ. ᴘʟᴇᴀꜱᴇ ᴇɴᴛᴇʀ ᴀ ᴘᴏꜱɪᴛɪᴠᴇ ɴᴜᴍʙᴇʀ ᴏʀ 'all'."
+rank-no-bots:          "{prefix}<red>ɴᴏ ʙᴏᴛꜱ ᴀʀᴇ ᴄᴜʀʀᴇɴᴛʟʏ ᴀᴄᴛɪᴠᴇ."
+rank-set-success:      "{prefix}<#66CC66>✓</#66CC66> <#0079FF>{bot}</#0079FF> <gray>ᴀꜱꜱɪɢɴᴇᴅ ᴛᴏ ɢʀᴏᴜᴘ <white>{group}<gray>."
+rank-random-success:   "{prefix}<#66CC66>✓</#66CC66> <#0079FF>{count}</#0079FF> <gray>ʙᴏᴛ(ꜱ) ᴀꜱꜱɪɢɴᴇᴅ ᴛᴏ <white>{group}<gray>."
+rank-random-all-success: "{prefix}<#66CC66>✓</#66CC66> <#0079FF>ᴀʟʟ {count} ʙᴏᴛꜱ</#0079FF> <gray>ᴀꜱꜱɪɢɴᴇᴅ ᴛᴏ <white>{group}<gray>."
+rank-clear-success:    "{prefix}<#66CC66>✓</#66CC66> <#0079FF>{bot}</#0079FF> <gray>ʀᴇꜱᴇᴛ ᴛᴏ ᴅᴇꜰᴀᴜʟᴛ ɢʀᴏᴜᴘ."
+rank-list-header:      "{prefix}<gray>ʙᴏᴛ ʀᴀɴᴋꜱ <dark_gray>(<#0079FF>{count}</#0079FF> ᴀᴄᴛɪᴠᴇ<dark_gray>):"
+rank-list-entry-custom: "  <dark_gray>• <#0079FF>{bot}</#0079FF> <dark_gray>→ <white>{group}"
+rank-list-entry-default: "  <dark_gray>• <#0079FF>{bot}</#0079FF> <dark_gray>→ <gray>(ᴅᴇꜰᴀᴜʟᴛ)"

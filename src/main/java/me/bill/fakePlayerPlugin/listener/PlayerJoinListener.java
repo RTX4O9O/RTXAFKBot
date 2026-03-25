@@ -56,10 +56,18 @@ public class PlayerJoinListener implements Listener {
         } catch (Throwable ignored) {}
 
         if (manager.getCount() == 0) return;
+        // If restoration is in progress, defer syncing until it completes (post-restore prefix refresh).
+        // This ensures players see bots with correct ranks from the start, not with stale LP data.
+        long delayTicks = manager.isRestorationInProgress() ? 40L : 5L;
         // Small delay so the client is fully ready to receive entity packets
         org.bukkit.Bukkit.getScheduler().runTaskLater(plugin, () -> {
-            try { manager.syncToPlayer(event.getPlayer()); } catch (Throwable ignored) {}
-        }, 5L);
+            try { 
+                manager.syncToPlayer(event.getPlayer());
+                // Sync bot tab team to player's scoreboard
+                var btt = plugin.getBotTabTeam();
+                if (btt != null) btt.syncToPlayer(event.getPlayer());
+            } catch (Throwable ignored) {}
+        }, delayTicks);
     }
 
     /**

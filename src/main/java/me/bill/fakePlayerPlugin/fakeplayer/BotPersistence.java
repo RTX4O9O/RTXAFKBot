@@ -98,7 +98,7 @@ public final class BotPersistence {
             var section = new java.util.LinkedHashMap<String, Object>();
             section.put("name",            fp.getName());
             section.put("uuid",            fp.getUuid().toString());
-            section.put("display-name",    fp.getDisplayName());  // Save display name for restoration
+            section.put("display-name",    fp.getDisplayName());
             section.put("spawned-by",      fp.getSpawnedBy());
             section.put("spawned-by-uuid", fp.getSpawnedByUuid().toString());
             section.put("world",           loc.getWorld().getName());
@@ -107,6 +107,8 @@ public final class BotPersistence {
             section.put("z",               loc.getZ());
             section.put("yaw",             (double) loc.getYaw());
             section.put("pitch",           (double) loc.getPitch());
+            if (fp.getLuckpermsGroup() != null)
+                section.put("luckperms-group", fp.getLuckpermsGroup());
             list.add(section);
         }
         return list;
@@ -128,6 +130,10 @@ public final class BotPersistence {
             return;
         }
 
+        // Set flag to indicate restoration is in progress — players joining during this window
+        // will defer tab-list syncing until the post-restore prefix refresh completes.
+        manager.setRestorationInProgress(true);
+
         // ── Primary: restore from database fpp_active_bots ───────────────────
         me.bill.fakePlayerPlugin.database.DatabaseManager db =
                 plugin.getDatabaseManager();
@@ -147,12 +153,13 @@ public final class BotPersistence {
                         saved.add(new SavedBot(
                                 row.botName(),
                                 UUID.fromString(row.botUuid()),
-                                row.botDisplay(),  // Include saved display name from database
+                                row.botDisplay(),
                                 row.spawnedBy(),
                                 UUID.fromString(row.spawnedByUuid()),
                                 row.world(),
                                 row.x(), row.y(), row.z(),
-                                row.yaw(), row.pitch()
+                                row.yaw(), row.pitch(),
+                                row.luckpermsGroup()   // restore LP group override
                         ));
                     } catch (Exception e) {
                         FppLogger.warn("Skipping malformed DB active-bot row: " + e.getMessage());
@@ -191,9 +198,10 @@ public final class BotPersistence {
                 double z             = toDouble(map.get("z"));
                 float  yaw           = (float) toDouble(map.get("yaw"));
                 float  pitch         = (float) toDouble(map.get("pitch"));
+                String luckpermsGroup = (String) map.get("luckperms-group");  // Load LP group override
                 if (name == null || worldName == null) continue;
                 saved.add(new SavedBot(name, uuid, displayName, spawnedBy, spawnedByUuid,
-                        worldName, x, y, z, yaw, pitch));
+                        worldName, x, y, z, yaw, pitch, luckpermsGroup));
             } catch (Exception e) {
                 FppLogger.warn("Skipping malformed bot entry in " + FILE_NAME + ": " + e.getMessage());
             }
@@ -217,6 +225,8 @@ public final class BotPersistence {
                 int n = manager.updateAllBotPrefixes();
                 if (n > 0)
                     FppLogger.info("Post-restore prefix refresh: " + n + " bot(s) updated.");
+                // Signal that restoration is complete so players can now see bots correctly
+                manager.setRestorationInProgress(false);
             }, 20L);
             return;
         }
@@ -233,8 +243,8 @@ public final class BotPersistence {
 
         Location loc = new Location(world, sb.x, sb.y, sb.z, sb.yaw, sb.pitch);
 
-        // Spawn with restored UUID and display name — pass saved display name for proper restoration
-        manager.spawnRestored(sb.name, sb.uuid, sb.displayName, sb.spawnedBy, sb.spawnedByUuid, loc);
+        // Spawn with restored UUID, display name, and LP group override
+        manager.spawnRestored(sb.name, sb.uuid, sb.displayName, sb.spawnedBy, sb.spawnedByUuid, loc, sb.luckpermsGroup);
 
         // Stagger: use the configured join-delay range — values are TICKS (20 = 1 second)
         int delayMinTicks = Config.joinDelayMin();
@@ -324,7 +334,8 @@ public final class BotPersistence {
             String spawnedBy, UUID spawnedByUuid,
             String worldName,
             double x, double y, double z,
-            float yaw, float pitch
+            float yaw, float pitch,
+            String luckpermsGroup  // LP group override, null for default
     ) {}
 }
 

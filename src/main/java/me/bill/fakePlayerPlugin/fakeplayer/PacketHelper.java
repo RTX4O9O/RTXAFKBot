@@ -174,9 +174,15 @@ public final class PacketHelper {
 
     /**
      * Converts MiniMessage hex color tags to Minecraft legacy hex color codes for tab list display name.
+     * Supports both 6-digit and 3-digit hex codes (3-digit expands to 6-digit).
      * Example: <#0079FF>text</#0079FF> → §x§0§0§7§9§F§Ftext§r
+     * Example: <#000>text</#000> → §x§0§0§0§0§0§0text§r (black)
      */
     public static String convertHexColors(String input) {
+        // First, expand 3-digit hex codes to 6-digit format
+        input = expand3DigitHexCodesForPacket(input);
+        
+        // Now convert 6-digit hex codes to legacy format
         Pattern open = Pattern.compile("<#([A-Fa-f0-9]{6})>");
         Matcher m = open.matcher(input);
         StringBuffer sb = new StringBuffer();
@@ -191,6 +197,45 @@ public final class PacketHelper {
         // Replace closing tags
         result = result.replaceAll("</#([A-Fa-f0-9]{6})>", "§r");
         return result;
+    }
+
+    /**
+     * Expands 3-digit hex codes to 6-digit format.
+     * Example: <#abc> → <#aabbcc>, </#f0f> → </#f0f0f0>
+     */
+    private static String expand3DigitHexCodesForPacket(String s) {
+        if (s == null || s.indexOf('#') < 0) return s;
+        
+        // Opening tags: <#RGB>
+        Pattern p3 = Pattern.compile("<#([0-9A-Fa-f]{3})>");
+        Matcher m = p3.matcher(s);
+        StringBuffer sb = new StringBuffer();
+        while (m.find()) {
+            String hex3 = m.group(1);
+            String hex6 = String.format("%c%c%c%c%c%c",
+                    hex3.charAt(0), hex3.charAt(0),
+                    hex3.charAt(1), hex3.charAt(1),
+                    hex3.charAt(2), hex3.charAt(2));
+            m.appendReplacement(sb, "<#" + hex6 + ">");
+        }
+        m.appendTail(sb);
+        s = sb.toString();
+        
+        // Closing tags: </#RGB>
+        p3 = Pattern.compile("</#([0-9A-Fa-f]{3})>");
+        m = p3.matcher(s);
+        sb = new StringBuffer();
+        while (m.find()) {
+            String hex3 = m.group(1);
+            String hex6 = String.format("%c%c%c%c%c%c",
+                    hex3.charAt(0), hex3.charAt(0),
+                    hex3.charAt(1), hex3.charAt(1),
+                    hex3.charAt(2), hex3.charAt(2));
+            m.appendReplacement(sb, "</#" + hex6 + ">");
+        }
+        m.appendTail(sb);
+        
+        return sb.toString();
     }
 
     public static void sendTabListAdd(Player receiver, FakePlayer fp) {
@@ -392,9 +437,10 @@ public final class PacketHelper {
         if (!ensureReady()) return;
         try {
             Object nms = getHandle(receiver);
+            // Use the packet profile name (includes sort prefix) for consistency with sendTabListAdd.
             Object profile = gameProfileCtor != null
-                    ? gameProfileCtor.newInstance(fp.getUuid(), fp.getName())
-                    : gameProfileClass.getDeclaredConstructors()[0].newInstance(fp.getUuid(), fp.getName());
+                    ? gameProfileCtor.newInstance(fp.getUuid(), fp.getPacketProfileName())
+                    : gameProfileClass.getDeclaredConstructors()[0].newInstance(fp.getUuid(), fp.getPacketProfileName());
 
             Component adventureComponent = MiniMessage.miniMessage().deserialize(fp.getDisplayName());
             Object displayName = adventureToNms(adventureComponent);
