@@ -1,0 +1,36 @@
+{
+  "version": 2,
+  "builds": [
+    { "src": "frontend/api/status.js",       "use": "@vercel/node" },
+    { "src": "frontend/api/check-update.js", "use": "@vercel/node" }
+  ],
+  "routes": [
+    { "src": "/api/status",       "dest": "/frontend/api/status.js" },
+    { "src": "/api/check-update", "dest": "/frontend/api/check-update.js" },
+    { "src": "/wiki-styles.css",  "dest": "/frontend/wiki-styles.css" },
+    { "src": "/wiki-script.js",   "dest": "/frontend/wiki-script.js" },
+    { "src": "/Icon/(.*)",        "dest": "/frontend/Icon/$1" },
+    { "src": "/wiki(.*)",         "dest": "/frontend/wiki.html" },
+    { "src": "/",                 "dest": "/frontend/wiki.html" },
+    { "src": "/(.*)",             "dest": "/frontend/wiki.html" }
+  ],
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        { "key": "Access-Control-Allow-Origin",  "value": "*" },
+        { "key": "Access-Control-Allow-Methods", "value": "GET, POST, OPTIONS" },
+        { "key": "Access-Control-Allow-Headers", "value": "X-Plugin-Request, X-FPP-Request, User-Agent" }
+      ]
+    },
+    {
+      "source": "/wiki-styles.css",
+      "headers": [{ "key": "Content-Type", "value": "text/css; charset=utf-8" }]
+    },
+    {
+      "source": "/wiki-script.js",
+      "headers": [{ "key": "Content-Type", "value": "application/javascript; charset=utf-8" }]
+    }
+  ]
+}
+
