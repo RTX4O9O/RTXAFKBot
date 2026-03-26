@@ -4,7 +4,7 @@
 
 [SIZE=4][B]Version:[/B] 1.4.28 | [B]Minecraft:[/B] 1.21.x | [B]Platform:[/B] Paper | [B]Java:[/B] 21+[/SIZE]
 
-[URL='https://modrinth.com/plugin/fake-player-plugin-(fpp)'][B][COLOR=#00AF5C]📦 Download on Modrinth[/COLOR][/B][/URL] · [URL='https://discord.gg/QSN7f67nkJ'][B][COLOR=#5865F2]💬 Join Discord[/COLOR][/B][/URL]
+[URL='https://modrinth.com/plugin/fake-player-plugin-(fpp)'][B][COLOR=#00AF5C]🟢 Download on Modrinth[/COLOR][/B][/URL]  [URL='https://discord.gg/QSN7f67nkJ'][B][COLOR=#5865F2]💬 Join Discord[/COLOR][/B][/URL]  [URL='https://fakeplayerplugin.xyz'][B][COLOR=#7B8EF0]📖 Wiki[/COLOR][/B][/URL]
 [/CENTER]
 
 [HR][/HR]
@@ -663,6 +663,7 @@ Thank you all for using Fake Player Plugin. Without you, it wouldn't be where it
 [*] [URL='https://www.spigotmc.org/resources/fake-player-plugin-fpp.133572/']Spigotmc[/URL] — download
 [*] [URL='https://hangar.papermc.io/Pepe-tf/FakePlayerPlugin']PaperMC Hangar[/URL] — download
 [*] [URL='https://builtbybit.com/resources/fake-player-plugin.98704/']BuiltByBit[/URL] — download
+[*] [URL='https://fakeplayerplugin.xyz']Wiki[/URL] — documentation
 [*] [URL='https://ko-fi.com/fakeplayerplugin']Ko-fi[/URL] — support the project
 [*] [URL='https://discord.gg/QSN7f67nkJ']Discord[/URL] — support & feedback
 [*] [URL='https://github.com/Pepe-tf/Fake-Player-Plugin-Public-']GitHub[/URL] — source & issues
@@ -672,5 +673,5 @@ Thank you all for using Fake Player Plugin. Without you, it wouldn't be where it
 
 [CENTER][I]Built for Paper 1.21.x · Java 21 · FPP v1.4.28[/I]
 
-[URL='https://modrinth.com/plugin/fake-player-plugin-(fpp)']Modrinth[/URL] · [URL='https://www.spigotmc.org/resources/fake-player-plugin-fpp.133572/']SpigotMC[/URL] · [URL='https://hangar.papermc.io/Pepe-tf/FakePlayerPlugin']PaperMC[/URL] · [URL='https://builtbybit.com/resources/fake-player-plugin.98704/']BuiltByBit[/URL][/CENTER]
+[URL='https://modrinth.com/plugin/fake-player-plugin-(fpp)']Modrinth[/URL]  [URL='https://www.spigotmc.org/resources/fake-player-plugin-fpp.133572/']SpigotMC[/URL]  [URL='https://hangar.papermc.io/Pepe-tf/FakePlayerPlugin']PaperMC[/URL]  [URL='https://builtbybit.com/resources/fake-player-plugin.98704/']BuiltByBit[/URL]  [URL='https://fakeplayerplugin.xyz']Wiki[/URL]
 

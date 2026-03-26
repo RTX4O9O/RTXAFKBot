@@ -8,6 +8,7 @@
 ![Java](https://img.shields.io/badge/Java-21-0079FF?style=flat-square)
 [![Modrinth](https://img.shields.io/badge/Modrinth-FPP-00AF5C?style=flat-square&logo=modrinth)](https://modrinth.com/plugin/fake-player-plugin-(fpp))
 [![Discord](https://img.shields.io/badge/Discord-Join%20Server-5865F2?style=flat-square&logo=discord&logoColor=white)](https://discord.gg/QSN7f67nkJ)
+[![Wiki](https://img.shields.io/badge/Wiki-fakeplayerplugin.xyz-7B8EF0?style=flat-square)](https://fakeplayerplugin.xyz)
 
 ---
 
@@ -413,10 +414,11 @@ Thank you all for using Fake Player Plugin. Without you, it wouldn't be where it
 - [Spigotmc](https://www.spigotmc.org/resources/fake-player-plugin-fpp.133572/) - download
 - [Papermc](https://hangar.papermc.io/Pepe-tf/FakePlayerPlugin) - download
 - [BuiltByBit](https://builtbybit.com/resources/fake-player-plugin.98704/) - download
+- [Wiki](https://fakeplayerplugin.xyz) — documentation
 - [Ko-fi](https://ko-fi.com/fakeplayerplugin) — support the project
 - [Discord](https://discord.gg/QSN7f67nkJ) — support & feedback
 - [GitHub](https://github.com/Pepe-tf/Fake-Player-Plugin-Public-) — source & issues
 
 ---
 
-*Built for Paper 1.21.x · Java 21 · FPP - vLatest · [Modrinth](https://modrinth.com/plugin/fake-player-plugin-(fpp)) - [Spigotmc](https://www.spigotmc.org/resources/fake-player-plugin-fpp.133572/) - [Papermc](https://hangar.papermc.io/Pepe-tf/FakePlayerPlugin) - [BuiltByBit](https://builtbybit.com/resources/fake-player-plugin.98704/)*
+*Built for Paper 1.21.x  Java 21  FPP - vLatest  [Modrinth](https://modrinth.com/plugin/fake-player-plugin-(fpp)) - [Spigotmc](https://www.spigotmc.org/resources/fake-player-plugin-fpp.133572/) - [Papermc](https://hangar.papermc.io/Pepe-tf/FakePlayerPlugin) - [BuiltByBit](https://builtbybit.com/resources/fake-player-plugin.98704/) - [Wiki](https://fakeplayerplugin.xyz)*
