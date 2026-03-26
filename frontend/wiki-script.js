@@ -1,11 +1,6 @@
 // ==================== CONFIGURATION ====================
 
-// Detect if running locally for development
-const isLocalDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-
-const WIKI_BASE_URL = isLocalDev
-    ? '/wiki/'  // Local development - serve from local files
-    : 'https://raw.githubusercontent.com/Pepe-tf/Fake-Player-Plugin-Public-/main/wiki/';  // Production - GitHub
+const WIKI_BASE_URL = '/wiki/';  // Served locally and on Vercel via @vercel/static
 
 const DEFAULT_PAGE = 'Home';
 
@@ -16,8 +11,6 @@ const VALID_PAGES = [
     'Swap-System', 'Fake-Chat', 'Placeholders', 'Database', 'Migration'
 ];
 
-// Cache busting - add timestamp to URLs to force fresh content (only for GitHub)
-const CACHE_BUSTER = isLocalDev ? '' : '?v=' + Date.now();
 
 // ==================== STATE ====================
 
@@ -150,7 +143,7 @@ async function loadPage(page) {
 
     try {
         // Try to fetch from GitHub with cache busting
-        const url = `${WIKI_BASE_URL}${cleanPage}.md${CACHE_BUSTER}`;
+        const url = `${WIKI_BASE_URL}${cleanPage}.md`;
         const response = await fetch(url);
 
         if (!response.ok) {
@@ -857,7 +850,7 @@ async function buildSearchIndex() {
     for (const page of pages) {
         try {
             if (!wikiContent[page]) {
-                const response = await fetch(`${WIKI_BASE_URL}${page}.md${CACHE_BUSTER}`);
+                const response = await fetch(`${WIKI_BASE_URL}${page}.md`);
                 if (response.ok) {
                     wikiContent[page] = await response.text();
                 }
