@@ -1,5 +1,5 @@
 name: FakePlayerPlugin
-version: '1.4.28'
+version: '1.5.0'
 main: me.bill.fakePlayerPlugin.FakePlayerPlugin
 api-version: '1.21'
 authors: [ El_Pepes ]
@@ -244,6 +244,6 @@ permissions:
   fpp.rank:
     description: >
       Assign LuckPerms groups to individual bots with /fpp rank.
-      Subcommands: set <bot> <group>, random <group> <count>, clear <bot>, list.
+      Subcommands: <bot> <group>, <bot> clear, random <group> [num], list.
       Allows mixing bot ranks (admin bots, VIP bots, default bots) on the same server.
     default: op

@@ -1,15 +1,32 @@
 # ─────────────────────────────────────────────────────────────────────────────
-#  ꜰᴀᴋᴇ ᴘʟᴀʏᴇʀ ᴘʟᴜɢɪɴ  ·  config.yml  ·  v1.4.28
+#  ꜰᴀᴋᴇ ᴘʟᴀʏᴇʀ ᴘʟᴜɢɪɴ  ·  config.yml  ·  v1.5.0
 #  Run /fpp reload to apply changes without restarting the server.
 #  Colors use MiniMessage: <#0079FF>text</#0079FF>  <gray>text</gray>
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Internal — managed by the migration system. Do NOT edit.
-config-version: 28
+config-version: 33
 # Internal migration version — updated automatically. Do not edit.
 
 language: en         # Language file to use (language/<lang>.yml)
-debug: false         # Set true to enable verbose console logging
+debug: false         # Legacy master switch: true = enable every debug category below
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  LOGGING / DEBUG
+#  All toggles below are false by default so normal logs stay clean and user-friendly.
+#  Set only the subsystem you want to inspect to true.
+#  The top-level `debug: true` switch above still enables every category at once.
+# ─────────────────────────────────────────────────────────────────────────────
+logging:
+  debug:
+    startup: false      # Startup flow, reloads, compatibility, general lifecycle
+    nms: false          # Reflection, fake connection setup, NMS internals
+    packets: false      # Tab-list/entity packet sending and packet constructor selection
+    luckperms: false    # LuckPerms group sync and prefix refresh details
+    network: false      # Velocity/Bungee plugin messaging and remote bot sync
+    config-sync: false  # Network config push/pull activity and YAML sync internals
+    skin: false         # Reserved for skin subsystem debugging
+    database: false     # Database init, migrations, flushes, and session persistence
 
 update-checker:
   enabled: true      # Check for new versions on startup and /fpp reload
@@ -56,45 +73,18 @@ bot-name:
   #   "{prefix}{bot_name}{suffix}"                   ← default (same as old behaviour)
   #   "&7{prefix}{bot_name}{suffix}"                 ← gray prefix/suffix
   #   "{prefix}{bot_name}{suffix} <gray>%server_uptime%"
-  tab-list-format: '{prefix}{bot_name}{suffix}'
+  tab-list-format: '{bot_name}'
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  LUCKPERMS INTEGRATION
-#  Advanced tab-list ordering that places bots at the bottom while preserving
-#  rank hierarchy within the bot section.
+#  Bots are now real NMS ServerPlayer entities. LuckPerms detects them as real
+#  players and applies prefix, suffix, and tab-list ordering automatically.
 # ─────────────────────────────────────────────────────────────────────────────
 luckperms:
-  # Prepend the LuckPerms group prefix to every bot's display name
-  use-prefix: true
-  
-  # ── Tab-List Ordering System ───────────────────────────────────────────────
-  # When true, bots are ordered by LuckPerms group weight within their own
-  # section at the bottom of the tab list. Higher weight groups appear ABOVE
-  # lower weight groups (e.g., admin bots above default bots).
-  weight-ordering-enabled: true
-  
-  # Optional: force all bots to use this LuckPerms group's prefix and weight.
-  # Leave blank ("") to use the default group or spawner's group for user bots.
-  bot-group: ""
-  
-  # ── Tab-List Position Control ──────────────────────────────────────────────
-  # Character used to position the entire bot section in the tab list.
-  # The plugin uses a hidden "~fpp" scoreboard team that ensures bots always
-  # appear AFTER all real players, regardless of this prefix character.
-  # 
-  # Common values:
-  #   "{"  (ASCII 123, default) — aesthetic choice, sorts after letters
-  #   "~"  (ASCII 126) — sorts even later (after { } |)
-  #   "!"  (ASCII 33)  — would sort first, but team override still applies
-  #   ""   (empty)     — plugin auto-uses "~" when weight-ordering is enabled
-  #
-  # Within the bot section: Higher LP weight = rank 00 (top), lower weight = rank 02 (bottom).
-  # Example: Admin bot (weight=100) = {00_AdminBot, Default bot (weight=1) = {02_DefaultBot
-  packet-prefix-char: "{"
-  
-  # Legacy option kept for backward compatibility. No longer affects ordering
-  # since the scoreboard team system ensures bots always appear below real players.
-  weight-offset: 0
+  # Optional: assign this LP group to every new bot at spawn time.
+  # When blank, bots receive LuckPerms' built-in "default" group.
+  # Use "/fpp rank <bot> <group>" to change individual bot groups.
+  default-group: ""
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  SKIN
@@ -302,13 +292,52 @@ tab-list:
   enabled: true
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  DATABASE
+#  DATABASE  &  PROXY / NETWORK SUPPORT  (Velocity · BungeeCord · Waterfall)
+#
 #  Records every bot session for auditing and in-game queries (/fpp info).
 #  SQLite: zero-config — stored at plugins/FakePlayerPlugin/data/fpp.db
-#  MySQL:  for multi-server / BungeeCord setups — set mysql-enabled: true
+#  MySQL:  required for multi-server / proxy setups
+#
+#  ── Modes ────────────────────────────────────────────────────────────────────
+#  mode: LOCAL   — single server (default). SQLite or MySQL, no server filtering.
+#  mode: NETWORK — shared MySQL across multiple backend servers.
+#                  Each server tags its DB rows with server-id so bots stay
+#                  isolated per-server even on a shared database.
+#
+#  ── Cross-server features enabled in NETWORK mode ────────────────────────────
+#    • Fake chat   — broadcasts to every server on the proxy
+#    • Alerts      — /fpp alert reaches all servers instantly
+#    • Join/leave  — messages visible network-wide
+#    • Isolation   — bots only exist on the server that spawned them
+#
+#  ── Quick proxy setup ────────────────────────────────────────────────────────
+#  1. Set mode: "NETWORK"
+#  2. Give each backend server a unique server-id  (e.g. "survival", "skyblock")
+#  3. Enable mysql-enabled and fill in credentials below
+#  4. For Velocity: set  bungeecord-compat-mode: true  in velocity.toml
+#  5. Run /fpp reload on every server
 # ─────────────────────────────────────────────────────────────────────────────
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  CONFIG SYNC
+#  Cross-server configuration synchronization for network setups.
+#  Only active when mode: NETWORK and database is enabled.
+# ─────────────────────────────────────────────────────────────────────────────
+config-sync:
+  # DISABLED  - No config syncing (default)
+  # MANUAL    - Only sync via /fpp sync commands  
+  # AUTO_PULL - Pull latest config on startup/reload
+  # AUTO_PUSH - Push config changes automatically
+  mode: "DISABLED"
+
 database:
-  enabled: true     # Master toggle: set to false to disable all DB operations (no persistence, no stats)
+  enabled: true     # Master toggle: false = no DB operations, no persistence, no stats
+  mode: "LOCAL"     # LOCAL (single server) or NETWORK (proxy / multi-server)
+
+  # Unique name for THIS server — only matters when mode is NETWORK.
+  # Every backend server must have a different value (e.g. "survival", "skyblock").
+  server-id: "default"
+
   mysql-enabled: false
   mysql:
     host: "localhost"

@@ -6,18 +6,18 @@ import me.bill.fakePlayerPlugin.config.BotNameConfig;
 import me.bill.fakePlayerPlugin.config.Config;
 import me.bill.fakePlayerPlugin.database.DatabaseManager;
 import me.bill.fakePlayerPlugin.fakeplayer.BotChatAI;
-import me.bill.fakePlayerPlugin.fakeplayer.BotHeadAI;
 import me.bill.fakePlayerPlugin.fakeplayer.BotPersistence;
 import me.bill.fakePlayerPlugin.fakeplayer.BotSwapAI;
 import me.bill.fakePlayerPlugin.fakeplayer.ChunkLoader;
 import me.bill.fakePlayerPlugin.fakeplayer.FakePlayerManager;
-import me.bill.fakePlayerPlugin.fakeplayer.SkinRepository;
 import me.bill.fakePlayerPlugin.lang.Lang;
 import me.bill.fakePlayerPlugin.listener.BotCollisionListener;
 import me.bill.fakePlayerPlugin.listener.FakePlayerEntityListener;
+import me.bill.fakePlayerPlugin.listener.FakePlayerKickListener;
 import me.bill.fakePlayerPlugin.listener.PlayerJoinListener;
 import me.bill.fakePlayerPlugin.listener.PlayerWorldChangeListener;
 import me.bill.fakePlayerPlugin.listener.ServerListListener;
+import me.bill.fakePlayerPlugin.messaging.VelocityChannel;
 import me.bill.fakePlayerPlugin.util.BackupManager;
 import me.bill.fakePlayerPlugin.util.BotTabTeam;
 import me.bill.fakePlayerPlugin.util.CompatibilityChecker;
@@ -48,7 +48,9 @@ public final class FakePlayerPlugin extends JavaPlugin {
     private FppMetrics        fppMetrics;
     private TabListManager    tabListManager;
     private BotTabTeam        botTabTeam;
-    private me.bill.fakePlayerPlugin.listener.LuckPermsUpdateListener luckPermsUpdateListener;
+    private VelocityChannel   velocityChannel;
+    private me.bill.fakePlayerPlugin.fakeplayer.RemoteBotCache remoteBotCache;
+    private me.bill.fakePlayerPlugin.sync.ConfigSyncManager configSyncManager;
     /** When true the plugin detected an unsupported server/runtime and restrains some features */
     private boolean compatibilityRestricted = false;
 
@@ -74,26 +76,20 @@ public final class FakePlayerPlugin extends JavaPlugin {
         ConfigMigrator.migrateIfNeeded(this);
 
         // ── Config ────────────────────────────────────────────────────────────
-        FppLogger.section("Loading Config");
         Config.init(this);
-        FppLogger.debug("config.yml loaded.");
+        Config.debugStartup("config.yml loaded.");
 
         Lang.init(this);
-        FppLogger.debug("Language file loaded (lang=" + Config.getLanguage() + ").");
+        Config.debugStartup("Language file loaded (lang=" + Config.getLanguage() + ").");
 
         BotNameConfig.init(this);
-        FppLogger.debug("Bot name pool: " + BotNameConfig.getNames().size() + " names.");
+        Config.debugStartup("Bot name pool: " + BotNameConfig.getNames().size() + " names.");
 
         BotMessageConfig.init(this);
-        FppLogger.debug("Bot message pool: " + BotMessageConfig.getMessages().size() + " messages.");
+        Config.debugStartup("Bot message pool: " + BotMessageConfig.getMessages().size() + " messages.");
 
         // Ensure plugin data directories exist regardless of config settings
         ensureDataDirectories();
-
-        // ── Skin repository ───────────────────────────────────────────────────
-        FppLogger.section("Loading Skin Repository");
-        SkinRepository.get().init(this);
-        FppLogger.debug("Skin repository initialised (mode=" + Config.skinMode() + ").");
 
         // ── Server compatibility check ────────────────────────────────────────
         // Logs detailed console warnings for each issue; returns an immutable result.
@@ -102,7 +98,6 @@ public final class FakePlayerPlugin extends JavaPlugin {
         compatibilityWarningMessage  = CompatibilityChecker.buildWarningComponent(compatResult);
 
         // ── Database ──────────────────────────────────────────────────────────
-        FppLogger.section("Connecting Database");
         boolean dbOk = false;
         if (Config.databaseEnabled()) {
             databaseManager = new DatabaseManager();
@@ -110,14 +105,53 @@ public final class FakePlayerPlugin extends JavaPlugin {
             if (!dbOk) {
                 FppLogger.warn("Database could not be initialised — session tracking disabled.");
                 databaseManager = null;
+            } else {
+                // Log database mode and server ID
+                String mode = Config.databaseMode();
+                String serverId = Config.serverId();
+                Config.debugDatabase("Database mode: " + mode + " | server-id=" + serverId);
             }
         } else {
-            FppLogger.info("Database disabled in config — skipping database initialisation.");
+            Config.debugDatabase("Database disabled in config — skipping database initialisation.");
             databaseManager = null;
         }
 
+        // ── Remote bot cache ──────────────────────────────────────────────────
+        // Holds virtual tab-list entries for bots running on other proxy servers.
+        // Always initialised (even in LOCAL mode) so the rest of the code never
+        // has to null-check it.
+        remoteBotCache = new me.bill.fakePlayerPlugin.fakeplayer.RemoteBotCache();
+        if (Config.isNetworkMode() && databaseManager != null) {
+            // Pre-populate from the shared DB so players already online see remote
+            // bots immediately.  Skin data is not stored in the DB, so these entries
+            // will be skin-less until the originating server sends a BOT_SPAWN message.
+            java.util.List<me.bill.fakePlayerPlugin.database.DatabaseManager.ActiveBotRow> remoteRows =
+                    databaseManager.getActiveBotsFromOtherServers();
+            for (var row : remoteRows) {
+                try {
+                    java.util.UUID uuid = java.util.UUID.fromString(row.botUuid());
+                    String display = (row.botDisplay() != null && !row.botDisplay().isBlank())
+                            ? row.botDisplay() : row.botName();
+                    remoteBotCache.add(new me.bill.fakePlayerPlugin.fakeplayer.RemoteBotEntry(
+                            row.serverId(), uuid, row.botName(), display,
+                            row.botName(), "", ""));   // no skin from DB
+                } catch (Exception ignored) {}
+            }
+            Config.debugNetwork("Remote bot cache pre-populated from DB: "
+                    + remoteBotCache.count() + " bot(s).");
+        }
+
+        // ── Config Sync Manager ───────────────────────────────────────────────
+        // Initialize config sync if in NETWORK mode with database available
+        if (Config.isNetworkMode() && databaseManager != null) {
+            configSyncManager = new me.bill.fakePlayerPlugin.sync.ConfigSyncManager(this, databaseManager);
+            configSyncManager.init();
+            Config.debugConfigSync("Config sync manager initialized (mode=" + Config.configSyncMode() + ").");
+        } else {
+            configSyncManager = null;
+        }
+
         // ── Fake player manager + chunk loader ────────────────────────────────
-        FppLogger.section("Initialising Subsystems");
         fakePlayerManager = new FakePlayerManager(this);
         if (databaseManager != null) fakePlayerManager.setDatabaseManager(databaseManager);
 
@@ -125,7 +159,7 @@ public final class FakePlayerPlugin extends JavaPlugin {
             chunkLoader = new ChunkLoader(this, fakePlayerManager);
             fakePlayerManager.setChunkLoader(chunkLoader);
         } else {
-            FppLogger.debug("Skipping ChunkLoader initialisation due to compatibility restrictions.");
+            Config.debugStartup("Skipping ChunkLoader initialisation due to compatibility restrictions.");
             chunkLoader = null;
             // fakePlayerManager.setChunkLoader(null); // no-op, leave unset
         }
@@ -137,7 +171,6 @@ public final class FakePlayerPlugin extends JavaPlugin {
         fakePlayerManager.setSwapAI(botSwapAI);
 
         // ── Commands ──────────────────────────────────────────────────────────
-        FppLogger.section("Registering Commands");
         commandManager = new CommandManager(this);
         commandManager.register(new SpawnCommand(fakePlayerManager));
         commandManager.register(new DeleteCommand(fakePlayerManager));
@@ -153,7 +186,9 @@ public final class FakePlayerPlugin extends JavaPlugin {
         commandManager.register(new FreezeCommand(fakePlayerManager));
         commandManager.register(new LpInfoCommand(this, fakePlayerManager));
         commandManager.register(new RankCommand(this, fakePlayerManager));
-        FppLogger.debug("Commands registered: " + commandManager.getCommands().size() + " total.");
+        commandManager.register(new AlertCommand(this));
+        commandManager.register(new SyncCommand(this));
+        Config.debugStartup("Commands registered: " + commandManager.getCommands().size() + " total.");
 
         var fppCmd = getCommand("fpp");
         if (fppCmd != null) {
@@ -162,20 +197,28 @@ public final class FakePlayerPlugin extends JavaPlugin {
         }
 
         // ── Listeners ─────────────────────────────────────────────────────────
-        FppLogger.section("Registering Listeners");
         getServer().getPluginManager().registerEvents(new PlayerJoinListener(this, fakePlayerManager), this);
         getServer().getPluginManager().registerEvents(new PlayerWorldChangeListener(this, fakePlayerManager), this);
 
         if (!compatibilityRestricted) {
             getServer().getPluginManager().registerEvents(new FakePlayerEntityListener(this, fakePlayerManager, chunkLoader), this);
             getServer().getPluginManager().registerEvents(new BotCollisionListener(this, fakePlayerManager), this);
-            new BotHeadAI(this, fakePlayerManager);
         } else {
-            FppLogger.info("Skipping Mannequin-dependent listeners and BotHeadAI due to compatibility restrictions.");
+            Config.debugStartup("Skipping NMS-dependent listeners due to compatibility restrictions.");
         }
 
         getServer().getPluginManager().registerEvents(new ServerListListener(fakePlayerManager), this);
+        getServer().getPluginManager().registerEvents(new FakePlayerKickListener(fakePlayerManager), this);
         new BotChatAI(this, fakePlayerManager);
+
+        // ── Plugin messaging (Velocity / BungeeCord) ─────────────────────────
+        // Registers fpp:main for inbound delivery and BungeeCord for outbound
+        // "Forward ALL" packets so the proxy re-delivers messages to every server.
+        velocityChannel = new VelocityChannel(this, fakePlayerManager);
+        getServer().getMessenger().registerOutgoingPluginChannel(this, VelocityChannel.CHANNEL);
+        getServer().getMessenger().registerOutgoingPluginChannel(this, "BungeeCord");
+        getServer().getMessenger().registerIncomingPluginChannel(this, VelocityChannel.CHANNEL, velocityChannel);
+        Config.debugNetwork("Plugin messaging channels registered: " + VelocityChannel.CHANNEL + " + BungeeCord.");
 
         // ── Periodic entity health check + orphan sweep (every 5 min) ─────────
         getServer().getScheduler().runTaskTimer(this, () -> {
@@ -201,7 +244,7 @@ public final class FakePlayerPlugin extends JavaPlugin {
             botTabTeam = new BotTabTeam();
             botTabTeam.init();
             fakePlayerManager.setBotTabTeam(botTabTeam);
-            FppLogger.success("Bot tab team initialized — bots will appear in ~fpp section.");
+            Config.debugPackets("Bot tab team initialized (~fpp).");
         } catch (Exception e) {
             FppLogger.warn("Bot tab team init failed — " + e.getMessage());
         }
@@ -210,25 +253,24 @@ public final class FakePlayerPlugin extends JavaPlugin {
         if (Bukkit.getPluginManager().getPlugin("PlaceholderAPI") != null) {
             try {
                 new me.bill.fakePlayerPlugin.util.FppPlaceholderExpansion(this, fakePlayerManager).register();
-                FppLogger.success("PlaceholderAPI: expansion registered (%fpp_count%, %fpp_max%, …).");
+                Config.debugStartup("PlaceholderAPI detected — placeholders registered.");
             } catch (Exception e) {
                 FppLogger.warn("PlaceholderAPI: failed to register expansion — " + e.getMessage());
             }
         }
 
-        // ── Detect LuckPerms prefix (deferred 1 tick so LP is fully loaded) ──
+        // ── LuckPerms soft-dependency ─────────────────────────────────────────
+        // Bots are real NMS ServerPlayer entities — LP auto-detects them as players.
+        // We just log whether LP is available and apply the configured default group.
         boolean luckPermsInstalled = Bukkit.getPluginManager().getPlugin("LuckPerms") != null;
         if (luckPermsInstalled) {
-            Bukkit.getScheduler().runTask(this, () -> {
-                try {
-                    net.luckperms.api.LuckPerms lp = net.luckperms.api.LuckPermsProvider.get();
-                    luckPermsUpdateListener = new me.bill.fakePlayerPlugin.listener.LuckPermsUpdateListener(this, fakePlayerManager, lp);
-                    luckPermsUpdateListener.register();
-                    FppLogger.success("LuckPerms: auto-update listener registered (prefix changes apply instantly).");
-                } catch (Exception e) {
-                    FppLogger.warn("LuckPerms: failed to register auto-update listener — " + e.getMessage());
-                }
-            });
+            Config.debugLuckPerms("LuckPerms detected — bot group sync enabled.");
+            String defaultGroup = me.bill.fakePlayerPlugin.config.Config.luckpermsDefaultGroup();
+            if (!defaultGroup.isBlank()) {
+                Config.debugLuckPerms("default-group='" + defaultGroup + "' will be applied to new bots at spawn.");
+            }
+            // Subscribe to LP UserDataRecalculateEvent for auto-refresh when LP group changes
+            me.bill.fakePlayerPlugin.util.LuckPermsHelper.subscribeLpEvents(this, fakePlayerManager);
         }
 
         // ── Update checker — purely async, never blocks startup ───────────────
@@ -246,17 +288,17 @@ public final class FakePlayerPlugin extends JavaPlugin {
                 }
             }
         } else {
-            FppLogger.info("Metrics: disabled in config.yml — skipping FastStats init.");
+            Config.debugStartup("Metrics disabled in config.yml — skipping FastStats init.");
         }
 
         String dbLabel = databaseManager == null ? "none"
                 : Config.mysqlEnabled()          ? "MySQL"
                                                  : "SQLite (local)";
+        String dbState = !Config.databaseEnabled()
+                ? "disabled"
+                : (dbOk ? dbLabel : dbLabel + " (failed)");
 
-        // Build skin mode label — include guaranteed-skin status for clarity
-        String skinLabel = Config.skinMode()
-                + (Config.skinGuaranteed() && !"off".equals(Config.skinMode())
-                        ? " (guaranteed → " + Config.skinFallbackName() + ")" : "");
+        String skinLabel = "disabled";
 
         boolean effectiveSpawnBody    = Config.spawnBody() && !compatibilityRestricted;
         boolean effectiveChunkLoading = Config.chunkLoadingEnabled() && !compatibilityRestricted;
@@ -273,8 +315,7 @@ public final class FakePlayerPlugin extends JavaPlugin {
                 String.join(", ", getPluginMeta().getAuthors()),
                 BotNameConfig.getNames().size(),
                 BotMessageConfig.getMessages().size(),
-                dbLabel,
-                dbOk,
+                dbState,
                 skinLabel,
                 effectiveSpawnBody,
                 Config.persistOnRestart(),
@@ -294,25 +335,8 @@ public final class FakePlayerPlugin extends JavaPlugin {
         // ── Bot persistence restore ───────────────────────────────────────────
         botPersistence.purgeOrphanedBodiesAndRestore(fakePlayerManager);
 
-        // Log LuckPerms prefix detection after server fully starts (1-tick delay)
-        getServer().getScheduler().runTaskLater(this, () -> {
-            String detected = fakePlayerManager.detectLuckPermsPrefix();
-            if (luckPermsInstalled) {
-                if (detected.isEmpty()) {
-                    FppLogger.info("LuckPerms: no prefix found on default group — using config format only.");
-                } else {
-                    String readable = detected.replaceAll("<[^>]+>", "").strip();
-                    String display  = readable.isEmpty() ? "(formatting/whitespace only)" : "\"" + readable + "\"";
-                    FppLogger.success("LuckPerms: default group prefix active — " + display);
-                }
-                // Log group summary when debug is on
-                if (Config.isDebug()) {
-                    Config.debug("LuckPerms groups: " + me.bill.fakePlayerPlugin.util.LuckPermsHelper.buildGroupSummary());
-                }
-            }
-        }, 1L);
 
-        FppLogger.debug("onEnable complete.");
+        Config.debugStartup("onEnable complete.");
 
         // Deliver a single compatibility warning to currently-online ops/admins if configured
         try {
@@ -328,14 +352,14 @@ public final class FakePlayerPlugin extends JavaPlugin {
 
     @Override
     public void onDisable() {
-        Config.debug("onDisable called.");
+        Config.debugStartup("onDisable called.");
 
         int botsRemoved = fakePlayerManager != null ? fakePlayerManager.getCount() : 0;
 
         // Save active bots BEFORE removing them so the file is written with real locations
         if (botPersistence != null && fakePlayerManager != null) {
             if (Config.persistOnRestart()) {
-                FppLogger.debug("Saving " + botsRemoved + " bot(s) for persistence...");
+                Config.debugStartup("Saving " + botsRemoved + " bot(s) for persistence...");
                 botPersistence.save(fakePlayerManager.getActivePlayers());
             }
         }
@@ -343,8 +367,8 @@ public final class FakePlayerPlugin extends JavaPlugin {
         if (chunkLoader  != null) chunkLoader.releaseAll();
         // Cancel swap timers before sync removal to prevent ghost rejoin tasks
         if (botSwapAI    != null) botSwapAI.cancelAll();
-        // Unregister LuckPerms listener
-        if (luckPermsUpdateListener != null) luckPermsUpdateListener.unregister();
+        // Unsubscribe from LP events to prevent memory leaks
+        me.bill.fakePlayerPlugin.util.LuckPermsHelper.unsubscribeLpEvents();
         // removeAllSync sends leave messages + cleans up entities
         if (fakePlayerManager != null) fakePlayerManager.removeAllSync();
         // Shut down tab list header/footer
@@ -363,6 +387,11 @@ public final class FakePlayerPlugin extends JavaPlugin {
         // ── Metrics shutdown ──────────────────────────────────────────────────
         if (fppMetrics != null) fppMetrics.shutdown();
 
+        // ── Plugin messaging cleanup ──────────────────────────────────────────
+        getServer().getMessenger().unregisterIncomingPluginChannel(this, VelocityChannel.CHANNEL);
+        getServer().getMessenger().unregisterOutgoingPluginChannel(this, VelocityChannel.CHANNEL);
+        getServer().getMessenger().unregisterOutgoingPluginChannel(this, "BungeeCord");
+
         long uptimeMs = System.currentTimeMillis() - enabledAt;
         FppLogger.printShutdownBanner(botsRemoved, dbFlushed, uptimeMs);
     }
@@ -374,6 +403,12 @@ public final class FakePlayerPlugin extends JavaPlugin {
     public DatabaseManager   getDatabaseManager()   { return databaseManager; }
     public TabListManager    getTabListManager()     { return tabListManager; }
     public BotTabTeam        getBotTabTeam()         { return botTabTeam; }
+    /** Returns the Velocity plugin-messaging channel handler, or {@code null} if not yet initialised. */
+    public VelocityChannel   getVelocityChannel()   { return velocityChannel; }
+    /** Returns the cache of bot entries received from other servers in the proxy network. Never null. */
+    public me.bill.fakePlayerPlugin.fakeplayer.RemoteBotCache getRemoteBotCache() { return remoteBotCache; }
+    /** Returns the ConfigSyncManager, or {@code null} if not in NETWORK mode or database unavailable. */
+    public me.bill.fakePlayerPlugin.sync.ConfigSyncManager getConfigSyncManager() { return configSyncManager; }
 
     /** Returns true when the plugin detected an unsupported server/runtime. */
     public boolean isCompatibilityRestricted() { return compatibilityRestricted; }
@@ -407,7 +442,7 @@ public final class FakePlayerPlugin extends JavaPlugin {
             java.io.File d = new java.io.File(root, dir);
             if (!d.exists()) {
                 boolean ok = d.mkdirs();
-                FppLogger.debug("Created directory: " + d.getPath() + (ok ? " ✔" : " (already exists or failed)"));
+                Config.debugStartup("Created directory: " + d.getPath() + (ok ? " ✔" : " (already exists or failed)"));
             }
         }
 
@@ -427,7 +462,7 @@ public final class FakePlayerPlugin extends JavaPlugin {
                 w.println("# Skin files must be standard 64x64 or 64x32 Minecraft skin PNGs.");
                 w.println("# Run /fpp reload after adding or removing skin files.");
             } catch (java.io.IOException e) {
-                FppLogger.debug("Could not write skins/README.txt: " + e.getMessage());
+                Config.debugStartup("Could not write skins/README.txt: " + e.getMessage());
             }
         }
     }

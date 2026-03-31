@@ -310,15 +310,18 @@ All FPP commands use the root command `/fpp` with aliases `/fakeplayer` and `/fp
 ### 👑 `/fpp rank`
 
 ```bash
-/fpp rank <bot-name> <group-name|none>
+/fpp rank <bot-name> <group-name|clear>
+/fpp rank random <group-name> [num]
+/fpp rank list
 ```
 
-**Description:** Set LuckPerms group for a bot (overrides global bot group).
+**Description:** Set LuckPerms groups for one bot, or assign a group to a random selection of active bots.
 
 **Parameters:**
 - `<bot-name>` — Bot to modify
 - `<group-name>` — LuckPerms group name
-- `none` — Remove bot-specific group (use global)
+- `clear` — Reset one bot back to the default/global group
+- `num` — Optional number of random bots to affect (defaults to `1`)
 
 **Permission Required:** `fpp.admin.rank`
 
@@ -326,7 +329,10 @@ All FPP commands use the root command `/fpp` with aliases `/fakeplayer` and `/fp
 ```bash
 /fpp rank Steve admin     # Make Steve use admin group
 /fpp rank Alex staff      # Make Alex use staff group  
-/fpp rank Steve none      # Remove Steve's custom group
+/fpp rank Steve clear     # Reset Steve back to default/global group
+/fpp rank random vip      # Give 1 random active bot the vip group
+/fpp rank random admin 5  # Give 5 random active bots the admin group
+/fpp rank list            # Show current bot LP groups
 ```
 
 ---

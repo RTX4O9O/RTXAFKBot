@@ -83,6 +83,16 @@ public final class BotBroadcast {
     }
 
     /**
+     * Broadcasts a join message using a pre-resolved display-name string.
+     * Used by the network layer when a JOIN event arrives from another server
+     * via plugin messaging — the {@link FakePlayer} object does not exist here.
+     */
+    public static void broadcastJoinByDisplayName(String displayName) {
+        if (!Config.joinMessage()) return;
+        send(buildMessage("bot-join", displayName));
+    }
+
+    /**
      * Broadcasts a leave message if {@code messages.leave-message} is enabled.
      */
     public static void broadcastLeave(FakePlayer fp) {

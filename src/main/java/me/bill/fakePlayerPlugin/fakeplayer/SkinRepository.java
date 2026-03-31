@@ -2,6 +2,7 @@ package me.bill.fakePlayerPlugin.fakeplayer;
 
 import me.bill.fakePlayerPlugin.config.Config;
 import me.bill.fakePlayerPlugin.util.FppLogger;
+import org.bukkit.Bukkit;
 import org.bukkit.plugin.Plugin;
 
 import java.io.File;
@@ -33,8 +34,9 @@ import java.util.function.Consumer;
  * <h3>Skin modes</h3>
  * <dl>
  *   <dt>{@code auto}</dt>
- *   <dd>Paper's {@code Mannequin.setProfile(name)} — Mojang resolves the skin
- *       automatically. Zero code overhead.</dd>
+ *   <dd>Fetches the signed Mojang texture payload for the bot's skin name so the
+ *       same skin data can be applied to the local NMS body, tab-list packets,
+ *       and proxy sync payloads.</dd>
  *   <dt>{@code off}</dt>
  *   <dd>No skin — bots always display the default Steve / Alex appearance.</dd>
  *   <dt>{@code custom}</dt>
@@ -69,7 +71,7 @@ public final class SkinRepository {
     /** Resolved fallback pool skins — loaded from {@code skin.fallback-pool} for auto mode diversity. */
     private final List<SkinProfile> fallbackPoolSkins = new CopyOnWriteArrayList<>();
 
-    /** Session cache: bot-name → resolved profile (cleared on reload). */
+     /** Session cache: {@code mode:bot-name} → resolved profile (cleared on reload). */
     private final Map<String, SkinProfile> sessionCache = new ConcurrentHashMap<>();
 
     /**
@@ -150,41 +152,64 @@ public final class SkinRepository {
      * Resolves a skin for {@code botName} and delivers it to {@code callback}
      * asynchronously. The callback is always called on the <b>main thread</b>.
      *
-     * <p>If the mode is {@code auto} or {@code off}, the callback receives
-     * {@code null} (caller should handle accordingly).
+     * <p>{@code off} returns {@code null}. {@code auto} and {@code custom}
+     * both resolve a {@link SkinProfile} when possible, falling back to the
+     * guaranteed-skin chain when configured.
      *
      * @param botName  the internal Minecraft name of the bot
      * @param callback receives a {@link SkinProfile}, or {@code null}
      */
     public void resolve(String botName, java.util.function.Consumer<@org.jetbrains.annotations.Nullable SkinProfile> callback) {
+        if (botName == null || botName.isBlank()) {
+            deliver(callback, null);
+            return;
+        }
+
+        String normalizedBotName = botName.trim();
         String mode = Config.skinMode();
 
         if ("off".equals(mode) || "disabled".equals(mode)) {
-            callback.accept(null);
-            return;
-        }
-        if ("auto".equals(mode)) {
-            callback.accept(null); // caller will use auto (Mannequin.setProfile(name))
+            deliver(callback, null);
             return;
         }
 
-        // custom mode
-        // 1. Session cache
-        SkinProfile cached = sessionCache.get(botName.toLowerCase());
+        String cacheKey = buildCacheKey(mode, normalizedBotName);
+        SkinProfile cached = sessionCache.get(cacheKey);
         if (cached != null) {
-            callback.accept(cached);
+            deliver(callback, cached);
             return;
         }
 
-        resolveCustom(botName, profile -> {
+        Consumer<SkinProfile> finish = profile -> {
             if (profile != null && profile.isValid()) {
-                sessionCache.put(botName.toLowerCase(), profile);
+                sessionCache.put(cacheKey, profile);
             }
-            callback.accept(profile);
-        });
+            deliver(callback, profile);
+        };
+
+        if ("auto".equals(mode)) {
+            resolveAuto(normalizedBotName, finish);
+            return;
+        }
+
+        resolveCustom(normalizedBotName, finish);
     }
 
     // ── Private resolution pipeline ───────────────────────────────────────────
+
+    private void resolveAuto(String botName, Consumer<SkinProfile> callback) {
+        FppLogger.debug("SkinRepository: auto-resolving signed skin for '" + botName + "'.");
+        SkinFetcher.fetchAsync(botName, (value, sig) -> {
+            if (value != null && !value.isBlank()) {
+                callback.accept(new SkinProfile(value, sig, "auto:" + botName));
+            } else if (Config.skinGuaranteed()) {
+                FppLogger.debug("SkinRepository: auto lookup failed for '" + botName + "' — using guaranteed skin.");
+                getAnyValidSkin(callback);
+            } else {
+                callback.accept(null);
+            }
+        });
+    }
 
     private void resolveCustom(String botName, Consumer<SkinProfile> callback) {
         // 1. Exact-name override from config
@@ -448,8 +473,8 @@ public final class SkinRepository {
      * fallback is available a few hundred ms after startup.
      */
     private void loadFallbackSkin() {
-        String name = Config.skinFallbackName();
-        if (name == null || name.isBlank()) return;
+        String name = Config.skinFallbackName().trim();
+        if (name.isBlank()) return;
         SkinFetcher.fetchAsync(name, (value, sig) -> {
             if (value != null && !value.isBlank()) {
                 fallbackSkin = new SkinProfile(value, sig, "fallback:" + name);
@@ -539,8 +564,8 @@ public final class SkinRepository {
      * Extracted to avoid duplication in the fallback chain.
      */
     private void fetchSingleFallback(Consumer<SkinProfile> callback) {
-        String name = Config.skinFallbackName();
-        if (name != null && !name.isBlank()) {
+        String name = Config.skinFallbackName().trim();
+        if (!name.isBlank()) {
             FppLogger.debug("SkinRepository: guaranteed-skin → on-demand fallback fetch for '" + name + "'.");
             SkinFetcher.fetchAsync(name, (value, sig) -> {
                 if (value != null && !value.isBlank()) {
@@ -574,6 +599,19 @@ public final class SkinRepository {
 
     /** Clears the session cache (resolved per-bot skins). */
     public void clearSessionCache() { sessionCache.clear(); }
+
+    private String buildCacheKey(String mode, String botName) {
+        return mode.toLowerCase(Locale.ROOT) + ":" + botName.toLowerCase(Locale.ROOT);
+    }
+
+    private void deliver(Consumer<@org.jetbrains.annotations.Nullable SkinProfile> callback,
+                         @org.jetbrains.annotations.Nullable SkinProfile profile) {
+        if (plugin != null && plugin.isEnabled() && !Bukkit.isPrimaryThread()) {
+            Bukkit.getScheduler().runTask(plugin, () -> callback.accept(profile));
+            return;
+        }
+        callback.accept(profile);
+    }
 }
 
 

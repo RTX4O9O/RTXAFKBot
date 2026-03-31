@@ -1,6 +1,6 @@
 # ꜰᴀᴋᴇ ᴘʟᴀʏᴇʀ ᴘʟᴜɢɪɴ (FPP)
 
-> Spawn realistic fake players on your Paper server — with tab list presence, server list count, join/leave messages, in-world bodies, guaranteed skins, chunk loading, bot swap/rotation, fake chat, and full hot-reload support.
+> Spawn realistic fake players on your Paper server — with tab list presence, server list count, join/leave messages, in-world bodies, guaranteed skins, chunk loading, bot swap/rotation, fake chat, LuckPerms integration, proxy network support, and full hot-reload.
 
 [![Version](https://img.shields.io/modrinth/v/fake-player-plugin-%28fpp%29?style=flat-square&label=version&color=0079FF&logo=modrinth)](https://modrinth.com/plugin/fake-player-plugin-(fpp))
 ![MC](https://img.shields.io/badge/Minecraft-1.21.x-0079FF?style=flat-square)
@@ -12,46 +12,49 @@
 
 ---
 
-## ✦ What It Does
+## What It Does
 
 FPP adds fake players to your server that look and behave like real ones:
 
 - Show up in the **tab list** and **server list player count**
 - Broadcast **join, leave, and kill messages**
-- Spawn as **physical entities** in the world — pushable, damageable, solid
-- Always have a **real skin** (no Steve/Alex unless you want it)
+- Spawn as **physical NMS ServerPlayer entities** — pushable, damageable, solid
+- Always have a **real skin** (guaranteed fallback chain — never Steve/Alex unless you want it)
 - **Load chunks** around them exactly like a real player
 - **Rotate their head** to face nearby players
-- **Send fake chat messages** from a configurable message pool
+- **Send fake chat messages** from a configurable message pool (with LP prefix/suffix support)
 - **Swap in and out** automatically with fresh names and personalities
 - **Persist across restarts** — they come back where they left off
 - **Freeze** any bot in place with `/fpp freeze`
-- **PlaceholderAPI** support — display bot count and status anywhere
+- **LuckPerms** — per-bot group assignment, weighted tab-list ordering, prefix/suffix in chat and nametags
+- **Proxy/network support** — Velocity & BungeeCord cross-server chat, alerts, and shared database
+- **Config sync** — push/pull configuration files across your proxy network
+- **PlaceholderAPI** — 18+ placeholders including per-world bot counts
 - Fully **hot-reloadable** — no restarts needed
 
 ---
 
-## ✦ Requirements
+## Requirements
 
 | Requirement | Version |
-|---|---|
+|-------------|---------|
 | [Paper](https://papermc.io/downloads/paper) | 1.21.x |
 | Java | 21+ |
 | [PacketEvents](https://modrinth.com/plugin/packetevents) | 2.x |
 | [LuckPerms](https://luckperms.net) | Optional — auto-detected |
-| [PlaceholderAPI](https://www.spigotmc.org/resources/placeholderapi.6245/) | Optional — auto-detected (18 placeholders) |
+| [PlaceholderAPI](https://www.spigotmc.org/resources/placeholderapi.6245/) | Optional — auto-detected (18+ placeholders) |
 
 > **PlaceholderAPI Integration:** FPP provides 18+ placeholders including per-world bot counts, player-relative stats, and system status. See [PLACEHOLDERAPI.md](PLACEHOLDERAPI.md) for the complete reference.
 
-Note: Semi-support is available for older 1.21 releases (1.21.0 → 1.21.8). On those servers some features may be disabled and FPP will run in a restricted compatibility mode — check the server console for detailed warnings.
+> **Compatibility:** Semi-support for older 1.21 releases (1.21.0 to 1.21.8). On those servers some features may be disabled and FPP will run in a restricted compatibility mode — check the server console for warnings.
 
-> SQLite is bundled — no database setup required. MySQL is available for multi-server setups.
+> SQLite is bundled — no database setup required. MySQL is available for multi-server/proxy setups.
 
 ---
 
-## ✦ Installation
+## Installation
 
-1. Download the latest `fpp-*.jar` from [![Version](https://img.shields.io/modrinth/v/fake-player-plugin-%28fpp%29?style=flat-square&label=Modrinth&color=00AF5C&logo=modrinth)](https://modrinth.com/plugin/fake-player-plugin-(fpp)/versions) and place it in your `plugins/` folder.
+1. Download the latest `fpp-*.jar` from [![Modrinth](https://img.shields.io/modrinth/v/fake-player-plugin-%28fpp%29?style=flat-square&label=Modrinth&color=00AF5C&logo=modrinth)](https://modrinth.com/plugin/fake-player-plugin-(fpp)/versions) and place it in your `plugins/` folder.
 2. Download [PacketEvents](https://modrinth.com/plugin/packetevents) and place it in `plugins/` too.
 3. Restart your server — config files are created automatically.
 4. Edit `plugins/FakePlayerPlugin/config.yml` to your liking.
@@ -61,47 +64,59 @@ Note: Semi-support is available for older 1.21 releases (1.21.0 → 1.21.8). On 
 
 ---
 
-## ✦ Commands
+## Commands
 
 All commands are under `/fpp` (aliases: `/fakeplayer`, `/fp`).
 
 | Command | Description |
-|---|---|
-| `/fpp` | Plugin info — version, active bots, Modrinth link |
+|---------|-------------|
+| `/fpp` | Plugin info — version, active bots, download links |
 | `/fpp help [page]` | Paginated help with clickable navigation |
 | `/fpp spawn [amount] [--name <name>]` | Spawn fake player(s) at your location |
-| `/fpp delete <name\|all>` | Remove a bot by name, or remove all |
+| `/fpp despawn <name\|all\|random [n]>` | Remove a bot by name, remove all, or remove a random set |
 | `/fpp list` | List all active bots with uptime and location |
+| `/fpp freeze <name\|all> [on\|off]` | Freeze or unfreeze bots — frozen bots are immovable; shown with an ice icon in list/stats |
 | `/fpp chat [on\|off\|status]` | Toggle the fake chat system |
 | `/fpp swap [on\|off\|status]` | Toggle the bot swap/rotation system |
-| `/fpp freeze <name\|all> [on\|off]` | Freeze or unfreeze a bot — body becomes immovable; shown with ❄ in list/stats |
-| `/fpp rank set <bot> <luckperms-group>` | Assign a specific bot to a LuckPerms group |
-| `/fpp rank random <luckperms-group> [count\|all]` | Assign random bots (or all bots) to a LuckPerms group |
-| `/fpp stats` | Live statistics panel — bots, frozen count, system status, DB totals, TPS |
-| `/fpp reload` | Hot-reload all config, language, skins, and name/message pools |
+| `/fpp rank <bot> <group>` | Assign a specific bot to a LuckPerms group |
+| `/fpp rank random <group> [num\|all]` | Assign random bots to a LuckPerms group |
+| `/fpp rank list` | List all active bots with their current LuckPerms group |
+| `/fpp lpinfo [bot-name]` | LuckPerms diagnostic info — prefix, weight, rank, ordering |
+| `/fpp stats` | Live statistics panel — bots, frozen, system status, DB totals, TPS |
 | `/fpp info [bot <name> \| spawner <name>]` | Query the session database |
 | `/fpp tp <name>` | Teleport yourself to a bot |
-| `/fpp tph` | Teleport your bot to yourself |
+| `/fpp tph [name]` | Teleport your bot to yourself |
+| `/fpp alert <message>` | Broadcast an admin message network-wide (proxy) |
+| `/fpp sync push [file]` | Upload config file(s) to the proxy network |
+| `/fpp sync pull [file]` | Download config file(s) from the proxy network |
+| `/fpp sync status [file]` | Show sync status and version info |
+| `/fpp sync check [file]` | Check for local changes vs network version |
+| `/fpp migrate` | Backup, migration, and export tools |
+| `/fpp reload` | Hot-reload all config, language, skins, name/message pools |
 
 ---
 
-## ✦ Permissions
+## Permissions
 
 ### Admin
 
 | Permission | Description |
-|---|---|
-| `fpp.*` | All permissions |
+|------------|-------------|
+| `fpp.*` | All permissions (admin wildcard) |
 | `fpp.spawn` | Spawn bots (unlimited, supports `--name` and multi-spawn) |
+| `fpp.spawn.multiple` | Spawn more than 1 bot at a time |
+| `fpp.spawn.name` | Use the `--name` flag |
 | `fpp.delete` | Remove bots |
+| `fpp.delete.all` | Remove all bots at once |
 | `fpp.list` | List all active bots |
+| `fpp.freeze` | Freeze / unfreeze any bot or all bots |
 | `fpp.chat` | Toggle fake chat |
 | `fpp.swap` | Toggle bot swap |
-| `fpp.freeze` | Freeze / unfreeze any bot or all bots |
-| `fpp.rank` | Assign bots to LuckPerms groups (set or random) |
+| `fpp.rank` | Assign bots to LuckPerms groups |
+| `fpp.lpinfo` | View LuckPerms diagnostic info for any bot |
 | `fpp.stats` | View the `/fpp stats` live statistics panel |
-| `fpp.reload` | Reload configuration |
 | `fpp.info` | Query the database |
+| `fpp.reload` | Reload configuration |
 | `fpp.tp` | Teleport to bots |
 | `fpp.bypass.maxbots` | Bypass the global bot cap |
 | `fpp.bypass.cooldown` | Bypass the per-player spawn cooldown |
@@ -110,7 +125,7 @@ All commands are under `/fpp` (aliases: `/fakeplayer`, `/fp`).
 ### User (enabled for all players by default)
 
 | Permission | Description |
-|---|---|
+|------------|-------------|
 | `fpp.user.*` | All user commands |
 | `fpp.user.spawn` | Spawn your own bot (limited by `fpp.bot.<num>`) |
 | `fpp.user.tph` | Teleport your bot to you |
@@ -130,290 +145,287 @@ Grant players a `fpp.bot.<num>` node to set how many bots they can spawn. FPP pi
 
 ---
 
-## ✦ Configuration Overview
+## Configuration Overview
 
 Located at `plugins/FakePlayerPlugin/config.yml`. Run `/fpp reload` after any change.
 
 | Section | What it controls |
-|---|---|
+|---------|-----------------|
 | `language` | Language file to load (`language/en.yml`) |
-| `limits` | Global bot cap, per-user limit |
+| `debug` | Legacy master debug switch; per-subsystem toggles under `logging.debug.*` |
+| `update-checker` | Enable/disable startup version check |
+| `metrics` | Opt-out toggle for anonymous FastStats usage statistics |
+| `limits` | Global bot cap, per-user limit, spawn tab-complete presets |
 | `spawn-cooldown` | Seconds between `/fpp spawn` uses per player (`0` = off) |
-| `bot-name` | Display name format for admin and user bots |
-| `luckperms` | Whether to prepend the default-group prefix to bot names |
-| `skin` | Skin mode (`auto` / `custom` / `off`), guaranteed skin, fallback account |
-| `body` | Whether bots have a physical entity in the world |
+| `bot-name` | Display name format for admin/user bots; `tab-list-format` with `{prefix}` / `{bot_name}` / `{suffix}` |
+| `luckperms` | `default-group` — LP group assigned to every new bot at spawn |
+| `skin` | Skin mode (`auto` / `custom` / `off`), guaranteed skin, fallback chain and pool |
+| `body` | Physical entity (`enabled`), `pushable`, `damageable` |
 | `persistence` | Whether bots rejoin on server restart |
 | `join-delay` / `leave-delay` | Random delay range (ticks) for natural join/leave timing |
-| `messages` | Toggle join, leave, and kill broadcast messages |
+| `messages` | Toggle join, leave, and kill broadcast messages; admin compatibility notifications |
 | `combat` | Bot HP and hurt sound |
 | `death` | Respawn on death, respawn delay, item drop suppression |
 | `chunk-loading` | Radius, update interval |
 | `head-ai` | Enable/disable, look range, turn speed |
+| `collision` | Push physics — walk strength, hit strength, bot separation |
 | `swap` | Auto rotation — session length, farewell/greeting chat, AFK simulation |
-| `fake-chat` | Enable, message chance, interval |
-| `tab-list` | Optional animated tab-list header/footer with bot count placeholders; `show-bots` controls whether bots appear as tab-list entries |
-| `metrics` | Opt-out toggle for anonymous FastStats usage statistics |
-| `database` | SQLite (default) or MySQL |
+| `fake-chat` | Enable, message chance, interval, `chat-format` (supports `{prefix}` / `{bot_name}` / `{suffix}`) |
+| `tab-list` | Show/hide bots in the player tab list |
+| `config-sync` | Cross-server config push/pull mode (`DISABLED` / `MANUAL` / `AUTO_PULL` / `AUTO_PUSH`) |
+| `database` | `mode` (`LOCAL` / `NETWORK`), `server-id`, SQLite (default) or MySQL |
 
 ---
 
-## ✦ Skin System
+## Skin System
 
 Three modes — set with `skin.mode`:
 
 | Mode | Behaviour |
-|---|---|
+|------|-----------|
 | `auto` *(default)* | Fetches a real Mojang skin matching the bot's name |
 | `custom` | Full control — per-bot overrides, a `skins/` PNG folder, and a random pool |
 | `off` | No skin — bots use the default Steve/Alex appearance |
 
-**Guaranteed Skin** (`skin.guaranteed-skin: true`, on by default) ensures every bot always gets a real skin, even if its name isn't a Mojang account. When the primary lookup fails, FPP falls back automatically:
+**Guaranteed Skin** (`skin.guaranteed-skin: true`, on by default) ensures every bot always gets a real skin. Fallback chain:
 
-> Bot name → folder skins → pool skins → `skin.fallback-name` (pre-fetched at startup)
+> Bot name → `skins/` folder → pool → fallback-pool (27 vanilla Mojang accounts, pre-warmed async) → `skin.fallback-name`
+
+The **fallback-pool** provides skin diversity during rapid startup spawning — bots pick a random pool entry on-demand if async pre-warming hasn't finished.
 
 Set `skin.fallback-name` to any valid Minecraft username (default: `Notch`).
 
 ---
 
-## ✦ PlaceholderAPI
+## LuckPerms Integration
 
-When [PlaceholderAPI](https://www.spigotmc.org/resources/placeholderapi.6245/) is installed, FPP registers its placeholders automatically — no restart needed.
+FPP treats bots as real NMS ServerPlayer entities — LuckPerms detects them as online players automatically.
 
-> **📚 Full Documentation:** [PLACEHOLDERAPI.md](PLACEHOLDERAPI.md) — Complete reference with usage examples, troubleshooting, and integration guides.
+- **`luckperms.default-group`** — assigns every new bot to an LP group at spawn (blank = LP's built-in `default`)
+- **`/fpp rank <bot> <group>`** — change an individual bot's LP group at runtime, no respawn needed
+- **`/fpp rank random <group> [num|all]`** — assign a group to random bots
+- **`/fpp rank list`** — see each bot's current group at a glance
+- **`/fpp lpinfo [bot]`** — diagnose prefix, weight, rank index, and packet profile name
+- **Tab-list ordering** — `~fpp` scoreboard team keeps all bots below real players regardless of LP weight
+- **Prefix/suffix** — bot nametags and chat format support `{prefix}` and `{suffix}` placeholders
+- **Display name format** — `bot-name.tab-list-format` supports `{prefix}`, `{bot_name}`, `{suffix}`, and PAPI placeholders
 
-FPP provides **18 placeholders** organized into three categories:
-
-### Server-Wide Placeholders
-
-| Placeholder | Value |
-|---|---|
-| `%fpp_count%` | Number of currently active bots |
-| `%fpp_max%` | Global max-bots limit (or `∞`) |
-| `%fpp_real%` | Number of real (non-bot) players online |
-| `%fpp_total%` | Total players (real + bots) |
-| `%fpp_online%` | Alias for `%fpp_total%` |
-| `%fpp_frozen%` | Number of currently frozen bots |
-| `%fpp_chat%` | `on` / `off` — fake-chat state |
-| `%fpp_swap%` | `on` / `off` — bot-swap state |
-| `%fpp_skin%` | Current skin mode (`auto` / `custom` / `off`) |
-| `%fpp_body%` | `on` / `off` — body-spawn state |
-| `%fpp_pushable%` | `on` / `off` — body pushable state |
-| `%fpp_damageable%` | `on` / `off` — body damageable state |
-| `%fpp_tab%` | `on` / `off` — tab-list visibility |
-| `%fpp_max_health%` | Bot max health value |
-| `%fpp_names%` | Comma-separated list of all bot display names |
-| `%fpp_version%` | Plugin version string |
-
-### Per-World Placeholders
-
-| Placeholder | Value |
-|---|---|
-| `%fpp_count_<world>%` | Bots in specific world (e.g., `%fpp_count_world_nether%`) |
-| `%fpp_real_<world>%` | Real players in specific world |
-| `%fpp_total_<world>%` | Total (real + bots) in specific world |
-
-World names are case-insensitive. Use underscores for worlds with spaces.
-
-### Player-Relative Placeholders
-
-| Placeholder | Value |
-|---|---|
-| `%fpp_user_count%` | Number of bots owned by the player |
-| `%fpp_user_max%` | Bot limit for the player |
-| `%fpp_user_names%` | Comma-separated names of player's bots |
-
-### Quick Examples
-
-**Scoreboard sidebar:**
+```yaml
+luckperms:
+  default-group: ""   # e.g. "default", "vip", "admin"
 ```
-&7Bots: &b%fpp_count%&7/&b%fpp_max%
-&7Real: &a%fpp_real%
-&7Total: &e%fpp_total%
-```
-
-**Tab list header:**
-```
-&7Server: &bSurvival &8| &7Players: &a%fpp_real% &8| &7Bots: &b%fpp_count%
-```
-
-**Per-world display:**
-```
-&7Overworld: &e%fpp_total_world%
-&7Nether: &c%fpp_total_world_nether%
-&7End: &d%fpp_total_world_the_end%
-```
-
-> **Full documentation:** See [PLACEHOLDERAPI.md](PLACEHOLDERAPI.md) for detailed usage examples.
 
 ---
 
-## ✦ Bot Names & Chat
+## Proxy & Network Support
+
+FPP supports multi-server **Velocity** and **BungeeCord** proxy networks.
+
+Enable NETWORK mode on every backend server:
+
+```yaml
+database:
+  enabled: true
+  mode: "NETWORK"
+  server-id: "survival"   # unique per server
+  mysql-enabled: true
+  mysql:
+    host: "mysql.example.com"
+    database: "fpp_network"
+    username: "fpp_user"
+    password: "your_password"
+```
+
+**Cross-server features in NETWORK mode:**
+- Fake chat messages broadcast to all servers on the proxy
+- `/fpp alert <message>` — network-wide admin alert
+- Bot join/leave messages visible network-wide
+- Remote bot tab-list entries synced across servers
+- Per-server isolation — each server only manages its own bots
+
+---
+
+## Config Sync
+
+Keep all servers' configurations in sync automatically:
+
+```yaml
+config-sync:
+  mode: "AUTO_PULL"   # DISABLED | MANUAL | AUTO_PULL | AUTO_PUSH
+```
+
+| Mode | Behaviour |
+|------|-----------|
+| `DISABLED` | No syncing (default) |
+| `MANUAL` | Only sync via `/fpp sync` commands |
+| `AUTO_PULL` | Auto-pull latest config on every startup/reload |
+| `AUTO_PUSH` | Push local changes to the network automatically |
+
+Files synced: `config.yml`, `bot-names.yml`, `bot-messages.yml`, `language/en.yml`
+
+Server-specific keys that NEVER sync: `database.server-id`, `database.mysql.*`, `debug`
+
+---
+
+## PlaceholderAPI
+
+When [PlaceholderAPI](https://www.spigotmc.org/resources/placeholderapi.6245/) is installed, FPP registers its placeholders automatically — no restart needed.
+
+> Full Documentation: [PLACEHOLDERAPI.md](PLACEHOLDERAPI.md)
+
+FPP provides **18+ placeholders** organized into four categories:
+
+### Server-Wide
+
+| Placeholder | Value |
+|-------------|-------|
+| `%fpp_count%` | Number of currently active bots |
+| `%fpp_max%` | Global max-bots limit (or `∞`) |
+| `%fpp_real%` | Real (non-bot) players online |
+| `%fpp_total%` | Total players (real + bots) |
+| `%fpp_online%` | Alias for `%fpp_total%` |
+| `%fpp_frozen%` | Number of currently frozen bots |
+| `%fpp_names%` | Comma-separated list of bot display names |
+| `%fpp_version%` | Plugin version string |
+
+### Config State
+
+| Placeholder | Values | Config Key |
+|-------------|--------|------------|
+| `%fpp_chat%` | `on` / `off` | `fake-chat.enabled` |
+| `%fpp_swap%` | `on` / `off` | `swap.enabled` |
+| `%fpp_body%` | `on` / `off` | `body.enabled` |
+| `%fpp_pushable%` | `on` / `off` | `body.pushable` |
+| `%fpp_damageable%` | `on` / `off` | `body.damageable` |
+| `%fpp_tab%` | `on` / `off` | `tab-list.enabled` |
+| `%fpp_skin%` | `auto` / `custom` / `off` | `skin.mode` |
+| `%fpp_max_health%` | number | `combat.max-health` |
+
+### Per-World
+
+| Placeholder | Value |
+|-------------|-------|
+| `%fpp_count_<world>%` | Bots in world (e.g. `%fpp_count_world_nether%`) |
+| `%fpp_real_<world>%` | Real players in world |
+| `%fpp_total_<world>%` | Total (real + bots) in world |
+
+### Player-Relative
+
+| Placeholder | Value |
+|-------------|-------|
+| `%fpp_user_count%` | Bots owned by the player |
+| `%fpp_user_max%` | Bot limit for the player |
+| `%fpp_user_names%` | Comma-separated names of player's bots |
+
+---
+
+## Bot Names & Chat
 
 | File | Purpose |
-|---|---|
+|------|---------|
 | `bot-names.yml` | Random name pool. 1–16 chars, letters/digits/underscores. `/fpp reload` to update. |
 | `bot-messages.yml` | Random chat messages. Supports `{name}` and `{random_player}` placeholders. |
 
 When the name pool runs out, FPP generates names automatically (`Bot1234`, etc.).
 
+**Chat format** (`fake-chat.chat-format`):
+
+```yaml
+fake-chat:
+  chat-format: "&7{prefix}{bot_name}&7: {message}"
+```
+
+Placeholders: `{prefix}` (LP prefix), `{bot_name}`, `{suffix}` (LP suffix), `{message}`
+
 ---
 
-## ✦ LuckPerms Integration
+## Changelog
 
-When LuckPerms is installed and `luckperms.use-prefix: true`:
-
-- The **default group prefix** is automatically prepended to every bot's display name in the tab list, nametag, and messages
-- Makes bots blend naturally with real players
-- Disable any time with `luckperms.use-prefix: false`
-
----
-
-## ✦ Changelog
+### v1.5.0 *(2026-03-31)*
+- **Proxy/network mode** — full Velocity & BungeeCord support with NETWORK database mode; cross-server chat, alerts, bot join/leave broadcasts, and remote bot tab-list sync via `fpp:main` plugin messaging channel
+- **Config sync** — `/fpp sync push/pull/status/check` commands; modes: `DISABLED`, `MANUAL`, `AUTO_PULL`, `AUTO_PUSH`; syncs `config.yml`, `bot-names.yml`, `bot-messages.yml`, `language/en.yml`; server-specific keys are never uploaded
+- **Remote bot cache** — bots on other proxy servers tracked in thread-safe registry for tab-list sync (NETWORK mode)
+- **BotTabTeam** — scoreboard team `~fpp` places all bots below real players in tab list regardless of LP weight
+- **Per-bot LuckPerms groups** — `/fpp rank <bot> <group>`, `/fpp rank random <group> [num|all]`, `/fpp rank list`; no respawn needed
+- **`/fpp lpinfo [bot]`** — in-game LP diagnostic: prefix, weight, rank index, packet profile name
+- **`/fpp alert <message>`** — broadcast admin message to all servers on the proxy
+- **Body pushable/damageable toggles** — `body.pushable` and `body.damageable`; live-reloadable; BotCollisionListener guards all push paths
+- **Fake-chat format** — `fake-chat.chat-format` supports `{prefix}`, `{bot_name}`, `{suffix}`, `{message}`; full LP gradient and color support
+- **Tab-list name format** — `bot-name.tab-list-format` supports `{prefix}`, `{bot_name}`, `{suffix}`, and any PAPI placeholder
+- **LuckPerms default group** — `luckperms.default-group` config key; bots explicitly assigned `default` even when blank
+- **Spawn cooldown** — `spawn-cooldown` config key; `fpp.bypass.cooldown` permission
+- **Per-subsystem debug logging** — `logging.debug.startup/nms/packets/luckperms/network/config-sync/skin/database`
+- **YAML auto-sync** — missing keys merged into `en.yml`, `bot-names.yml`, `bot-messages.yml` on every startup and reload
+- **`/fpp migrate`** enhancements — `status`, `backup`, `backups`, `lang`, `names`, `messages`, `config`, `db merge`, `db export`, `db tomysql`
+- **Config version** bumped to `33`
 
 ### v1.4.28 *(2026-03-26)*
-- **Skin diversity fix** — guaranteed-skin fallback pool now uses on-demand random selection when bots spawn before async prewarm completes, ensuring every bot gets a unique skin even during rapid spawning at server startup (no more "Notch clone armies")
-- **Vanilla skin pool** — default fallback-pool updated to use 27 official Minecraft system accounts (Mojang developers + MHF_* mob/block skins) instead of content creator accounts for a pure vanilla aesthetic
-- **Per-world placeholders** — added dynamic world-specific bot counts: `%fpp_count_<world>%`, `%fpp_real_<world>%`, `%fpp_total_<world>%` (case-insensitive world names)
-- **PlaceholderAPI expansion** — added `%fpp_online%` as cleaner alias for `%fpp_total%` (real players + bots combined)
-- **Fake chat prefix/suffix support** — `fake-chat.chat-format` now supports `{prefix}` and `{suffix}` placeholders for full LuckPerms integration (respects `luckperms.use-prefix` toggle)
-- **Spawn race condition fixed** — `/fpp despawn all` while bots are spawning no longer leaves ghost entries in tab-list/scoreboard; all deferred spawn tasks now check if bot was removed before executing
-- **Portal/teleport bug fixed** — bots pushed through portals or cross-world teleports are now protected: portals cancelled, teleports cancelled, PDC-based entity recovery system added, orphaned nametags cleaned up automatically
-- **Body damageable toggle fixed** — `body.damageable: false` now correctly prevents all damage via event-level cancellation (previous entity-flag-only approach could be bypassed)
-- **Body pushable/damageable live reload** — `/fpp reload` now immediately applies body config changes to all active Mannequins without requiring respawn
-- **Enhanced documentation** — added PLACEHOLDERAPI.md reference, updated Skin-System.md with guaranteed-skin details, created technical documentation for skin system fix
+- **Skin diversity fix** — guaranteed-skin fallback pool uses on-demand random selection at startup
+- **Vanilla skin pool** — 27 official Minecraft system accounts (Mojang devs + MHF_* skins)
+- **Per-world placeholders** — `%fpp_count_<world>%`, `%fpp_real_<world>%`, `%fpp_total_<world>%`
+- **`%fpp_online%`** — alias for `%fpp_total%`
+- **Fake chat prefix/suffix** — `{prefix}` and `{suffix}` in `chat-format` for full LP integration
+- **Spawn race condition fixed** — `/fpp despawn all` during spawn no longer leaves ghost entries
+- **Portal/teleport bug fixed** — PDC-based entity recovery for bots pushed through portals
+- **Body damageable toggle fixed** — event-level cancellation replaces entity-flag-only approach
+- **Body config live reload** — `/fpp reload` immediately applies body pushable/damageable changes
 
 ### v1.4.27 *(2026-03-25)*
-- **Unified spawn syntax** — in-game `/fpp spawn` now supports the same flexible positional syntax as console: `[count] [world] [x y z] [--name <name>]`. Count can be leading or trailing; coordinates can be space-separated (`-609 71 -67`) or comma-separated (`-609,71,-67`). Player without a world arg still spawns at their own location.
-- **Improved `/fpp reload` output** — box-drawing lines (`┌ │ └`), per-step detail (skin counts, LP prefix count, bot count, team size), yellow warning line for config issues, and a final timing line.
-- **`/fpp reload` canUse fix** — now correctly delegates to `Perm.hasOrOp` so operators without explicit nodes can also reload.
+- **Unified spawn syntax** — `/fpp spawn` supports `[count] [world] [x y z] [--name <name>]`
+- **Improved `/fpp reload` output** — box-drawing lines, per-step detail, timing line
+- **`/fpp reload` canUse fix** — operators can now reload without explicit permission nodes
 
 ### v1.4.26 *(2026-03-25)*
-- **Tab-list weight ordering completely overhauled** — bots now perfectly respect LuckPerms group weights and always appear in correct rank order in tab list
-- **New rank command system** — `/fpp rank set <bot> <luckperms-group>` assigns a specific bot to a LuckPerms group; `/fpp rank random <luckperms-group> [count]` assigns random bots; both support `all` parameter for bulk operations
-- **Restoration bug fixed** — bots restored after server restart now maintain correct weights and ranks (no longer appear with incorrect prefixes)
-- **BotTabTeam system enhanced** — Minecraft client now correctly matches tab entries to scoreboard team members using packet profile names with weight prefixes
-- **Targeted cache invalidation** — LuckPerms data cache now uses targeted group invalidation instead of full cache clearing, preserving rank ordering accuracy
-- **Auto-update on group change** — when LuckPerms group data changes, all bot prefixes and tab ordering update in real-time (no reload/respawn needed)
-- **Performance improvements** — tab-list synchronization optimized to prevent unnecessary packet flooding
-
-### v1.4.25 *(2026-03-25)*
-- Internal build/testing version — not released
+- **Tab-list weight ordering overhauled** — bots perfectly respect LP group weights
+- **Rank command system** — `/fpp rank <bot> <group>` and `/fpp rank random`
+- **Restoration bug fixed** — bots restored after restart maintain correct weights and ranks
+- **Auto-update on group change** — prefixes and tab ordering update in real-time
 
 ### v1.4.24 *(2026-03-24)*
-- New: YAML file syncer — missing keys from plugin updates are automatically merged into `language/en.yml`, `bot-names.yml`, and `bot-messages.yml` on startup and `/fpp reload` (no existing values are overwritten)
-- New: `/fpp migrate lang|names|messages` — manually force-sync any of the three YAML files from the JAR defaults
-- New: `/fpp migrate status` now shows a file-sync health panel listing how many keys are up to date or missing per file
-- New: lightweight config-files backup (`createConfigFilesBackup`) — backs up only YAML files before sync operations, skipping the database
+- YAML file syncer — missing keys auto-merged on startup and `/fpp reload`
+- `/fpp migrate lang|names|messages` — force-sync YAML files from JAR
 
 ### v1.4.23 *(2026-03-23)*
-- Fixed bot name colours being lost after a server restart
-- Fixed join/leave delays being 20× longer than configured
-- `/fpp reload` now immediately refreshes bot prefixes from LuckPerms
-- Added `/fpp delete random [amount]` to remove a random set of bots
-- Running a pre-release build now shows a notice to admins in-game
+- Fixed bot name colours lost after server restart
+- Fixed join/leave delays 20x longer than configured
+- `/fpp reload` refreshes bot prefixes from LuckPerms immediately
+- Added `/fpp despawn random [amount]`
 
 ### v1.4.22 *(2026-03-22)*
-- **Tab-list bot visibility** — `tab-list.enabled: true/false` now controls whether bots appear in the player tab list (simplified from v1.4.21). When `false`, bots are completely hidden from the tab list but still count toward the server player count. Hot-reloadable via `/fpp reload`.
-- **Multi-platform download links** — update notifications and `/fpp` info screen now show clickable links to all 4 platforms: Modrinth, SpigotMC, PaperMC Hangar, and BuiltByBit.
-- **Enhanced reload command** — `/fpp reload` now shows step-by-step progress with checkmarks for each subsystem (config, skins, tab-list, active bots, LuckPerms cache, validation). Reload time displayed at completion.
-- **Update checker improvements** — Modrinth API is now the primary source for version checks (always reflects actual published releases). Console output is a clean one-liner; in-game messages show a bordered notification with clickable download links matching the help menu style.
-- **Bug fixes:**
-    - Fixed tab-list migration bug where users upgrading from v1.4.20 would have `enabled: false` (header/footer toggle) incorrectly applied as bot visibility. Migration v23→v24 corrects this automatically.
-    - Fixed `StackOverflowError` in `visualChain` when spawning large batches of bots with `join-delay: 0` and some bots deleted mid-spawn.
-    - Fixed `NullPointerException` in `PlayerWorldChangeListener` on Cardboard/Fabric-based servers (replaced Folia-specific `player.getScheduler()` with `Bukkit.getScheduler()`).
-    - Fixed LuckPerms gradient shorthand not rendering correctly for bot prefixes (e.g. `{#FFFFFF>}text{#FFFFFF<}`).
-
-### v1.3.0 *(2026-03-15)*
-- **`tab-list.show-bots`** — new config toggle. Set `show-bots: false` to hide bots from the player tab list entirely (they still count in the server player count). Default `true`. Hot-reloadable via `/fpp reload`.
-- **Bug fix** — bots restored after a server restart no longer show literal `{spawner}`, `{num}`, or `{bot_name}` in their display name; stale saves from older versions are detected and the display name is rebuilt correctly.
-- **Bug fix** — trailing unclosed hex color tags (e.g. `<#9782ff>`) at the end of LuckPerms prefixes are now stripped before parsing, preventing broken text in nametags and the tab list.
-
-### v1.4.20 *(2026-03-21)*
-#### Release
-- Added a proper version check to the update checker (previously it only checked if the API was reachable, not if the version was actually newer).
-- Fixed a bug where the update checker would report an update available when the API was reachable but returned an error or invalid response.
-
-### v1.4.14 *(2026-03-20)*
-#### Release
-- Compatibility checks: detect non-Paper servers and Minecraft versions below 1.21.9 and enter a restricted compatibility mode when needed (physical bodies and chunk-loading disabled).
-- Added runtime guard for missing server API classes to avoid startup crashes when certain entity classes are absent.
-- In-game admin compatibility notifications (configurable) on enable and on admin join.
-- Teleport commands now warn when no physical body exists; `/fpp info` displays "No Body" when appropriate.
-- Command rename: `/fpp delete` → `/fpp despawn` (permissions kept for compatibility).
-
-### v1.3.0 *(2026-03-15)*
-#### Changes
-- Config reload now updates all config files, including language, bot-names, and bot-messages.
-- Updated plugin info and documentation for Modrinth link and version 1.3.0.
-- Removed `/fpp setpos` command and all references.
-
----
+- `tab-list.enabled` — toggle bot visibility in the tab list
+- Multi-platform download links in update notifications
+- Enhanced `/fpp reload` with step-by-step progress
 
 ### v1.2.7 *(2026-03-14)*
-- **`/fpp freeze <bot|all> [on|off]`** — freeze any bot in place; the Mannequin body becomes immovable and gravity is disabled. Frozen bots show ❄ in `/fpp list` and `/fpp stats`
-- **`/fpp stats`** — live statistics panel: active / frozen bots, uptime breakdown, system status, database lifetime totals, and server TPS
-- **PlaceholderAPI** — FPP registers a PAPI expansion automatically when PAPI is installed; 8 placeholders available (`%fpp_count%`, `%fpp_frozen%`, etc.)
-- **`spawn-cooldown`** — per-player spawn cooldown in seconds (`0` = off); bypass with `fpp.bypass.cooldown`
-- **`tab-list`** — optional animated tab-list header and footer with `{bot_count}`, `{real_count}`, `{total_count}`, `{max_bots}` placeholders
-- **`metrics.enabled`** — opt-out toggle for anonymous FastStats usage statistics
-- Config auto-migration handles the jump from any previous version; timestamped backup created before any changes
+- `/fpp freeze`, `/fpp stats`, PlaceholderAPI expansion, spawn cooldown, animated tab-list header/footer, metrics toggle
 
 ### v1.2.2 *(2026-03-14)*
-- **Guaranteed Skin** — bots always spawn with a real skin; configurable fallback chain (folder → pool → fallback account). Steve/Alex only appears if you set `skin.mode: off`
-- **`skin.fallback-name`** — set any valid Mojang username as the last-resort skin (default: `Notch`)
-- **Rate-limit fix** — Mojang HTTP 429 responses are no longer cached as null; next spawn retries automatically
-- **`head-ai.enabled`** — explicit toggle for head rotation; set `false` instead of `look-range: 0`
-- **Config auto-migration** — upgrading from any previous version is fully automatic; a timestamped backup is created first
-- **Bug fix** — startup crash (NPE in ConfigMigrator) when upgrading from older versions is resolved
-
-### v1.1.4 *(2026-03-12)*
-- **Chunk loading rewrite** — spiral ticket order, movement-delta detection, world-border clamping, `update-interval` config, instant release on bot removal
-- Bot session stats: uptime, damage taken, death count, live location tracking
-- DB location flush works correctly for body-less bots
-
-### v1.0.15 *(2026-03-11)*
-- Join/leave messages now broadcast correctly to all players
-- LuckPerms prefix pipeline fixed — no more legacy `§`-code parse failures
-- `luckperms.use-prefix` toggle added to config
-- Modrinth link added to `/fpp` info screen (clickable)
+- Guaranteed Skin system, `skin.fallback-name`, Mojang API rate-limit fix, config auto-migration
 
 ### v1.0.0-rc1 *(2026-03-08)*
-- First stable release candidate
-- Full permission system: `fpp.user.*`, `fpp.bot.<num>` limit nodes, LuckPerms display name support
-- User-tier commands: `/fpp spawn`, `/fpp tph`, `/fpp info` (own bots only)
-- Bot persistence across server restarts
-
-### v0.1.5
-- Bot swap / rotation with personality archetypes, time-of-day bias, AFK-kick simulation
-- MySQL + SQLite database backend
-- `/fpp info` database query command
-- `bot-messages.yml` fake-chat message pool
-- Staggered join/leave delays
+- First stable release: full permission system, user-tier commands, bot persistence
 
 ### v0.1.0
 - Initial release: tab list, join/leave messages, in-world body, head AI, collision/push system
 
 ---
 
-## ✦ Support the Project
-
-If you enjoy FPP and want to help keep it going, consider buying me a coffee over on Ko-fi:
+## Support the Project
 
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-Support%20FPP-FF5E5B?style=flat-square&logo=ko-fi&logoColor=white)](https://ko-fi.com/fakeplayerplugin)
 
-Donations are completely optional and don't come with any guaranteed rewards — though I may add small perks like beta access in the future. Every contribution goes directly toward improving the plugin.
+Donations are completely optional. Every contribution goes directly toward improving the plugin.
 
-Thank you all for using Fake Player Plugin. Without you, it wouldn't be where it is today ❤️
+Thank you for using Fake Player Plugin. Without you, it wouldn't be where it is today.
 
 ---
 
-## ✦ Links
+## Links
 
 - [Modrinth](https://modrinth.com/plugin/fake-player-plugin-(fpp)) — download
-- [Spigotmc](https://www.spigotmc.org/resources/fake-player-plugin-fpp.133572/) - download
-- [Papermc](https://hangar.papermc.io/Pepe-tf/FakePlayerPlugin) - download
-- [BuiltByBit](https://builtbybit.com/resources/fake-player-plugin.98704/) - download
+- [SpigotMC](https://www.spigotmc.org/resources/fake-player-plugin-fpp.133572/) — download
+- [PaperMC Hangar](https://hangar.papermc.io/Pepe-tf/FakePlayerPlugin) — download
+- [BuiltByBit](https://builtbybit.com/resources/fake-player-plugin.98704/) — download
 - [Wiki](https://fakeplayerplugin.xyz) — documentation
 - [Ko-fi](https://ko-fi.com/fakeplayerplugin) — support the project
 - [Discord](https://discord.gg/QSN7f67nkJ) — support & feedback
@@ -421,4 +433,4 @@ Thank you all for using Fake Player Plugin. Without you, it wouldn't be where it
 
 ---
 
-*Built for Paper 1.21.x  Java 21  FPP - vLatest  [Modrinth](https://modrinth.com/plugin/fake-player-plugin-(fpp)) - [Spigotmc](https://www.spigotmc.org/resources/fake-player-plugin-fpp.133572/) - [Papermc](https://hangar.papermc.io/Pepe-tf/FakePlayerPlugin) - [BuiltByBit](https://builtbybit.com/resources/fake-player-plugin.98704/) - [Wiki](https://fakeplayerplugin.xyz)*
+*Built for Paper 1.21.x · Java 21 · FPP v1.5.0 · [Modrinth](https://modrinth.com/plugin/fake-player-plugin-(fpp)) · [SpigotMC](https://www.spigotmc.org/resources/fake-player-plugin-fpp.133572/) · [PaperMC](https://hangar.papermc.io/Pepe-tf/FakePlayerPlugin) · [BuiltByBit](https://builtbybit.com/resources/fake-player-plugin.98704/) · [Wiki](https://fakeplayerplugin.xyz)*

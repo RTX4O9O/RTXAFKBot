@@ -5,8 +5,7 @@ import me.bill.fakePlayerPlugin.config.Config;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.World;
-import org.bukkit.entity.Entity;
-import org.bukkit.entity.Mannequin;
+import org.bukkit.entity.Player;
 
 import java.util.*;
 
@@ -168,9 +167,9 @@ public final class ChunkLoader {
 
     /** Resolves the most accurate live position for a bot. */
     private static Location resolvePosition(FakePlayer fp) {
-        // Prefer live Mannequin body
-        Entity body = fp.getPhysicsEntity();
-        if (body instanceof Mannequin m && m.isValid()) return m.getLocation();
+        // Use live NMS Player position
+        Player player = fp.getPlayer();
+        if (player != null && player.isValid()) return player.getLocation();
         // Fall back to last known spawn / DB location
         Location loc = fp.getSpawnLocation();
         if (loc != null && loc.getWorld() != null) return loc;

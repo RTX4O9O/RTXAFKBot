@@ -126,6 +126,38 @@ public final class ConfigValidator {
             FppLogger.warn("[Config] collision.max-horizontal-speed must be > 0.");
             issues++;
         }
+        if (Config.collisionHitStrength() < 0) {
+            FppLogger.warn("[Config] collision.hit-strength must be >= 0.");
+            issues++;
+        }
+        if (Config.collisionWalkRadius() <= 0) {
+            FppLogger.warn("[Config] collision.walk-radius must be > 0.");
+            issues++;
+        }
+        if (Config.collisionBotRadius() <= 0) {
+            FppLogger.warn("[Config] collision.bot-radius must be > 0.");
+            issues++;
+        }
+        if (Config.collisionWalkStrength() < 0) {
+            FppLogger.warn("[Config] collision.walk-strength must be >= 0.");
+            issues++;
+        }
+        if (Config.collisionBotStrength() < 0) {
+            FppLogger.warn("[Config] collision.bot-strength must be >= 0.");
+            issues++;
+        }
+
+        // ── Database mode ─────────────────────────────────────────────────────
+        org.bukkit.plugin.Plugin fpp = Bukkit.getPluginManager().getPlugin("FakePlayerPlugin");
+        if (fpp != null) {
+            String rawMode = fpp.getConfig().getString("database.mode", "LOCAL");
+            if (!rawMode.trim().equalsIgnoreCase("LOCAL")
+                    && !rawMode.trim().equalsIgnoreCase("NETWORK")) {
+                FppLogger.warn("[Config] database.mode \"" + rawMode.trim() + "\" is not valid "
+                        + "(accepted: LOCAL, NETWORK) — falling back to LOCAL.");
+                issues++;
+            }
+        }
 
         if (issues == 0) {
             FppLogger.debug("[Config] All values passed validation.");

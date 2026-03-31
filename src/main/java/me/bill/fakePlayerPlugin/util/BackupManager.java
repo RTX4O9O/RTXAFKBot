@@ -90,6 +90,13 @@ public final class BackupManager {
      * @return The backup directory that was created.
      */
     public static File createFullBackup(FakePlayerPlugin plugin, String reason) {
+        return createFullBackup(plugin, reason, true);
+    }
+
+    /**
+     * Creates a full timestamped backup of all plugin files with optional console announcement.
+     */
+    public static File createFullBackup(FakePlayerPlugin plugin, String reason, boolean announce) {
         String safeReason = reason.replaceAll("[^a-zA-Z0-9_\\-]", "_");
         String timestamp  = LocalDateTime.now().format(DATE_FMT);
         File backupDir    = new File(plugin.getDataFolder(), "backups/" + timestamp + "_" + safeReason);
@@ -131,7 +138,11 @@ public final class BackupManager {
         // ── Prune old backups ─────────────────────────────────────────────────
         pruneOldBackups(new File(dataFolder, "backups"));
 
-        FppLogger.success("Backup created → backups/" + backupDir.getName() + "/");
+        if (announce) {
+            FppLogger.success("Backup created → backups/" + backupDir.getName() + "/");
+        } else {
+            FppLogger.debug("Backup created → backups/" + backupDir.getName() + "/");
+        }
         return backupDir;
     }
 

@@ -200,6 +200,8 @@ public class InfoCommand implements FppCommand {
             me.bill.fakePlayerPlugin.database.DatabaseManager.DbStats stats = db.getStats();
             sender.sendMessage(divider());
             sender.sendMessage(header("ᴅᴀᴛᴀʙᴀꜱᴇ ꜱᴛᴀᴛꜱ (" + stats.backend() + ")"));
+            row(sender, "ᴍᴏᴅᴇ",            me.bill.fakePlayerPlugin.config.Config.databaseMode());
+            row(sender, "ꜱᴇʀᴠᴇʀ ɪᴅ",       me.bill.fakePlayerPlugin.config.Config.serverId());
             row(sender, "ᴛᴏᴛᴀʟ ꜱᴇꜱꜱɪᴏɴꜱ",  String.valueOf(stats.totalSessions()));
             row(sender, "ᴜɴɪQᴜᴇ ʙᴏᴛꜱ",     String.valueOf(stats.uniqueBots()));
             row(sender, "ᴜɴɪQᴜᴇ ꜱᴘᴀᴡɴᴇʀꜱ", String.valueOf(stats.uniqueSpawners()));

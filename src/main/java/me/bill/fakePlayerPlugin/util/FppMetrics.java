@@ -41,7 +41,7 @@ public final class FppMetrics {
             return;
         }
 
-        FppLogger.info("Metrics: Initialising FastStats (token=" + TOKEN.substring(0, 8) + "...)");
+        FppLogger.debug("Metrics: Initialising FastStats (token=" + TOKEN.substring(0, 8) + "...)");
 
         ClassLoader prevCtx = Thread.currentThread().getContextClassLoader();
         try {
@@ -63,13 +63,13 @@ public final class FppMetrics {
             Thread.currentThread().setContextClassLoader(fsLoader);
 
             // ── 3. ErrorTracker ───────────────────────────────────────────────
-            FppLogger.info("Metrics: [1/3] Creating ErrorTracker...");
+            FppLogger.debug("Metrics: [1/3] Creating ErrorTracker...");
             Class<?> etClass      = fsLoader.loadClass("dev.faststats.core.ErrorTracker");
             Object   errorTracker = etClass.getMethod("contextAware").invoke(null);
-            FppLogger.info("Metrics:       ErrorTracker ✔");
+            FppLogger.debug("Metrics:       ErrorTracker ✔");
 
             // ── 4. BukkitMetrics fluent factory ───────────────────────────────
-            FppLogger.info("Metrics: [2/3] Building BukkitMetrics...");
+            FppLogger.debug("Metrics: [2/3] Building BukkitMetrics...");
             Class<?> bmClass = fsLoader.loadClass("dev.faststats.bukkit.BukkitMetrics");
             Class<?> mClass  = fsLoader.loadClass("dev.faststats.core.data.Metric");
 
@@ -97,22 +97,21 @@ public final class FppMetrics {
                     (Callable<Long>) () -> Config.chunkLoadingEnabled() ? 1L : 0L));
             factory = addMetric(factory, stringMethod.invoke(null, "database_type",
                     (Callable<String>) () -> Config.mysqlEnabled() ? "mysql" : "sqlite"));
-            factory = addMetric(factory, numberMethod.invoke(null, "luckperms_prefix_enabled",
-                    (Callable<Long>) () -> (Bukkit.getPluginManager().getPlugin("LuckPerms") != null
-                            && Config.luckpermsUsePrefix()) ? 1L : 0L));
+            factory = addMetric(factory, numberMethod.invoke(null, "luckperms_installed",
+                    (Callable<Long>) () -> Bukkit.getPluginManager().getPlugin("LuckPerms") != null ? 1L : 0L));
             factory = addMetric(factory, numberMethod.invoke(null, "max_bots_config",
                     (Callable<Long>) () -> (long) Config.maxBots()));
 
             factory = chain(factory, "errorTracker", errorTracker);
             factory = chain(factory, "debug",        false);
-            FppLogger.info("Metrics:       BukkitMetrics built ✔");
+            FppLogger.debug("Metrics:       BukkitMetrics built ✔");
 
             // ── 5. Create and arm ─────────────────────────────────────────────
-            FppLogger.info("Metrics: [3/3] Calling ready()...");
+            FppLogger.debug("Metrics: [3/3] Calling ready()...");
             metrics = chain(factory, "create", plugin);
             findMethod(metrics.getClass(), "ready", 0).invoke(metrics);
             initialised = true;
-            FppLogger.success("Metrics: FastStats connected and reporting ✔");
+            FppLogger.debug("Metrics: FastStats connected and reporting ✔");
 
         } catch (Throwable t) {
             FppLogger.error("╔══════════════════════════════════════════════════");
@@ -237,7 +236,7 @@ public final class FppMetrics {
             byte[] data = in.readAllBytes();
             if (!dest.exists() || dest.length() != data.length) {
                 try (OutputStream out = new FileOutputStream(dest)) { out.write(data); }
-                FppLogger.info("Metrics: extracted " + fileName + " (" + data.length / 1024 + " KB)");
+                FppLogger.debug("Metrics: extracted " + fileName + " (" + data.length / 1024 + " KB)");
             }
         }
         return dest;

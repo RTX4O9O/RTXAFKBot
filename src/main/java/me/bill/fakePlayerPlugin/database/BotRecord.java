@@ -1,5 +1,6 @@
 package me.bill.fakePlayerPlugin.database;
 
+import me.bill.fakePlayerPlugin.config.Config;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -9,24 +10,27 @@ import java.util.UUID;
  */
 public class BotRecord {
 
-    private final long    id;            // auto-increment PK from DB (0 for unsaved)
+    private final long    id;
     private final String  botName;
     private final UUID    botUuid;
-    private final String  spawnedBy;     // player name who ran /fpp spawn
-    private final UUID    spawnedByUuid; // UUID of the spawning player
+    private final String  spawnedBy;
+    private final UUID    spawnedByUuid;
     private final String  worldName;
     private final double  spawnX;
     private final double  spawnY;
     private final double  spawnZ;
     private final float   spawnYaw;
     private final float   spawnPitch;
-    // Last known position — updated periodically, used by persistence on restart
     private       String  lastWorld;
     private       double  lastX, lastY, lastZ;
     private       float   lastYaw, lastPitch;
     private final Instant spawnedAt;
-    private       Instant removedAt;    // null while bot is still active
-    private       String  removeReason; // "DELETED", "DIED", "SHUTDOWN", etc.
+    private       Instant removedAt;
+    private       String  removeReason;
+    /** Server identifier — matches {@code server.id} from {@code config.yml}. */
+    private final String  serverId;
+
+    // ── Primary constructor (all fields including serverId) ───────────────────
 
     public BotRecord(long id, String botName, UUID botUuid,
                      String spawnedBy, UUID spawnedByUuid,
@@ -35,7 +39,8 @@ public class BotRecord {
                      float spawnYaw, float spawnPitch,
                      String lastWorld, double lastX, double lastY, double lastZ,
                      float lastYaw, float lastPitch,
-                     Instant spawnedAt, Instant removedAt, String removeReason) {
+                     Instant spawnedAt, Instant removedAt, String removeReason,
+                     String serverId) {
         this.id             = id;
         this.botName        = botName;
         this.botUuid        = botUuid;
@@ -56,9 +61,31 @@ public class BotRecord {
         this.spawnedAt      = spawnedAt;
         this.removedAt      = removedAt;
         this.removeReason   = removeReason;
+        this.serverId       = (serverId != null && !serverId.isBlank()) ? serverId : Config.serverId();
     }
 
-    /** Convenience constructor — no last-location yet (set to spawn coords). */
+    /**
+     * Full constructor — defaults {@code serverId} to the current server
+     * ({@link Config#serverId()}).  Existing call-sites remain unchanged.
+     */
+    public BotRecord(long id, String botName, UUID botUuid,
+                     String spawnedBy, UUID spawnedByUuid,
+                     String worldName,
+                     double spawnX, double spawnY, double spawnZ,
+                     float spawnYaw, float spawnPitch,
+                     String lastWorld, double lastX, double lastY, double lastZ,
+                     float lastYaw, float lastPitch,
+                     Instant spawnedAt, Instant removedAt, String removeReason) {
+        this(id, botName, botUuid, spawnedBy, spawnedByUuid, worldName,
+             spawnX, spawnY, spawnZ, spawnYaw, spawnPitch,
+             lastWorld, lastX, lastY, lastZ, lastYaw, lastPitch,
+             spawnedAt, removedAt, removeReason, Config.serverId());
+    }
+
+    /**
+     * Convenience constructor — no last-location yet (set to spawn coords).
+     * Defaults {@code serverId} to the current server ({@link Config#serverId()}).
+     */
     public BotRecord(long id, String botName, UUID botUuid,
                      String spawnedBy, UUID spawnedByUuid,
                      String worldName,
@@ -68,7 +95,7 @@ public class BotRecord {
         this(id, botName, botUuid, spawnedBy, spawnedByUuid, worldName,
              spawnX, spawnY, spawnZ, spawnYaw, spawnPitch,
              worldName, spawnX, spawnY, spawnZ, spawnYaw, spawnPitch,
-             spawnedAt, removedAt, removeReason);
+             spawnedAt, removedAt, removeReason, Config.serverId());
     }
 
     // ── Getters ──────────────────────────────────────────────────────────────
@@ -94,6 +121,8 @@ public class BotRecord {
     public Instant getRemovedAt()      { return removedAt; }
     public String  getRemoveReason()   { return removeReason; }
     public boolean isActive()          { return removedAt == null; }
+    /** Server identifier this bot was recorded on. */
+    public String  getServerId()       { return serverId; }
 
     // ── Setters (mutable after removal) ──────────────────────────────────────
 
@@ -107,12 +136,13 @@ public class BotRecord {
     public void setLastLocation(String world, double x, double y, double z) {
         setLastLocation(world, x, y, z, this.lastYaw, this.lastPitch);
     }
-    public void setRemovedAt(Instant ts)      { this.removedAt = ts; }
+    public void setRemovedAt(Instant ts)       { this.removedAt = ts; }
     public void setRemoveReason(String reason) { this.removeReason = reason; }
 
     @Override
     public String toString() {
         return "BotRecord{id=" + id + ", bot=" + botName + ", by=" + spawnedBy
-                + ", world=" + worldName + ", active=" + isActive() + "}";
+                + ", world=" + worldName + ", server=" + serverId
+                + ", active=" + isActive() + "}";
     }
 }

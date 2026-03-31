@@ -52,8 +52,21 @@ public final class Config {
 
     /** Whether verbose debug logging is enabled. Maps to {@code debug}. */
     public static boolean isDebug() {
-        return cfg.getBoolean("debug", false);
+        return cfg != null && cfg.getBoolean("debug", false);
     }
+
+    private static boolean debugFlag(String path) {
+        return cfg != null && cfg.getBoolean(path, false);
+    }
+
+    public static boolean debugStartup()    { return isDebug() || debugFlag("logging.debug.startup"); }
+    public static boolean debugNms()        { return isDebug() || debugFlag("logging.debug.nms"); }
+    public static boolean debugPackets()    { return isDebug() || debugFlag("logging.debug.packets"); }
+    public static boolean debugLuckPerms()  { return isDebug() || debugFlag("logging.debug.luckperms"); }
+    public static boolean debugNetwork()    { return isDebug() || debugFlag("logging.debug.network"); }
+    public static boolean debugConfigSync() { return isDebug() || debugFlag("logging.debug.config-sync"); }
+    public static boolean debugSkin()       { return isDebug() || debugFlag("logging.debug.skin"); }
+    public static boolean debugDatabase()   { return isDebug() || debugFlag("logging.debug.database"); }
 
     /** Whether the startup update checker is enabled. Maps to {@code update-checker.enabled}. */
     public static boolean updateCheckerEnabled() {
@@ -119,52 +132,26 @@ public final class Config {
 
     /**
      * Full tab-list / nametag display format.
-     * Placeholders: {@code {prefix}} (LP prefix), {@code {bot_name}} (resolved from admin/user format),
-     * {@code {suffix}} (LP suffix), and any PlaceholderAPI {@code %placeholder%} tokens.
-     * Default: {@code "{prefix}{bot_name}{suffix}"} (reproduces legacy behaviour).
+     * Placeholder: {@code {bot_name}} (resolved from admin/user format),
+     * and any PlaceholderAPI {@code %placeholder%} tokens.
+     * Default: {@code "{bot_name}"}.
      */
     public static String tabListNameFormat() {
-        return cfg.getString("bot-name.tab-list-format", "{prefix}{bot_name}{suffix}");
+        return cfg.getString("bot-name.tab-list-format", "{bot_name}");
     }
 
     // ── LuckPerms  (luckperms.*) ──────────────────────────────────────────────
+    // Bots are now real NMS ServerPlayer entities. LuckPerms handles prefix,
+    // suffix, and tab-list ordering automatically when it detects them as online
+    // players. The only config we need is which LP group to assign bots to.
 
     /**
-     * When {@code true} the LuckPerms default-group prefix is prepended to
-     * every bot display name. Set to {@code false} to use format colors only.
+     * Optional LP group to assign every new bot at spawn time.
+     * When blank (default), bots receive LP's built-in "default" group automatically.
+     * Example: {@code "bot"} to put all bots in a custom LP group called "bot".
      */
-    public static boolean luckpermsUsePrefix() {
-        return cfg.getBoolean("luckperms.use-prefix", true);
-    }
-
-    /**
-     * When {@code true} the LuckPerms group weight is used to influence
-     * tab-list ordering for bot entries. Set to {@code false} to disable
-     * weight-aware ordering (tab ordering will be unmodified).
-     */
-    public static boolean luckpermsWeightOrderingEnabled() {
-        return cfg.getBoolean("luckperms.weight-ordering-enabled", true);
-    }
-
-    /** Optional explicit LuckPerms group to treat bots as. If empty, plugin uses default/auto logic. */
-    public static String luckpermsBotGroup() {
-        return cfg.getString("luckperms.bot-group", "");
-    }
-
-    /** Optional single character prefixed before the numeric weight index in packet names. */
-    public static String luckpermsPacketPrefixChar() {
-        String s = cfg.getString("luckperms.packet-prefix-char", "");
-        if (s == null) return "";
-        return s;
-    }
-
-    /**
-     * Weight offset applied to bot weights for tab-list ordering.
-     * Negative values (default -10) demote bots below players of the same group.
-     * Set to 0 to rank bots exactly with their group weight.
-     */
-    public static int luckpermsWeightOffset() {
-        return cfg.getInt("luckperms.weight-offset", -10);
+    public static String luckpermsDefaultGroup() {
+        return cfg.getString("luckperms.default-group", "");
     }
 
 
@@ -274,14 +261,14 @@ public final class Config {
 
     // ── Body  (body.*) ────────────────────────────────────────────────────────
 
-    /** Whether bots spawn a visible Mannequin body in the world. */
+    /** Whether bots spawn a visible NMS ServerPlayer body in the world. */
     public static boolean spawnBody() {
         return cfg.getBoolean("body.enabled", true);
     }
 
     /**
      * Whether players and other entities can push bot bodies.
-     * {@code false} = Mannequin is immovable; all collision push logic is skipped.
+     * {@code false} = NMS ServerPlayer is immovable; all collision push logic is skipped.
      */
     public static boolean bodyPushable() {
         return cfg.getBoolean("body.pushable", true);
@@ -289,7 +276,7 @@ public final class Config {
 
     /**
      * Whether bot bodies can take damage.
-     * {@code false} = Mannequin is invulnerable; the damage event still fires
+     * {@code false} = NMS ServerPlayer is invulnerable; the damage event still fires
      * (for hit-knockback if pushable is true) but HP is never reduced.
      */
     public static boolean bodyDamageable() {
@@ -394,12 +381,12 @@ public final class Config {
 
     // ── Collision / Push  (collision.*) ──────────────────────────────────────
 
-    public static double collisionWalkRadius()   { return cfg.getDouble("collision.walk-radius", 0.85); }
-    public static double collisionWalkStrength() { return cfg.getDouble("collision.walk-strength", 0.22); }
-    public static double collisionMaxHoriz()     { return cfg.getDouble("collision.max-horizontal-speed", 0.30); }
-    public static double collisionHitStrength()  { return cfg.getDouble("collision.hit-strength", 0.45); }
-    public static double collisionBotRadius()    { return cfg.getDouble("collision.bot-radius", 0.90); }
-    public static double collisionBotStrength()  { return cfg.getDouble("collision.bot-strength", 0.14); }
+    public static double collisionWalkRadius()   { return cfg.getDouble("collision.walk-radius", 0.62); }
+    public static double collisionWalkStrength() { return cfg.getDouble("collision.walk-strength", 0.08); }
+    public static double collisionMaxHoriz()     { return cfg.getDouble("collision.max-horizontal-speed", 0.40); }
+    public static double collisionHitStrength()  { return cfg.getDouble("collision.hit-strength", 1.00); }
+    public static double collisionBotRadius()    { return cfg.getDouble("collision.bot-radius", 0.62); }
+    public static double collisionBotStrength()  { return cfg.getDouble("collision.bot-strength", 0.05); }
 
     // ── Bot Swap  (swap.*) ────────────────────────────────────────────────────
 
@@ -441,6 +428,41 @@ public final class Config {
     public static boolean mysqlEnabled()      { return cfg.getBoolean("database.mysql-enabled", false); }
     /** Master toggle to disable database I/O entirely. When false, persistence and DB stats are off. */
     public static boolean databaseEnabled()   { return cfg.getBoolean("database.enabled", true); }
+
+    /**
+     * Database mode: {@code "LOCAL"} (default, single-server) or {@code "NETWORK"}
+     * (shared database across multiple servers, rows tagged by {@link #serverId()}).
+     * Any value other than {@code "NETWORK"} (case-insensitive) is treated as {@code "LOCAL"}.
+     */
+    public static String databaseMode() {
+        String raw = cfg.getString("database.mode", "LOCAL");
+        return raw.trim().equalsIgnoreCase("NETWORK") ? "NETWORK" : "LOCAL";
+    }
+
+    /**
+     * {@code true} when the database is enabled and {@link #databaseMode()} is {@code "NETWORK"}.
+     * Use this to enable cross-server features such as per-server row filtering.
+     */
+    public static boolean isNetworkMode() {
+        return databaseEnabled() && databaseMode().equalsIgnoreCase("NETWORK");
+    }
+
+    /**
+     * Config sync mode: {@code "DISABLED"} (default), {@code "MANUAL"}, {@code "AUTO_PULL"}, or {@code "AUTO_PUSH"}.
+     * Controls how config files are synchronized across network servers.
+     * Valid values:
+     * <ul>
+     *   <li>{@code DISABLED} — No syncing (default for LOCAL mode)</li>
+     *   <li>{@code MANUAL} — Only sync via /fpp sync commands</li>
+     *   <li>{@code AUTO_PULL} — Pull latest on startup/reload</li>
+     *   <li>{@code AUTO_PUSH} — Push changes automatically</li>
+     * </ul>
+     */
+    public static String configSyncMode() {
+        String raw = cfg.getString("config-sync.mode", "DISABLED");
+        return raw.trim().toUpperCase();
+    }
+
     public static String  mysqlHost()         { return cfg.getString("database.mysql.host", "localhost"); }
     public static int     mysqlPort()         { return cfg.getInt("database.mysql.port", 3306); }
     public static String  mysqlDatabase()     { return cfg.getString("database.mysql.database", "fpp"); }
@@ -456,8 +478,38 @@ public final class Config {
     /** Max rows returned per DB history query. */
     public static int dbMaxHistoryRows() { return cfg.getInt("database.session-history.max-rows", 20); }
 
+    // ── Server identity  (database.server-id) ────────────────────────────────
+
+    /**
+     * Unique server identifier stamped on database rows when
+     * {@link #isNetworkMode()} is {@code true}.
+     *
+     * <p>Reads {@code database.server-id} (current path since config v31).
+     * Falls back to the legacy {@code server.id} path for configs that have
+     * not yet been migrated, so the value is never lost on the first reload
+     * after an upgrade.  Blank / null values fall back to {@code "default"}.
+     */
+    public static String serverId() {
+        // New path (v31+)
+        String id = cfg.getString("database.server-id", null);
+        // Legacy fallback (v29-v30 configs not yet migrated)
+        if (id == null || id.isBlank()) {
+            id = cfg.getString("server.id", "default");
+        }
+        return (id == null || id.isBlank()) ? "default" : id.trim();
+    }
+
     // ── Utility ───────────────────────────────────────────────────────────────
 
-    /** Log a message to console only when debug mode is on. */
+    /** Log a message to console only when the legacy global debug mode is on. */
     public static void debug(String message) { FppLogger.debug(message); }
+
+    public static void debugStartup(String message)    { FppLogger.debug("STARTUP", debugStartup(), message); }
+    public static void debugNms(String message)        { FppLogger.debug("NMS", debugNms(), message); }
+    public static void debugPackets(String message)    { FppLogger.debug("PACKETS", debugPackets(), message); }
+    public static void debugLuckPerms(String message)  { FppLogger.debug("LP", debugLuckPerms(), message); }
+    public static void debugNetwork(String message)    { FppLogger.debug("NETWORK", debugNetwork(), message); }
+    public static void debugConfigSync(String message) { FppLogger.debug("CONFIG_SYNC", debugConfigSync(), message); }
+    public static void debugSkin(String message)       { FppLogger.debug("SKIN", debugSkin(), message); }
+    public static void debugDatabase(String message)   { FppLogger.debug("DATABASE", debugDatabase(), message); }
 }

@@ -13,7 +13,6 @@ import org.bukkit.Location;
 import org.bukkit.Sound;
 import org.bukkit.SoundCategory;
 import org.bukkit.entity.Entity;
-import org.bukkit.entity.Mannequin;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -49,28 +48,12 @@ public class FakePlayerEntityListener implements Listener {
             return;
         }
 
-        // Cancel damage types that shouldn't affect a player-like entity
-        switch (event.getCause()) {
-            case VOID, SUFFOCATION, CRAMMING,
-                 STARVATION, FREEZE, MELTING,
-                 FLY_INTO_WALL, DRYOUT,
-                 POISON, WITHER, MAGIC,
-                 LIGHTNING -> {
-                event.setCancelled(true);
-                return;
-            }
-            default -> {}
-        }
 
-        // On fatal hit — remove nametag before death animation plays.
-        // Only act when the event is NOT already cancelled so we don't strip the
-        // nametag on a hit that will produce no damage (e.g. if another plugin
-        // cancels the event after us but the damage value is still non-zero).
-        if (!event.isCancelled() && event.getEntity() instanceof Mannequin m) {
-            double remaining = m.getHealth() - event.getFinalDamage();
-            if (remaining <= 0) {
-                FakePlayer fp = manager.getByEntity(m);
-                if (fp != null) FakePlayerBody.removeNametag(fp);
+        // Track damage for statistics
+        if (!event.isCancelled() && event.getEntity() instanceof Player p) {
+            FakePlayer fp = manager.getByEntity(p);
+            if (fp != null) {
+                fp.addDamageTaken(event.getFinalDamage());
             }
         }
 
@@ -143,68 +126,60 @@ public class FakePlayerEntityListener implements Listener {
             BotBroadcast.broadcastKill(killer.getName(), fp.getDisplayName());
         }
 
+        // Increment death counter
+        fp.incrementDeathCount();
+        fp.setAlive(false);
+
         final Location respawnLoc = fp.getSpawnLocation() != null
                 ? fp.getSpawnLocation().clone()
                 : event.getEntity().getLocation().clone();
         final String name        = fp.getName();
         final String displayName = fp.getDisplayName();
 
-        // Remove nametag immediately (entity is dead but ArmorStand is not).
-        // If the body crossed worlds the stored ArmorStand reference may point to a
-        // different world; null it first so removeNametag always falls through to the
-        // full world-scan, which finds and removes it regardless of which world it's in.
-        if (fp.getNametagEntity() != null
-                && fp.getPhysicsEntity() != null
-                && fp.getPhysicsEntity().isValid()
-                && fp.getNametagEntity().getWorld() != null
-                && !fp.getNametagEntity().getWorld().equals(fp.getPhysicsEntity().getWorld())) {
-            // Nametag is in a different world than the body (ejected at portal entrance).
-            // Clear the direct ref so removeNametag goes straight to the world-scan.
-            fp.setNametagEntity(null);
+        // Remove the dead player entity after the death animation (~1 second)
+        if (event.getEntity() instanceof Player deadPlayer) {
+            Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                me.bill.fakePlayerPlugin.fakeplayer.NmsPlayerSpawner.removeFakePlayer(deadPlayer);
+            }, 20L);
         }
-        FakePlayerBody.removeNametag(fp);
-        // Clear physics entity reference — the Mannequin is now dead/invalid
-        fp.setPhysicsEntity(null);
-        // Remove from entity-id index so stale lookups don't return this fp
+
+        // Clear references
+        fp.setPlayer(null);
         manager.removeFromEntityIndex(event.getEntity().getEntityId());
 
         if (Config.respawnOnDeath()) {
-            int delay = Math.max(1, Config.respawnDelay());
+            int delay = Math.max(20, Config.respawnDelay()); // Minimum 1 second
             if (chunkLoader != null) chunkLoader.releaseForBot(fp);
 
             Bukkit.getScheduler().runTaskLater(plugin, () -> {
                 // Remove from tab list while dead
                 for (Player p : Bukkit.getOnlinePlayers()) PacketHelper.sendTabListRemove(p, fp);
 
-                // Double-check no orphaned nametag survived
-                FakePlayerBody.removeOrphanedNametags(name);
-
+                // Respawn the bot with a new NMS ServerPlayer entity
                 if (Config.spawnBody()) {
-                    Entity newBody = FakePlayerBody.spawn(fp, respawnLoc);
+                    Player newBody = FakePlayerBody.spawn(fp, respawnLoc);
                     if (newBody == null) {
-                        broadcastLeave(displayName);
+                        // Spawn failed — bot already kicked, vanilla quit message shown
                         manager.removeByName(name);
                         return;
                     }
-                    fp.setPhysicsEntity(newBody);
+                    fp.setPlayer(newBody);
+                    fp.setAlive(true);
                     manager.registerEntityIndex(newBody.getEntityId(), fp);
-                        Bukkit.getScheduler().runTaskLater(plugin, () -> {
-                            if (!newBody.isValid()) return;
-                            FakePlayerBody.applyResolvedSkin(plugin, fp, newBody);
-                            fp.setNametagEntity(FakePlayerBody.spawnNametag(fp, newBody));
-                            Bukkit.getScheduler().runTaskLater(plugin, () -> {
-                                if (Config.tabListEnabled())
-                                    for (Player p : Bukkit.getOnlinePlayers())
-                                        PacketHelper.sendTabListAdd(p, fp);
-                            }, 20L);
-                        }, 1L);
-                    } else {
-                        // Body disabled but bot should "respawn" — re-add to tab list
-                        fp.setNametagEntity(null);
+                    
+                    // Re-add to tab list after respawn
+                    Bukkit.getScheduler().runTaskLater(plugin, () -> {
                         if (Config.tabListEnabled())
                             for (Player p : Bukkit.getOnlinePlayers())
                                 PacketHelper.sendTabListAdd(p, fp);
-                    }
+                    }, 5L);
+                } else {
+                    // Body disabled but bot should "respawn" — re-add to tab list
+                    fp.setAlive(true);
+                    if (Config.tabListEnabled())
+                        for (Player p : Bukkit.getOnlinePlayers())
+                            PacketHelper.sendTabListAdd(p, fp);
+                }
 
                 fp.setSpawnLocation(respawnLoc);
             }, delay);
@@ -213,29 +188,19 @@ public class FakePlayerEntityListener implements Listener {
             if (chunkLoader != null) chunkLoader.releaseForBot(fp);
             Bukkit.getScheduler().runTaskLater(plugin, () -> {
                 for (Player p : Bukkit.getOnlinePlayers()) PacketHelper.sendTabListRemove(p, fp);
-                // World-scan cleanup — catches any entity the direct ref missed
-                FakePlayerBody.removeOrphanedNametags(name);
-                FakePlayerBody.removeOrphanedBodies(name);
-                broadcastLeave(displayName);
+                // NMS player's quit event fired naturally — no custom leave message needed
                 manager.removeByName(name);
-            }, 1L);
+            }, 20L); // 1 second delay
         }
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private void broadcastLeave(String displayName) {
-        BotBroadcast.broadcastLeaveByDisplayName(displayName);
-    }
-
-    /** True only for Mannequin entities tagged as an FPP physics body. */
+    /** True only for Player entities tagged as an FPP bot. */
     private boolean isFakeBotBody(Entity entity) {
-        if (!(entity instanceof Mannequin)) return false;
+        if (!(entity instanceof Player)) return false;
         if (FakePlayerManager.FAKE_PLAYER_KEY == null) return false;
         String val = entity.getPersistentDataContainer()
                 .get(FakePlayerManager.FAKE_PLAYER_KEY, PersistentDataType.STRING);
-        return val != null
-                && !val.startsWith(FakePlayerBody.NAMETAG_PDC_VALUE)
-                && !val.startsWith(FakePlayerBody.VISUAL_PDC_VALUE);
+        return val != null && val.startsWith(FakePlayerBody.VISUAL_PDC_VALUE);
     }
 }

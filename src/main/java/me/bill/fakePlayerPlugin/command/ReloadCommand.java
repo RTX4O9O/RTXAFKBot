@@ -5,14 +5,11 @@ import me.bill.fakePlayerPlugin.config.BotMessageConfig;
 import me.bill.fakePlayerPlugin.config.BotNameConfig;
 import me.bill.fakePlayerPlugin.config.Config;
 import me.bill.fakePlayerPlugin.fakeplayer.FakePlayerManager;
-import me.bill.fakePlayerPlugin.fakeplayer.SkinFetcher;
-import me.bill.fakePlayerPlugin.fakeplayer.SkinRepository;
 import me.bill.fakePlayerPlugin.lang.Lang;
 import me.bill.fakePlayerPlugin.permission.Perm;
 import me.bill.fakePlayerPlugin.util.BotTabTeam;
 import me.bill.fakePlayerPlugin.util.ConfigValidator;
 import me.bill.fakePlayerPlugin.util.FppLogger;
-import me.bill.fakePlayerPlugin.util.LuckPermsHelper;
 import me.bill.fakePlayerPlugin.util.UpdateChecker;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
@@ -26,7 +23,6 @@ import org.bukkit.command.CommandSender;
  * <ol>
  *   <li>Config YAML files (config.yml, bot-names.yml, bot-messages.yml)</li>
  *   <li>Language file (language/en.yml)</li>
- *   <li>Skin cache and skin repository (folder + pool)</li>
  *   <li>Tab-list manager (header/footer/bot visibility toggle)</li>
  *   <li>Active bot state (body spawn, swap cancellation, tab-list sync)</li>
  *   <li>LuckPerms cache invalidation + live prefix/weight reapply</li>
@@ -43,7 +39,6 @@ public class ReloadCommand implements FppCommand {
     private static final TextColor GRAY   = NamedTextColor.GRAY;
     private static final TextColor GREEN  = NamedTextColor.GREEN;
     private static final TextColor YELLOW = NamedTextColor.YELLOW;
-    private static final TextColor WHITE  = NamedTextColor.WHITE;
 
     private final FakePlayerPlugin plugin;
 
@@ -58,8 +53,9 @@ public class ReloadCommand implements FppCommand {
     @Override
     public boolean execute(CommandSender sender, String[] args) {
         long start = System.currentTimeMillis();
+        String version = plugin.getPluginMeta().getVersion();
 
-        sender.sendMessage(Component.text("┌ Reloading FakePlayerPlugin v1.4.27…").color(ACCENT));
+        sender.sendMessage(Component.text("┌ Reloading FakePlayerPlugin v" + version + "…").color(ACCENT));
 
         // ── 1. Core config files ──────────────────────────────────────────────
         Config.reload();
@@ -68,19 +64,11 @@ public class ReloadCommand implements FppCommand {
         BotMessageConfig.reload();
         sendStep(sender, "Config, language, names & messages reloaded");
 
-        // ── 2. Skin system ────────────────────────────────────────────────────
-        if (Config.skinClearCacheOnReload()) SkinFetcher.clearCache();
-        SkinRepository.get().reload();
-        int folderSkins = SkinRepository.get().getFolderSkinCount();
-        int poolSkins   = SkinRepository.get().getPoolSkinCount();
-        sendStep(sender, "Skin system  —  mode: " + Config.skinMode()
-                + "  |  " + folderSkins + " folder  +  " + poolSkins + " pool");
-
-        // ── 3. Tab-list manager ───────────────────────────────────────────────
+        // ── 2. Tab-list manager ───────────────────────────────────────────────
         if (plugin.getTabListManager() != null) plugin.getTabListManager().reload();
         sendStep(sender, "Tab-list  —  bots " + (Config.tabListEnabled() ? "visible" : "hidden"));
 
-        // ── 4. Active bot runtime state ───────────────────────────────────────
+        // ── 3. Active bot runtime state ───────────────────────────────────────
         FakePlayerManager fpm = plugin.getFakePlayerManager();
         if (fpm != null) {
             if (!Config.swapEnabled()) {
@@ -93,28 +81,27 @@ public class ReloadCommand implements FppCommand {
             if (active > 0) sendStep(sender, active + " active bot(s) runtime state updated");
         }
 
-        // ── 5. LuckPerms cache + live prefix reapply ──────────────────────────
-        LuckPermsHelper.invalidateCache();
-        int lpUpdated = 0;
-        if (fpm != null && fpm.getCount() > 0) lpUpdated = fpm.updateAllBotPrefixes();
-        sendStep(sender, "LuckPerms cache cleared"
-                + (lpUpdated > 0 ? "  —  " + lpUpdated + " bot prefix(es) refreshed" : ""));
+        // ── 4. LuckPerms — bots are real NMS players, LP handles natively ─────
+        // No manual cache invalidation needed. Display names auto-update via
+        // UserDataRecalculateEvent subscription (see LuckPermsHelper.subscribeLpEvents).
+        sendStep(sender, "LuckPerms integration active (auto-updates via event bus)");
 
-        // ── 6. Scoreboard team rebuild ────────────────────────────────────────
+
+        // ── 5. Scoreboard team rebuild ────────────────────────────────────────
         BotTabTeam btt = plugin.getBotTabTeam();
         if (btt != null && fpm != null) {
             btt.rebuild(fpm.getActivePlayers());
             sendStep(sender, "~fpp scoreboard team rebuilt  (" + fpm.getCount() + " bot(s))");
         }
 
-        // ── 7. Config validation ──────────────────────────────────────────────
+        // ── 6. Config validation ──────────────────────────────────────────────
         int issues = ConfigValidator.validate();
         if (issues > 0) {
             sender.sendMessage(Component.text("│  ⚠ " + issues
                     + " config issue(s) detected — check console").color(YELLOW));
         }
 
-        // ── 8. Update checker (async, non-blocking) ───────────────────────────
+        // ── 7. Update checker (async, non-blocking) ───────────────────────────
         UpdateChecker.invalidateCache();
         UpdateChecker.check(plugin);
 

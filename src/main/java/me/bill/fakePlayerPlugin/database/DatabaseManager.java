@@ -38,7 +38,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class DatabaseManager {
 
     // ── Schema version ────────────────────────────────────────────────────────
-    private static final int SCHEMA_VERSION = 5;
+    private static final int SCHEMA_VERSION = 6;
 
     // ── DDL — session history ─────────────────────────────────────────────────
     private static final String CREATE_SESSIONS_SQLITE =
@@ -64,7 +64,8 @@ public class DatabaseManager {
             "  entity_type     VARCHAR(32)  NOT NULL DEFAULT 'MANNEQUIN'," +
             "  spawned_at      BIGINT NOT NULL," +
             "  removed_at      BIGINT," +
-            "  remove_reason   VARCHAR(32)" +
+            "  remove_reason   VARCHAR(32)," +
+            "  server_id       VARCHAR(64)  NOT NULL DEFAULT 'default'" +
             ")";
 
     private static final String CREATE_SESSIONS_MYSQL =
@@ -90,7 +91,8 @@ public class DatabaseManager {
             "  entity_type     VARCHAR(32)  NOT NULL DEFAULT 'MANNEQUIN'," +
             "  spawned_at      BIGINT NOT NULL," +
             "  removed_at      BIGINT," +
-            "  remove_reason   VARCHAR(32)" +
+            "  remove_reason   VARCHAR(32)," +
+            "  server_id       VARCHAR(64)  NOT NULL DEFAULT 'default'" +
             ")";
 
     // ── DDL — active bots (restart persistence source of truth) ───────────────
@@ -108,7 +110,8 @@ public class DatabaseManager {
             "  pos_yaw         FLOAT  NOT NULL DEFAULT 0," +
             "  pos_pitch       FLOAT  NOT NULL DEFAULT 0," +
             "  updated_at      BIGINT NOT NULL," +
-            "  luckperms_group VARCHAR(64)  DEFAULT NULL" +
+            "  luckperms_group VARCHAR(64)  DEFAULT NULL," +
+            "  server_id       VARCHAR(64)  NOT NULL DEFAULT 'default'" +
             ")";
 
     private static final String CREATE_ACTIVE_MYSQL =
@@ -125,7 +128,8 @@ public class DatabaseManager {
             "  pos_yaw         FLOAT  NOT NULL DEFAULT 0," +
             "  pos_pitch       FLOAT  NOT NULL DEFAULT 0," +
             "  updated_at      BIGINT NOT NULL," +
-            "  luckperms_group VARCHAR(64)  DEFAULT NULL" +
+            "  luckperms_group VARCHAR(64)  DEFAULT NULL," +
+            "  server_id       VARCHAR(64)  NOT NULL DEFAULT 'default'" +
             ")";
 
     // ── DDL — schema version ──────────────────────────────────────────────────
@@ -152,7 +156,13 @@ public class DatabaseManager {
           "CREATE INDEX IF NOT EXISTS idx_sessions_bot_uuid    ON fpp_bot_sessions(bot_uuid)" },
         // v4 → v5: add luckperms_group column for per-bot rank persistence
         { "ALTER TABLE fpp_bot_sessions ADD COLUMN luckperms_group VARCHAR(64) DEFAULT NULL",
-          "ALTER TABLE fpp_active_bots  ADD COLUMN luckperms_group VARCHAR(64) DEFAULT NULL" }
+          "ALTER TABLE fpp_active_bots  ADD COLUMN luckperms_group VARCHAR(64) DEFAULT NULL" },
+        // v5 → v6: add server_id column for multi-server / NETWORK mode awareness
+        // execSilent is used — safe to run on DBs that already have the column (error is swallowed)
+        { "ALTER TABLE fpp_bot_sessions ADD COLUMN server_id VARCHAR(64) NOT NULL DEFAULT 'default'",
+          "ALTER TABLE fpp_active_bots  ADD COLUMN server_id VARCHAR(64) NOT NULL DEFAULT 'default'",
+          "CREATE INDEX IF NOT EXISTS idx_sessions_server_id ON fpp_bot_sessions(server_id)",
+          "CREATE INDEX IF NOT EXISTS idx_active_server_id   ON fpp_active_bots(server_id)" }
     };
 
     // ── State ─────────────────────────────────────────────────────────────────
@@ -201,7 +211,7 @@ public class DatabaseManager {
                     + "&socketTimeout=" + (connTimeout * 2);
             connection = DriverManager.getConnection(url, Config.mysqlUsername(), Config.mysqlPassword());
             Config.debug("MySQL pool-size advisory: " + Config.mysqlPoolSize());
-            FppLogger.success("Database connected via MySQL ("
+            FppLogger.debug("Database connected via MySQL ("
                     + Config.mysqlHost() + ":" + Config.mysqlPort()
                     + "/" + Config.mysqlDatabase() + ").");
             return true;
@@ -227,7 +237,7 @@ public class DatabaseManager {
                 st.execute("PRAGMA temp_store=MEMORY");
             }
             isMysql = false;
-            FppLogger.success("Database connected via SQLite (" + dbFile.getPath() + ").");
+            FppLogger.debug("Database connected via SQLite (" + dbFile.getPath() + ").");
             return true;
         } catch (Exception e) {
             FppLogger.error("SQLite init error: " + e.getMessage());
@@ -302,8 +312,44 @@ public class DatabaseManager {
         }, 60, 60, TimeUnit.SECONDS);
     }
 
+    // ── Server-filter helpers ─────────────────────────────────────────────────
+
+    /**
+     * Returns a parameterised condition that restricts rows to the current
+     * server in LOCAL mode, or {@code "1=1"} in NETWORK mode (all rows).
+     * Append to SQL and bind with {@link #bindServer(PreparedStatement, int)}.
+     */
+    private String serverCond() {
+        return Config.isNetworkMode() ? "1=1" : "server_id=?";
+    }
+
+    /**
+     * Binds the current {@code server.id} into {@code ps} at {@code idx} when
+     * in LOCAL mode.  No-op in NETWORK mode.
+     * @return next free parameter index
+     */
+    private int bindServer(PreparedStatement ps, int idx) throws SQLException {
+        if (!Config.isNetworkMode()) ps.setString(idx++, Config.serverId());
+        return idx;
+    }
+
+    /**
+     * Returns a literal {@code " WHERE server_id='...' "} fragment for
+     * {@link Statement}-based aggregation queries.  Empty string in NETWORK mode.
+     * Value is admin-controlled and single-quote-escaped before interpolation.
+     */
+    private String serverWhere() {
+        if (Config.isNetworkMode()) return "";
+        return " WHERE server_id='" + Config.serverId().replace("'", "''") + "'";
+    }
+
+    /** {@code AND server_id='...'} variant of {@link #serverWhere()} for appending to existing WHERE clauses. */
+    private String serverAnd() {
+        if (Config.isNetworkMode()) return "";
+        return " AND server_id='" + Config.serverId().replace("'", "''") + "'";
+    }
+
     public void close() {
-        running.set(false);
         flushPendingLocations();       // drain pending updates
         writer.shutdown();
         try {
@@ -316,6 +362,14 @@ public class DatabaseManager {
             FppLogger.error("Error closing DB: " + e.getMessage());
         }
     }
+
+    /**
+     * Returns the raw JDBC {@link Connection}.
+     * Intended for use by sub-systems (e.g. {@code ConfigSyncManager}) that need
+     * to issue SQL not covered by the normal write API.
+     * <b>Do not close the returned connection.</b>
+     */
+    public Connection getConnection() { return connection; }
 
     private boolean isAlive() {
         try {
@@ -334,24 +388,19 @@ public class DatabaseManager {
      * for the audit trail.
      */
     public void recordSpawn(BotRecord record) {
-        recordSpawn(record, null, null);
+        recordSpawn(record, null);
     }
 
     public void recordSpawn(BotRecord record, String displayName) {
-        recordSpawn(record, displayName, null);
-    }
-
-    public void recordSpawn(BotRecord record, String displayName, String luckpermsGroup) {
         activeRecords.put(record.getBotUuid().toString(), record);
         final String display = displayName;
-        final String lpGroup = luckpermsGroup;
         enqueue(() -> {
             if (!isAlive()) return;
             // 1. Session history row
             String sql = "INSERT INTO fpp_bot_sessions " +
                     "(bot_name,bot_display,bot_uuid,spawned_by,spawned_by_uuid,world_name," +
-                    "spawn_x,spawn_y,spawn_z,spawn_yaw,spawn_pitch,entity_type,spawned_at) " +
-                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)";
+                    "spawn_x,spawn_y,spawn_z,spawn_yaw,spawn_pitch,entity_type,spawned_at,server_id) " +
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
             try (PreparedStatement ps = connection.prepareStatement(sql)) {
                 ps.setString(1, record.getBotName());
                 ps.setString(2, display);
@@ -366,6 +415,7 @@ public class DatabaseManager {
                 ps.setFloat(11, record.getSpawnPitch());
                 ps.setString(12, "MANNEQUIN");
                 ps.setLong(13, record.getSpawnedAt().toEpochMilli());
+                ps.setString(14, record.getServerId());
                 ps.executeUpdate();
             } catch (SQLException e) { FppLogger.error("DB recordSpawn: " + e.getMessage()); }
 
@@ -374,31 +424,7 @@ public class DatabaseManager {
                     record.getSpawnedBy(), record.getSpawnedByUuid().toString(),
                     record.getWorldName(),
                     record.getSpawnX(), record.getSpawnY(), record.getSpawnZ(),
-                    record.getSpawnYaw(), record.getSpawnPitch(), lpGroup);
-        });
-    }
-
-    /**
-     * Persists a bot's LuckPerms group override to the database.
-     * Call this whenever {@code FakePlayer.setLuckpermsGroup()} is changed at runtime
-     * (e.g. via {@code /fpp rank set}) so the value survives a server restart.
-     *
-     * @param botUuid      the bot's UUID
-     * @param luckpermsGroup the LP group name, or {@code null} to clear the override
-     */
-    public void updateBotLpGroup(UUID botUuid, String luckpermsGroup) {
-        if (botUuid == null) return;
-        String uuidStr = botUuid.toString();
-        enqueue(() -> {
-            if (!isAlive()) return;
-            String sql = "UPDATE fpp_active_bots SET luckperms_group=? WHERE bot_uuid=?";
-            try (PreparedStatement ps = connection.prepareStatement(sql)) {
-                if (luckpermsGroup != null) ps.setString(1, luckpermsGroup);
-                else ps.setNull(1, java.sql.Types.VARCHAR);
-                ps.setString(2, uuidStr);
-                ps.executeUpdate();
-                Config.debug("DB updateBotLpGroup: " + uuidStr + " → " + luckpermsGroup);
-            } catch (SQLException e) { FppLogger.error("DB updateBotLpGroup: " + e.getMessage()); }
+                    record.getSpawnYaw(), record.getSpawnPitch(), null);
         });
     }
 
@@ -449,6 +475,7 @@ public class DatabaseManager {
      * Closes all open sessions as SHUTDOWN. Called synchronously on disable.
      * Does NOT clear fpp_active_bots — that table is used by the next startup
      * to restore bots after a clean shutdown.
+     * Always scoped to the current {@code server.id}.
      */
     public void recordAllShutdown() {
         if (!pendingLocations.isEmpty()) {
@@ -460,8 +487,10 @@ public class DatabaseManager {
         activeRecords.clear();
         if (!isAlive()) return;
         try (PreparedStatement ps = connection.prepareStatement(
-                "UPDATE fpp_bot_sessions SET removed_at=?,remove_reason='SHUTDOWN' WHERE removed_at IS NULL")) {
+                "UPDATE fpp_bot_sessions SET removed_at=?,remove_reason='SHUTDOWN' " +
+                "WHERE removed_at IS NULL AND server_id=?")) {
             ps.setLong(1, now);
+            ps.setString(2, Config.serverId());
             int rows = ps.executeUpdate();
             Config.debug("DB shutdown: closed " + rows + " open session(s).");
         } catch (SQLException e) { FppLogger.error("DB recordAllShutdown: " + e.getMessage()); }
@@ -470,13 +499,17 @@ public class DatabaseManager {
     /**
      * Called after bots are successfully restored on startup so stale rows
      * from a previous crash don't re-restore on the next restart.
+     * Always scoped to the current {@code server.id} — never touches other servers' rows.
      */
     public void clearActiveBots() {
+        final String sid = Config.serverId();
         enqueue(() -> {
             if (!isAlive()) return;
-            try (Statement st = connection.createStatement()) {
-                st.execute("DELETE FROM fpp_active_bots");
-                Config.debug("DB cleared active_bots.");
+            try (PreparedStatement ps = connection.prepareStatement(
+                    "DELETE FROM fpp_active_bots WHERE server_id=?")) {
+                ps.setString(1, sid);
+                int rows = ps.executeUpdate();
+                Config.debug("DB cleared " + rows + " active_bot(s) for server='" + sid + "'.");
             } catch (SQLException e) { FppLogger.error("DB clearActiveBots: " + e.getMessage()); }
         });
     }
@@ -484,40 +517,135 @@ public class DatabaseManager {
     // ── Read API ──────────────────────────────────────────────────────────────
 
     /**
-     * Returns all rows from {@code fpp_active_bots}.
-     * Used on startup to restore bots — works even after a crash because
-     * fpp_active_bots is kept current throughout the session.
+     * Returns rows from {@code fpp_active_bots} scoped by the current database mode:
+     * <ul>
+     *   <li><b>LOCAL</b> — only this server's rows ({@code server_id = Config.serverId()}).</li>
+     *   <li><b>NETWORK</b> — all rows across all servers (useful for admin queries).</li>
+     * </ul>
+     *
+     * <p><b>Do NOT use this method for bot restoration.</b>
+     * Use {@link #getActiveBotsForThisServer()} instead, which always hard-scopes to
+     * the current server regardless of mode.
      */
     public List<ActiveBotRow> getActiveBots() {
         List<ActiveBotRow> list = new ArrayList<>();
         if (!isAlive()) return list;
-        try (Statement st = connection.createStatement();
-             ResultSet rs = st.executeQuery("SELECT * FROM fpp_active_bots ORDER BY updated_at ASC")) {
-            while (rs.next()) {
-                // luckperms_group may be absent on pre-v5 DBs; catch gracefully
-                String lpGroup = null;
-                try { lpGroup = rs.getString("luckperms_group"); } catch (SQLException ignored) {}
-                list.add(new ActiveBotRow(
-                        rs.getString("bot_uuid"), rs.getString("bot_name"),
-                        rs.getString("bot_display"),
-                        rs.getString("spawned_by"), rs.getString("spawned_by_uuid"),
-                        rs.getString("world_name"),
-                        rs.getDouble("pos_x"), rs.getDouble("pos_y"), rs.getDouble("pos_z"),
-                        rs.getFloat("pos_yaw"), rs.getFloat("pos_pitch"),
-                        lpGroup
-                ));
+        String sql = "SELECT * FROM fpp_active_bots WHERE " + serverCond() + " ORDER BY updated_at ASC";
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            bindServer(ps, 1);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    String lpGroup = null;
+                    try { lpGroup = rs.getString("luckperms_group"); } catch (SQLException ignored) {}
+                    String sid = null;
+                    try { sid = rs.getString("server_id"); } catch (SQLException ignored) {}
+                    if (sid == null || sid.isBlank()) sid = Config.serverId();
+                    list.add(new ActiveBotRow(
+                            rs.getString("bot_uuid"), rs.getString("bot_name"),
+                            rs.getString("bot_display"),
+                            rs.getString("spawned_by"), rs.getString("spawned_by_uuid"),
+                            rs.getString("world_name"),
+                            rs.getDouble("pos_x"), rs.getDouble("pos_y"), rs.getDouble("pos_z"),
+                            rs.getFloat("pos_yaw"), rs.getFloat("pos_pitch"),
+                            lpGroup, sid
+                    ));
+                }
             }
         } catch (SQLException e) { FppLogger.error("DB getActiveBots: " + e.getMessage()); }
+        return list;
+    }
+
+    /**
+     * Returns only the rows from {@code fpp_active_bots} that belong to THIS server,
+     * always filtering by {@code server_id = Config.serverId()}.
+     *
+     * <p><b>Design rule — bots are per-server only:</b> the database may be shared
+     * across multiple servers in NETWORK mode, but Minecraft entities (NMS ServerPlayers,
+     * ArmorStands, PlayerProfiles) are strictly local to the server that spawned them.
+     * This method intentionally ignores {@link Config#isNetworkMode()} so the restore
+     * path can never accidentally spawn another server's bots on this instance.
+     *
+     * <p>This is the method that {@code BotPersistence} must call during startup restore.
+     */
+    public List<ActiveBotRow> getActiveBotsForThisServer() {
+        List<ActiveBotRow> list = new ArrayList<>();
+        if (!isAlive()) return list;
+        // Hard-coded server_id filter — never bypassed, even in NETWORK mode.
+        // Bots are per-server only. Database may be shared, but entities are not.
+        String sql = "SELECT * FROM fpp_active_bots WHERE server_id=? ORDER BY updated_at ASC";
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setString(1, Config.serverId());
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    String lpGroup = null;
+                    try { lpGroup = rs.getString("luckperms_group"); } catch (SQLException ignored) {}
+                    String sid = null;
+                    try { sid = rs.getString("server_id"); } catch (SQLException ignored) {}
+                    if (sid == null || sid.isBlank()) sid = Config.serverId();
+                    list.add(new ActiveBotRow(
+                            rs.getString("bot_uuid"), rs.getString("bot_name"),
+                            rs.getString("bot_display"),
+                            rs.getString("spawned_by"), rs.getString("spawned_by_uuid"),
+                            rs.getString("world_name"),
+                            rs.getDouble("pos_x"), rs.getDouble("pos_y"), rs.getDouble("pos_z"),
+                            rs.getFloat("pos_yaw"), rs.getFloat("pos_pitch"),
+                            lpGroup, sid
+                    ));
+                }
+            }
+        } catch (SQLException e) { FppLogger.error("DB getActiveBotsForThisServer: " + e.getMessage()); }
+        return list;
+    }
+
+    /**
+     * Returns active bots from <em>all other</em> servers in the shared database
+     * (i.e. rows where {@code server_id != Config.serverId()}).
+     *
+     * <p>Called once at startup in NETWORK mode to pre-populate the local
+     * {@link me.bill.fakePlayerPlugin.fakeplayer.RemoteBotCache} so that players
+     * already online on this server see virtual tab-list entries for bots that
+     * were spawned on other servers before this server started.
+     *
+     * <p>Note: skin texture data is NOT stored in the DB, so entries returned
+     * here will have empty skin fields.  They will be updated automatically
+     * when the originating server's next {@code BOT_SPAWN} message arrives.
+     *
+     * <p>Returns an empty list when not in NETWORK mode or when the DB is unavailable.
+     */
+    public List<ActiveBotRow> getActiveBotsFromOtherServers() {
+        List<ActiveBotRow> list = new ArrayList<>();
+        if (!Config.isNetworkMode() || !isAlive()) return list;
+        String sql = "SELECT * FROM fpp_active_bots WHERE server_id != ? ORDER BY updated_at ASC";
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setString(1, Config.serverId());
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    String lpGroup = null;
+                    try { lpGroup = rs.getString("luckperms_group"); } catch (SQLException ignored) {}
+                    String sid = "unknown";
+                    try { sid = rs.getString("server_id"); } catch (SQLException ignored) {}
+                    list.add(new ActiveBotRow(
+                            rs.getString("bot_uuid"), rs.getString("bot_name"),
+                            rs.getString("bot_display"),
+                            rs.getString("spawned_by"), rs.getString("spawned_by_uuid"),
+                            rs.getString("world_name"),
+                            rs.getDouble("pos_x"), rs.getDouble("pos_y"), rs.getDouble("pos_z"),
+                            rs.getFloat("pos_yaw"), rs.getFloat("pos_pitch"),
+                            lpGroup, sid
+                    ));
+                }
+            }
+        } catch (SQLException e) { FppLogger.error("DB getActiveBotsFromOtherServers: " + e.getMessage()); }
         return list;
     }
 
     public List<BotRecord> getActiveSessions() {
         List<BotRecord> list = new ArrayList<>();
         if (!isAlive()) return list;
-        try (Statement st = connection.createStatement();
-             ResultSet rs = st.executeQuery(
-                "SELECT * FROM fpp_bot_sessions WHERE removed_at IS NULL ORDER BY spawned_at DESC")) {
-            while (rs.next()) list.add(mapSession(rs));
+        try (PreparedStatement ps = connection.prepareStatement(
+                "SELECT * FROM fpp_bot_sessions WHERE ended_at IS NULL AND " + serverCond())) {
+            bindServer(ps, 1);
+            try (ResultSet rs = ps.executeQuery()) { while (rs.next()) list.add(mapSession(rs)); }
         } catch (SQLException e) { FppLogger.error("DB getActiveSessions: " + e.getMessage()); }
         return list;
     }
@@ -526,8 +654,10 @@ public class DatabaseManager {
         List<BotRecord> list = new ArrayList<>();
         if (!isAlive()) return list;
         try (PreparedStatement ps = connection.prepareStatement(
-                "SELECT * FROM fpp_bot_sessions ORDER BY spawned_at DESC LIMIT ?")) {
-            ps.setInt(1, limit);
+                "SELECT * FROM fpp_bot_sessions WHERE " + serverCond() +
+                " ORDER BY spawned_at DESC LIMIT ?")) {
+            int next = bindServer(ps, 1);
+            ps.setInt(next, limit);
             try (ResultSet rs = ps.executeQuery()) { while (rs.next()) list.add(mapSession(rs)); }
         } catch (SQLException e) { FppLogger.error("DB getRecentSessions: " + e.getMessage()); }
         return list;
@@ -541,9 +671,11 @@ public class DatabaseManager {
         List<BotRecord> list = new ArrayList<>();
         if (!isAlive()) return list;
         try (PreparedStatement ps = connection.prepareStatement(
-                "SELECT * FROM fpp_bot_sessions WHERE spawned_by=? ORDER BY spawned_at DESC LIMIT ?")) {
+                "SELECT * FROM fpp_bot_sessions WHERE spawned_by=?" +
+                serverAnd() + " ORDER BY spawned_at DESC LIMIT ?")) {
             ps.setString(1, playerName);
-            ps.setInt(2, limit);
+            int next = bindServer(ps, 2);
+            ps.setInt(next, limit);
             try (ResultSet rs = ps.executeQuery()) { while (rs.next()) list.add(mapSession(rs)); }
         } catch (SQLException e) { FppLogger.error("DB getSessionsBySpawner: " + e.getMessage()); }
         return list;
@@ -557,9 +689,11 @@ public class DatabaseManager {
         List<BotRecord> list = new ArrayList<>();
         if (!isAlive()) return list;
         try (PreparedStatement ps = connection.prepareStatement(
-                "SELECT * FROM fpp_bot_sessions WHERE bot_name=? ORDER BY spawned_at DESC LIMIT ?")) {
+                "SELECT * FROM fpp_bot_sessions WHERE bot_name=?" +
+                serverAnd() + " ORDER BY spawned_at DESC LIMIT ?")) {
             ps.setString(1, botName);
-            ps.setInt(2, limit);
+            int next = bindServer(ps, 2);
+            ps.setInt(next, limit);
             try (ResultSet rs = ps.executeQuery()) { while (rs.next()) list.add(mapSession(rs)); }
         } catch (SQLException e) { FppLogger.error("DB getSessionsByBot: " + e.getMessage()); }
         return list;
@@ -570,8 +704,10 @@ public class DatabaseManager {
         List<BotRecord> list = new ArrayList<>();
         if (!isAlive()) return list;
         try (PreparedStatement ps = connection.prepareStatement(
-                "SELECT * FROM fpp_bot_sessions WHERE bot_uuid=? ORDER BY spawned_at DESC")) {
+                "SELECT * FROM fpp_bot_sessions WHERE bot_uuid=?" +
+                serverAnd() + " ORDER BY spawned_at DESC")) {
             ps.setString(1, botUuid.toString());
+            bindServer(ps, 2);
             try (ResultSet rs = ps.executeQuery()) { while (rs.next()) list.add(mapSession(rs)); }
         } catch (SQLException e) { FppLogger.error("DB getSessionsByUuid: " + e.getMessage()); }
         return list;
@@ -582,9 +718,11 @@ public class DatabaseManager {
         List<BotRecord> list = new ArrayList<>();
         if (!isAlive()) return list;
         try (PreparedStatement ps = connection.prepareStatement(
-                "SELECT * FROM fpp_bot_sessions WHERE remove_reason=? ORDER BY removed_at DESC LIMIT ?")) {
+                "SELECT * FROM fpp_bot_sessions WHERE remove_reason=?" +
+                serverAnd() + " ORDER BY removed_at DESC LIMIT ?")) {
             ps.setString(1, reason);
-            ps.setInt(2, limit);
+            int next = bindServer(ps, 2);
+            ps.setInt(next, limit);
             try (ResultSet rs = ps.executeQuery()) { while (rs.next()) list.add(mapSession(rs)); }
         } catch (SQLException e) { FppLogger.error("DB getSessionsByReason: " + e.getMessage()); }
         return list;
@@ -593,7 +731,8 @@ public class DatabaseManager {
     public int getTotalSessionCount() {
         if (!isAlive()) return 0;
         try (Statement st = connection.createStatement();
-             ResultSet rs = st.executeQuery("SELECT COUNT(*) FROM fpp_bot_sessions")) {
+             ResultSet rs = st.executeQuery(
+                "SELECT COUNT(*) FROM fpp_bot_sessions" + serverWhere())) {
             if (rs.next()) return rs.getInt(1);
         } catch (SQLException e) { FppLogger.error("DB getTotalSessionCount: " + e.getMessage()); }
         return 0;
@@ -603,7 +742,7 @@ public class DatabaseManager {
         if (!isAlive()) return 0;
         try (Statement st = connection.createStatement();
              ResultSet rs = st.executeQuery(
-                "SELECT COUNT(*) FROM fpp_bot_sessions WHERE removed_at IS NULL")) {
+                "SELECT COUNT(*) FROM fpp_bot_sessions WHERE removed_at IS NULL" + serverAnd())) {
             if (rs.next()) return rs.getInt(1);
         } catch (SQLException e) { FppLogger.error("DB getActiveSessionCount: " + e.getMessage()); }
         return 0;
@@ -613,7 +752,8 @@ public class DatabaseManager {
     public int getUniqueBotCount() {
         if (!isAlive()) return 0;
         try (Statement st = connection.createStatement();
-             ResultSet rs = st.executeQuery("SELECT COUNT(DISTINCT bot_name) FROM fpp_bot_sessions")) {
+             ResultSet rs = st.executeQuery(
+                "SELECT COUNT(DISTINCT bot_name) FROM fpp_bot_sessions" + serverWhere())) {
             if (rs.next()) return rs.getInt(1);
         } catch (SQLException e) { FppLogger.error("DB getUniqueBotCount: " + e.getMessage()); }
         return 0;
@@ -623,7 +763,8 @@ public class DatabaseManager {
     public int getUniqueSpawnerCount() {
         if (!isAlive()) return 0;
         try (Statement st = connection.createStatement();
-             ResultSet rs = st.executeQuery("SELECT COUNT(DISTINCT spawned_by) FROM fpp_bot_sessions")) {
+             ResultSet rs = st.executeQuery(
+                "SELECT COUNT(DISTINCT spawned_by) FROM fpp_bot_sessions" + serverWhere())) {
             if (rs.next()) return rs.getInt(1);
         } catch (SQLException e) { FppLogger.error("DB getUniqueSpawnerCount: " + e.getMessage()); }
         return 0;
@@ -637,9 +778,10 @@ public class DatabaseManager {
         Map<String, Integer> result = new LinkedHashMap<>();
         if (!isAlive()) return result;
         try (PreparedStatement ps = connection.prepareStatement(
-                "SELECT spawned_by, COUNT(*) AS cnt FROM fpp_bot_sessions " +
-                "GROUP BY spawned_by ORDER BY cnt DESC LIMIT ?")) {
-            ps.setInt(1, limit);
+                "SELECT spawned_by, COUNT(*) AS cnt FROM fpp_bot_sessions WHERE " + serverCond() +
+                " GROUP BY spawned_by ORDER BY cnt DESC LIMIT ?")) {
+            int next = bindServer(ps, 1);
+            ps.setInt(next, limit);
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) result.put(rs.getString("spawned_by"), rs.getInt("cnt"));
             }
@@ -649,30 +791,32 @@ public class DatabaseManager {
 
     /**
      * Returns aggregated plugin statistics.
-     * All values are read in a single DB roundtrip where possible.
+     * All values are scoped to the current server (LOCAL mode) or global (NETWORK mode).
      */
     public DbStats getStats() {
         if (!isAlive()) return new DbStats(0, 0, 0, 0, 0L, isMysql ? "MySQL" : "SQLite");
         int total = 0, active = 0, unique = 0, uniqueSpawners = 0;
         long totalUptimeMs = 0L;
         try (Statement st = connection.createStatement()) {
-            try (ResultSet rs = st.executeQuery("SELECT COUNT(*) FROM fpp_bot_sessions")) {
+            try (ResultSet rs = st.executeQuery(
+                    "SELECT COUNT(*) FROM fpp_bot_sessions" + serverWhere())) {
                 if (rs.next()) total = rs.getInt(1);
             }
             try (ResultSet rs = st.executeQuery(
-                    "SELECT COUNT(*) FROM fpp_bot_sessions WHERE removed_at IS NULL")) {
+                    "SELECT COUNT(*) FROM fpp_bot_sessions WHERE removed_at IS NULL" + serverAnd())) {
                 if (rs.next()) active = rs.getInt(1);
             }
             try (ResultSet rs = st.executeQuery(
-                    "SELECT COUNT(DISTINCT bot_name) FROM fpp_bot_sessions")) {
+                    "SELECT COUNT(DISTINCT bot_name) FROM fpp_bot_sessions" + serverWhere())) {
                 if (rs.next()) unique = rs.getInt(1);
             }
             try (ResultSet rs = st.executeQuery(
-                    "SELECT COUNT(DISTINCT spawned_by) FROM fpp_bot_sessions")) {
+                    "SELECT COUNT(DISTINCT spawned_by) FROM fpp_bot_sessions" + serverWhere())) {
                 if (rs.next()) uniqueSpawners = rs.getInt(1);
             }
             try (ResultSet rs = st.executeQuery(
-                    "SELECT SUM(removed_at - spawned_at) FROM fpp_bot_sessions WHERE removed_at IS NOT NULL")) {
+                    "SELECT SUM(removed_at - spawned_at) FROM fpp_bot_sessions " +
+                    "WHERE removed_at IS NOT NULL" + serverAnd())) {
                 if (rs.next()) totalUptimeMs = rs.getLong(1);
             }
         } catch (SQLException e) { FppLogger.error("DB getStats: " + e.getMessage()); }
@@ -687,16 +831,18 @@ public class DatabaseManager {
                                      double x, double y, double z,
                                      float yaw, float pitch, String luckpermsGroup) {
         long now = Instant.now().toEpochMilli();
+        String serverId = Config.serverId();
         String sql = isMysql
                 ? "INSERT INTO fpp_active_bots(bot_uuid,bot_name,bot_display,spawned_by,spawned_by_uuid," +
-                  "world_name,pos_x,pos_y,pos_z,pos_yaw,pos_pitch,updated_at,luckperms_group) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?) " +
+                  "world_name,pos_x,pos_y,pos_z,pos_yaw,pos_pitch,updated_at,luckperms_group,server_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?) " +
                   "ON DUPLICATE KEY UPDATE bot_name=VALUES(bot_name),bot_display=VALUES(bot_display)," +
                   "spawned_by=VALUES(spawned_by),spawned_by_uuid=VALUES(spawned_by_uuid)," +
                   "world_name=VALUES(world_name),pos_x=VALUES(pos_x),pos_y=VALUES(pos_y)," +
                   "pos_z=VALUES(pos_z),pos_yaw=VALUES(pos_yaw),pos_pitch=VALUES(pos_pitch)," +
-                  "updated_at=VALUES(updated_at),luckperms_group=VALUES(luckperms_group)"
+                  "updated_at=VALUES(updated_at),luckperms_group=VALUES(luckperms_group)," +
+                  "server_id=VALUES(server_id)"
                 : "INSERT OR REPLACE INTO fpp_active_bots(bot_uuid,bot_name,bot_display,spawned_by,spawned_by_uuid," +
-                  "world_name,pos_x,pos_y,pos_z,pos_yaw,pos_pitch,updated_at,luckperms_group) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)";
+                  "world_name,pos_x,pos_y,pos_z,pos_yaw,pos_pitch,updated_at,luckperms_group,server_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
         try (PreparedStatement ps = connection.prepareStatement(sql)) {
             ps.setString(1, uuid);  ps.setString(2, name);  ps.setString(3, display);
             ps.setString(4, spawnedBy); ps.setString(5, spawnedByUuid);
@@ -704,6 +850,7 @@ public class DatabaseManager {
             ps.setFloat(10, yaw);   ps.setFloat(11, pitch); ps.setLong(12, now);
             if (luckpermsGroup != null) ps.setString(13, luckpermsGroup);
             else ps.setNull(13, java.sql.Types.VARCHAR);
+            ps.setString(14, serverId);
             ps.executeUpdate();
         } catch (SQLException e) { FppLogger.error("DB upsertActiveBot: " + e.getMessage()); }
     }
@@ -754,6 +901,11 @@ public class DatabaseManager {
         try { lpitch = rs.getFloat("last_pitch"); if (rs.wasNull()) lpitch = rs.getFloat("spawn_pitch"); }
         catch (SQLException ignored) { lpitch = 0f; }
 
+        // server_id — absent on pre-v6 DBs; fall back to current server
+        String sid = null;
+        try { sid = rs.getString("server_id"); } catch (SQLException ignored) {}
+        if (sid == null || sid.isBlank()) sid = Config.serverId();
+
         return new BotRecord(
                 rs.getLong("id"),
                 rs.getString("bot_name"), UUID.fromString(rs.getString("bot_uuid")),
@@ -763,7 +915,8 @@ public class DatabaseManager {
                 rs.getFloat("spawn_yaw"), rs.getFloat("spawn_pitch"),
                 lw, lx, ly, lz, lyaw, lpitch,
                 Instant.ofEpochMilli(rs.getLong("spawned_at")),
-                removedAt, rs.getString("remove_reason")
+                removedAt, rs.getString("remove_reason"),
+                sid
         );
     }
 
@@ -784,28 +937,28 @@ public class DatabaseManager {
             String lastWorld, double lastX, double lastY, double lastZ,
             float lastYaw, float lastPitch,
             String entityType,
-            long spawnedAtMs, Long removedAtMs, String removeReason) {
+            long spawnedAtMs, Long removedAtMs, String removeReason,
+            String serverId) {
 
         if (!isAlive()) return;
 
-        // Resolve nulls
         if (lastWorld == null) lastWorld = worldName;
         if (entityType == null) entityType = "MANNEQUIN";
+        if (serverId == null || serverId.isBlank()) serverId = Config.serverId();
 
-        // Use INSERT OR IGNORE (SQLite) / INSERT IGNORE (MySQL) so existing rows are untouched.
         String sql = isMysql
                 ? "INSERT IGNORE INTO fpp_bot_sessions" +
                   "(bot_name,bot_display,bot_uuid,spawned_by,spawned_by_uuid,world_name," +
                   "spawn_x,spawn_y,spawn_z,spawn_yaw,spawn_pitch," +
                   "last_world,last_x,last_y,last_z,last_yaw,last_pitch," +
-                  "entity_type,spawned_at,removed_at,remove_reason) " +
-                  "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+                  "entity_type,spawned_at,removed_at,remove_reason,server_id) " +
+                  "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
                 : "INSERT OR IGNORE INTO fpp_bot_sessions" +
                   "(bot_name,bot_display,bot_uuid,spawned_by,spawned_by_uuid,world_name," +
                   "spawn_x,spawn_y,spawn_z,spawn_yaw,spawn_pitch," +
                   "last_world,last_x,last_y,last_z,last_yaw,last_pitch," +
-                  "entity_type,spawned_at,removed_at,remove_reason) " +
-                  "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+                  "entity_type,spawned_at,removed_at,remove_reason,server_id) " +
+                  "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
 
         try (PreparedStatement ps = connection.prepareStatement(sql)) {
             ps.setString(1,  botName);       ps.setString(2,  botDisplay);
@@ -819,6 +972,7 @@ public class DatabaseManager {
             ps.setString(18, entityType);    ps.setLong(19,   spawnedAtMs);
             if (removedAtMs != null) ps.setLong(20, removedAtMs); else ps.setNull(20, java.sql.Types.BIGINT);
             ps.setString(21, removeReason);
+            ps.setString(22, serverId);
             ps.executeUpdate();
         } catch (SQLException e) {
             FppLogger.error("DB mergeSessionRow: " + e.getMessage());
@@ -833,17 +987,19 @@ public class DatabaseManager {
             String botUuid, String botName, String botDisplay,
             String spawnedBy, String spawnedByUuid,
             String worldName, double posX, double posY, double posZ,
-            float posYaw, float posPitch, long updatedAt) {
+            float posYaw, float posPitch, long updatedAt,
+            String serverId) {
 
         if (!isAlive()) return;
+        if (serverId == null || serverId.isBlank()) serverId = Config.serverId();
 
         String sql = isMysql
                 ? "INSERT IGNORE INTO fpp_active_bots" +
                   "(bot_uuid,bot_name,bot_display,spawned_by,spawned_by_uuid," +
-                  "world_name,pos_x,pos_y,pos_z,pos_yaw,pos_pitch,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)"
+                  "world_name,pos_x,pos_y,pos_z,pos_yaw,pos_pitch,updated_at,server_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)"
                 : "INSERT OR IGNORE INTO fpp_active_bots" +
                   "(bot_uuid,bot_name,bot_display,spawned_by,spawned_by_uuid," +
-                  "world_name,pos_x,pos_y,pos_z,pos_yaw,pos_pitch,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)";
+                  "world_name,pos_x,pos_y,pos_z,pos_yaw,pos_pitch,updated_at,server_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)";
 
         try (PreparedStatement ps = connection.prepareStatement(sql)) {
             ps.setString(1,  botUuid);       ps.setString(2,  botName);
@@ -851,7 +1007,7 @@ public class DatabaseManager {
             ps.setString(5,  spawnedByUuid); ps.setString(6,  worldName);
             ps.setDouble(7,  posX);          ps.setDouble(8,  posY);  ps.setDouble(9,  posZ);
             ps.setFloat(10,  posYaw);        ps.setFloat(11,  posPitch);
-            ps.setLong(12,   updatedAt);
+            ps.setLong(12,   updatedAt);     ps.setString(13, serverId);
             ps.executeUpdate();
         } catch (SQLException e) {
             FppLogger.error("DB mergeActiveBotRow: " + e.getMessage());
@@ -891,7 +1047,8 @@ public class DatabaseManager {
             String spawnedBy, String spawnedByUuid,
             String world, double x, double y, double z,
             float yaw, float pitch,
-            String luckpermsGroup
+            String luckpermsGroup,
+            String serverId
     ) {}
 
     /**

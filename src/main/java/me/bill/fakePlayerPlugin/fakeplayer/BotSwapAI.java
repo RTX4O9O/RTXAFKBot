@@ -177,9 +177,7 @@ public final class BotSwapAI {
             List<Player> online = new ArrayList<>(Bukkit.getOnlinePlayers());
             for (Player p : online) PacketHelper.sendTabListRemove(p, fp);
 
-            if (Config.leaveMessage()) {
-                BotBroadcast.broadcastLeaveByDisplayName(leavingName);
-            }
+            // NMS player's quit event fires naturally — no custom leave message needed.
 
             // ── 4. Schedule rejoin ────────────────────────────────────────
             long rejoinTicks = rejoinTicks(swapCount);

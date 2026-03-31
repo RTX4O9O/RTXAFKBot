@@ -129,17 +129,17 @@ public final class PacketHelper {
                 Class<?> paperAdventure = Class.forName("io.papermc.paper.adventure.PaperAdventure");
                 paperAdventureAsVanilla = paperAdventure.getDeclaredMethod("asVanilla", Component.class);
                 paperAdventureAsVanilla.setAccessible(true);
-                Config.debug("PaperAdventure.asVanilla found — colored tablist names supported.");
+                Config.debugPackets("PaperAdventure.asVanilla found — colored tablist names supported.");
             } catch (Exception ex) {
-                Config.debug("PaperAdventure.asVanilla not found, will fall back to literal: " + ex.getMessage());
+                Config.debugPackets("PaperAdventure.asVanilla not found, will fall back to literal: " + ex.getMessage());
             }
 
-            Config.debug("PacketHelper ready.");
+            Config.debugPackets("PacketHelper ready.");
             ready = true;
         } catch (Exception e) {
             broken = true;
             FppLogger.warn("PacketHelper init failed: " + e.getMessage());
-            if (Config.isDebug()) FppLogger.warn("  → " + e);
+            if (Config.debugPackets()) FppLogger.warn("  → " + e);
         }
     }
 
@@ -152,7 +152,7 @@ public final class PacketHelper {
             Class<?>[] p = c.getParameterTypes();
             if (p.length == 2 && p[0] == EnumSet.class) {
                 c.setAccessible(true);
-                Config.debug("PlayerInfoUpdatePacket ctor: second param = " + p[1].getName());
+                Config.debugPackets("PlayerInfoUpdatePacket ctor: second param = " + p[1].getName());
                 return c;
             }
         }
@@ -268,23 +268,21 @@ public final class PacketHelper {
             }
 
             sendPacket(nms, playerInfoUpdateCtor.newInstance(actions, secondArg));
-            SkinProfile skin = fp.getResolvedSkin();
-            Config.debug("Tab ADD → " + receiver.getName() + " for " + fp.getName()
-                    + (skin != null && skin.isValid() ? " [skinned]" : ""));
+            Config.debugPackets("Tab ADD → " + receiver.getName() + " for " + fp.getName());
         } catch (Exception e) {
             FppLogger.error("sendTabListAdd failed: " + e.getMessage());
-            if (Config.isDebug()) FppLogger.warn("  → " + e);
+            if (Config.debugPackets()) FppLogger.warn("  → " + e);
         }
     }
 
     /**
-     * Builds a {@code GameProfile} for the fake player.
-     * If the player has a resolved skin, the {@code textures} property is added
-     * to a freshly-created mutable PropertyMap before the profile is returned.
+     * Builds a {@code GameProfile} for the fake player, injecting skin texture properties
+     * when a resolved skin is available.
      *
-     * <p>We create the profile normally (UUID + name), then walk its
-     * {@code PropertyMap} to inject the property via the map's {@code put} method.
-     * Modern authlib PropertyMap delegates to a {@code HashMultimap} internally
+     * <p>Uses {@link FakePlayer#getPacketProfileName()} for the profile name (may include
+     * a non-visible sort prefix based on LuckPerms group weight).
+     *
+     * <p>Modern authlib PropertyMap delegates to a {@code HashMultimap} internally
      * which IS mutable — we just need to bypass the immutable wrapper that
      * may be returned by {@code getProperties()} in some builds.
      */
@@ -301,17 +299,23 @@ public final class PacketHelper {
         try {
             injectProperty(profile, "textures", skin.getValue(), skin.getSignature());
         } catch (Exception e) {
-            Config.debug("buildProfileWithSkin: inject failed — " + e.getMessage());
+            Config.debugPackets("buildProfileWithSkin: inject failed — " + e.getMessage());
         }
         return profile;
     }
 
     /**
-     * Injects a property into a {@code GameProfile}'s {@code PropertyMap} via reflection.
+     * Injects a named property into a {@code GameProfile}'s {@code PropertyMap} via reflection.
      *
-     * <p>Authlib's {@code PropertyMap} is a {@code ForwardingMultimap} that wraps a mutable
-     * {@code HashMultimap}. We find the delegate field and call {@code put} on it directly,
-     * bypassing any immutability enforced at the forwarding level.
+     * <p>Strategy (most → least reliable):
+     * <ol>
+     *   <li>Create {@code Property(name, value, signature)} (3-arg, canonical authlib ctor).</li>
+     *   <li>Fetch the profile's {@code PropertyMap} via {@code getProperties()}.</li>
+     *   <li>Call {@code put(String, Property)} directly on the map.</li>
+     *   <li>If the map is an immutable wrapper, find its delegate field and call {@code put} there.</li>
+     *   <li>Last resort: create a fresh mutable {@code HashMultimap}, copy existing entries, add the
+     *       new property, and swap the backing field via reflection.</li>
+     * </ol>
      */
     private static void injectProperty(Object profile, String key, String value, String signature)
             throws Exception {
@@ -350,25 +354,24 @@ public final class PacketHelper {
             if ("put".equals(m.getName()) && m.getParameterCount() == 2) {
                 try {
                     m.invoke(propertyMap, key, property);
-                    Config.debug("injectProperty: put via public API succeeded.");
+                    Config.debugPackets("injectProperty: direct put succeeded.");
                     return;
-                } catch (Exception ignored) {}
+                } catch (Exception ignored) {
+                    break; // likely immutable wrapper — fall through
+                }
             }
         }
 
-        // ── Step 4: Walk declared fields for the underlying mutable Multimap ──
-        for (Field f : getAllFields(propertyMap.getClass())) {
+        // ── Step 4: Try calling put on a delegate (immutable wrapper pattern) ─
+        for (Field f : propertyMap.getClass().getDeclaredFields()) {
             f.setAccessible(true);
             Object delegate = f.get(propertyMap);
             if (delegate == null) continue;
-            String simpleName = delegate.getClass().getSimpleName();
-            if (!simpleName.contains("Multimap") && !simpleName.contains("HashMap")) continue;
-
             for (Method m : delegate.getClass().getMethods()) {
                 if ("put".equals(m.getName()) && m.getParameterCount() == 2) {
                     try {
                         m.invoke(delegate, key, property);
-                        Config.debug("injectProperty: put via delegate '" + f.getName() + "' succeeded.");
+                        Config.debugPackets("injectProperty: put via delegate '" + f.getName() + "' succeeded.");
                         return;
                     } catch (Exception ignored) {}
                 }
@@ -380,7 +383,35 @@ public final class PacketHelper {
         Method create = hashMultimapClass.getMethod("create");
         Object mutableMap = create.invoke(null);
 
-        // put our property first
+        // Copy existing properties into the new map
+        Method valuesMethod = null;
+        for (Method m : propertyMap.getClass().getMethods()) {
+            if ("values".equals(m.getName()) && m.getParameterCount() == 0) { valuesMethod = m; break; }
+        }
+        if (valuesMethod != null) {
+            Object existing = valuesMethod.invoke(propertyMap);
+            if (existing instanceof Iterable<?> iter) {
+                Method putMethod = null;
+                for (Method m : mutableMap.getClass().getMethods()) {
+                    if ("put".equals(m.getName()) && m.getParameterCount() == 2) { putMethod = m; break; }
+                }
+                if (putMethod != null) {
+                    for (Object entry : iter) {
+                        // entry is a Property; get its name via getName() or name()
+                        String entryKey = null;
+                        for (String getter : new String[]{"getName", "name"}) {
+                            try {
+                                entryKey = (String) entry.getClass().getMethod(getter).invoke(entry);
+                                break;
+                            } catch (NoSuchMethodException ignored) {}
+                        }
+                        if (entryKey != null) putMethod.invoke(mutableMap, entryKey, entry);
+                    }
+                }
+            }
+        }
+
+        // Put the new property
         for (Method m : mutableMap.getClass().getMethods()) {
             if ("put".equals(m.getName()) && m.getParameterCount() == 2) {
                 m.invoke(mutableMap, key, property);
@@ -388,27 +419,18 @@ public final class PacketHelper {
             }
         }
 
-        // Replace the first Multimap-like field in the PropertyMap with our mutable one
-        for (Field f : getAllFields(propertyMap.getClass())) {
+        // Swap the backing field of the PropertyMap wrapper
+        for (Field f : propertyMap.getClass().getDeclaredFields()) {
             f.setAccessible(true);
-            Object val = f.get(propertyMap);
-            if (val == null) continue;
-            if (val.getClass().getSimpleName().contains("Multimap")) {
+            Object delegate = f.get(propertyMap);
+            if (delegate != null && delegate.getClass().getName().contains("Multimap")) {
                 f.set(propertyMap, mutableMap);
-                Config.debug("injectProperty: replaced delegate field '" + f.getName() + "'.");
+                Config.debugPackets("injectProperty: replaced delegate multimap — succeeded.");
                 return;
             }
         }
 
-        throw new IllegalStateException("Could not find a writable Multimap in PropertyMap");
-    }
-
-    /** Collects all declared fields from {@code clazz} and its superclasses. */
-    private static List<Field> getAllFields(Class<?> clazz) {
-        List<Field> fields = new ArrayList<>();
-        for (Class<?> c = clazz; c != null && c != Object.class; c = c.getSuperclass())
-            fields.addAll(Arrays.asList(c.getDeclaredFields()));
-        return fields;
+        FppLogger.warn("injectProperty: all strategies exhausted — skin may not appear in tab list.");
     }
 
     public static void sendTabListRemove(Player receiver, FakePlayer fp) {
@@ -421,9 +443,90 @@ public final class PacketHelper {
                 ctor.setAccessible(true);
             }
             sendPacket(nms, ctor.newInstance(List.of(fp.getUuid())));
-            Config.debug("Tab REMOVE → " + receiver.getName() + " for " + fp.getName());
+            Config.debugPackets("Tab REMOVE → " + receiver.getName() + " for " + fp.getName());
         } catch (Exception e) {
             FppLogger.error("sendTabListRemove failed: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Sends a tab-list REMOVE packet for a bot identified by its UUID alone.
+     * Used to remove remote-server bots (from {@link me.bill.fakePlayerPlugin.fakeplayer.RemoteBotCache})
+     * from a player's tab list without needing a local {@link FakePlayer} object.
+     */
+    public static void sendTabListRemoveByUuid(Player receiver, UUID uuid) {
+        if (!ensureReady()) return;
+        try {
+            Object nms = getHandle(receiver);
+            Constructor<?> ctor = getConstructor(playerInfoRemovePacketClass, List.class);
+            if (ctor == null) {
+                ctor = playerInfoRemovePacketClass.getDeclaredConstructors()[0];
+                ctor.setAccessible(true);
+            }
+            sendPacket(nms, ctor.newInstance(List.of(uuid)));
+            Config.debugPackets("Tab REMOVE raw → " + receiver.getName() + " for " + uuid);
+        } catch (Exception e) {
+            FppLogger.error("sendTabListRemoveByUuid failed: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Sends a tab-list ADD packet using raw fields instead of a {@link FakePlayer} object.
+     *
+     * <p>Used to add remote-server bots to the tab list on this server so players see
+     * bots from all servers in the proxy network, not just the server they're connected to.
+     *
+     * @param packetProfileName profile name used for tab-list ordering (may have a sort prefix)
+     * @param displayName       MiniMessage-formatted display name (includes LP prefix)
+     * @param skinValue         base64-encoded texture value, or {@code null} / blank to skip skin
+     * @param skinSignature     RSA signature from Mojang, or {@code null}
+     */
+    public static void sendTabListAddRaw(Player receiver, UUID uuid, String packetProfileName,
+                                         String displayName, String skinValue, String skinSignature) {
+        if (!ensureReady()) return;
+        try {
+            Object nms = getHandle(receiver);
+
+            // Build GameProfile with the packet-profile name (includes sort prefix)
+            Object profile = gameProfileCtor != null
+                    ? gameProfileCtor.newInstance(uuid, packetProfileName)
+                    : gameProfileClass.getDeclaredConstructors()[0].newInstance(uuid, packetProfileName);
+
+            // Inject skin texture properties when present
+            if (skinValue != null && !skinValue.isBlank()) {
+                try {
+                    injectProperty(profile, "textures", skinValue, skinSignature);
+                } catch (Exception ex) {
+                    Config.debugPackets("sendTabListAddRaw: skin inject failed — " + ex.getMessage());
+                }
+            }
+
+
+            // Parse display name MiniMessage → Adventure → NMS
+            Component adventureComponent = MiniMessage.miniMessage().deserialize(displayName);
+            Object nmsDisplayName = adventureToNms(adventureComponent);
+
+            Object entry   = buildEntry(uuid, profile, nmsDisplayName);
+            Object actions = buildActionSet();
+
+            Object secondArg;
+            Class<?> secondParamType = playerInfoUpdateCtor.getParameterTypes()[1];
+            if (secondParamType == playerInfoUpdateEntryClass) {
+                secondArg = entry;
+            } else if (secondParamType.isArray()) {
+                Object arr = java.lang.reflect.Array.newInstance(secondParamType.getComponentType(), 1);
+                java.lang.reflect.Array.set(arr, 0, entry);
+                secondArg = arr;
+            } else {
+                secondArg = List.of(entry);
+            }
+
+            sendPacket(nms, playerInfoUpdateCtor.newInstance(actions, secondArg));
+            Config.debugPackets("Tab ADD raw → " + receiver.getName() + " for " + packetProfileName
+                    + (skinValue != null && !skinValue.isBlank() ? " [skinned]" : ""));
+        } catch (Exception e) {
+            FppLogger.error("sendTabListAddRaw failed: " + e.getMessage());
+            if (Config.debugPackets()) FppLogger.warn("  → " + e);
         }
     }
 
@@ -437,10 +540,10 @@ public final class PacketHelper {
         if (!ensureReady()) return;
         try {
             Object nms = getHandle(receiver);
-            // Use the packet profile name (includes sort prefix) for consistency with sendTabListAdd.
+            // Use the bot's real name for the profile — LP handles ordering natively.
             Object profile = gameProfileCtor != null
-                    ? gameProfileCtor.newInstance(fp.getUuid(), fp.getPacketProfileName())
-                    : gameProfileClass.getDeclaredConstructors()[0].newInstance(fp.getUuid(), fp.getPacketProfileName());
+                    ? gameProfileCtor.newInstance(fp.getUuid(), fp.getName())
+                    : gameProfileClass.getDeclaredConstructors()[0].newInstance(fp.getUuid(), fp.getName());
 
             Component adventureComponent = MiniMessage.miniMessage().deserialize(fp.getDisplayName());
             Object displayName = adventureToNms(adventureComponent);
@@ -478,14 +581,14 @@ public final class PacketHelper {
                     float.class, float.class,
                     entityTypeClass, int.class, vec3Class, double.class);
             sendPacket(nms, ctor.newInstance(
-                    fp.getEntityId(), fp.getUuid(),
+                    fp.getPlayer().getEntityId(), fp.getUuid(),
                     loc.getX(), loc.getY(), loc.getZ(),
                     loc.getPitch(), loc.getYaw(),
                     entityTypePlayer, 0, vec3Zero, 0.0));
-            Config.debug("Spawn entity → " + receiver.getName() + " for " + fp.getName());
+            Config.debugPackets("Spawn entity → " + receiver.getName() + " for " + fp.getName());
         } catch (Exception e) {
             FppLogger.error("spawnFakePlayer failed: " + e.getMessage());
-            if (Config.isDebug()) FppLogger.warn("  → " + e);
+            if (Config.debugPackets()) FppLogger.warn("  → " + e);
         }
     }
 
@@ -494,8 +597,8 @@ public final class PacketHelper {
         try {
             Object nms = getHandle(receiver);
             Constructor<?> ctor = removeEntitiesPacketClass.getConstructor(int[].class);
-            sendPacket(nms, ctor.newInstance((Object) new int[]{fp.getEntityId()}));
-            Config.debug("Despawn entity → " + receiver.getName() + " for " + fp.getName());
+            sendPacket(nms, ctor.newInstance((Object) new int[]{fp.getPlayer().getEntityId()}));
+            Config.debugPackets("Despawn entity → " + receiver.getName() + " for " + fp.getName());
         } catch (Exception e) {
             FppLogger.error("despawnFakePlayer failed: " + e.getMessage());
         }
@@ -579,7 +682,45 @@ public final class PacketHelper {
                 break;
             }
         } catch (Exception e) {
-            Config.debug("sendRotation failed: " + e.getMessage());
+            Config.debugPackets("sendRotation failed: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Sends entity teleport packet to sync NMS bot position without actually teleporting.
+     * This preserves velocity while making position updates visible to the receiving player.
+     */
+    public static void sendPositionSync(Player receiver, Player bot) {
+        if (!ensureReady()) return;
+        try {
+            // Load ClientboundTeleportEntityPacket class
+            ClassLoader nmsLoader = findNmsClassLoader();
+            Class<?> teleportPacketClass = nmsLoader.loadClass("net.minecraft.network.protocol.game.ClientboundTeleportEntityPacket");
+            
+            // Get bot's NMS entity
+            Object nmsBot = craftPlayerGetHandle.invoke(bot);
+            
+            // Find constructor: ClientboundTeleportEntityPacket(Entity)
+            Constructor<?> ctor = null;
+            for (Constructor<?> c : teleportPacketClass.getDeclaredConstructors()) {
+                if (c.getParameterCount() == 1) {
+                    c.setAccessible(true);
+                    ctor = c;
+                    break;
+                }
+            }
+            
+            if (ctor == null) {
+                Config.debugPackets("Could not find TeleportEntityPacket constructor");
+                return;
+            }
+            
+            Object packet = ctor.newInstance(nmsBot);
+            Object nms = craftPlayerGetHandle.invoke(receiver);
+            sendPacket(nms, packet);
+            
+        } catch (Exception e) {
+            Config.debugPackets("sendPositionSync failed: " + e.getMessage());
         }
     }
 
@@ -685,7 +826,7 @@ public final class PacketHelper {
             try {
                 return paperAdventureAsVanilla.invoke(null, component);
             } catch (Exception e) {
-                Config.debug("PaperAdventure.asVanilla failed: " + e.getMessage());
+                Config.debugPackets("PaperAdventure.asVanilla failed: " + e.getMessage());
             }
         }
         // Fallback: plain text (no color) but at least avoids crashes
@@ -694,7 +835,7 @@ public final class PacketHelper {
                 String plain = PlainTextComponentSerializer.plainText().serialize(component);
                 return componentLiteral.invoke(null, plain);
             } catch (Exception e) {
-                Config.debug("componentLiteral fallback failed: " + e.getMessage());
+                Config.debugPackets("componentLiteral fallback failed: " + e.getMessage());
             }
         }
         return null;

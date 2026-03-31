@@ -6,64 +6,46 @@ import me.bill.fakePlayerPlugin.fakeplayer.FakePlayerManager;
 import me.bill.fakePlayerPlugin.lang.Lang;
 import me.bill.fakePlayerPlugin.permission.Perm;
 import me.bill.fakePlayerPlugin.util.LuckPermsHelper;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.command.CommandSender;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
-import java.util.Random;
-import java.util.stream.Collectors;
+import java.util.concurrent.CompletableFuture;
 
 /**
- * `/fpp rank` — Assign LuckPerms groups to bots for custom prefixes and tab-list ordering.
+ * {@code /fpp rank} — Assign LP groups to bots using LuckPerms' native API.
  *
- * <h3>Commands</h3>
+ * <p>Because bots are now real NMS {@code ServerPlayer} entities, LuckPerms
+ * detects them as genuine online players. This command uses LP's
+ * {@code UserManager} to assign/clear group membership, and LP itself
+ * propagates the prefix change to chat and tab list automatically.
+ *
+ * <h3>Subcommands</h3>
  * <ul>
- *   <li>{@code /fpp rank set <bot> <group>} — Assign a specific bot to a LP group</li>
- *   <li>{@code /fpp rank random <group> <count|all>} — Assign random bots to a LP group</li>
- *   <li>{@code /fpp rank clear <bot>} — Remove bot-specific LP group (use global config)</li>
- *   <li>{@code /fpp rank list} — Show all bots and their assigned LP groups</li>
+ *   <li>{@code /fpp rank <bot> <group>} — assign bot to an LP group</li>
+ *   <li>{@code /fpp rank random <group> [num]} — assign a group to random active bots</li>
+ *   <li>{@code /fpp rank <bot> clear}   — reset bot to LP "default" group</li>
+ *   <li>{@code /fpp rank list}          — list all bots with their current LP groups</li>
  * </ul>
- *
- * <h3>Behavior</h3>
- * <p>When a bot has a specific LP group assigned via this command, it takes priority over:
- * <ol>
- *   <li>The global {@code luckperms.bot-group} config</li>
- *   <li>The {@code "default"} LP group</li>
- * </ol>
- * This allows mixing different bot "ranks" (admin bots, VIP bots, default bots) in the same
- * server for varied prefixes and tab-list positions.
  */
 public final class RankCommand implements FppCommand {
 
-    private final FakePlayerPlugin plugin;
+    private final FakePlayerPlugin  plugin;
     private final FakePlayerManager manager;
-    private final Random random = new Random();
 
     public RankCommand(FakePlayerPlugin plugin, FakePlayerManager manager) {
         this.plugin  = plugin;
         this.manager = manager;
     }
 
-    @Override
-    public String getName() {
-        return "rank";
-    }
-
-    @Override
-    public String getUsage() {
-        return "/fpp rank <set|random|clear|list> [args...] | /fpp rank random <group> all";
-    }
-
-    @Override
-    public String getDescription() {
-        return "Assign LuckPerms groups to bots";
-    }
-
-    @Override
-    public String getPermission() {
-        return Perm.RANK;
-    }
+    @Override public String getName()        { return "rank"; }
+    @Override public String getUsage()       { return "/fpp rank <bot> <group|clear> | /fpp rank random <group> [num] | /fpp rank list"; }
+    @Override public String getDescription() { return "Assign LuckPerms groups to one bot or random bots."; }
+    @Override public String getPermission()  { return Perm.RANK; }
 
     @Override
     public boolean canUse(CommandSender sender) {
@@ -72,187 +54,174 @@ public final class RankCommand implements FppCommand {
 
     @Override
     public boolean execute(CommandSender sender, String[] args) {
-        // Check LuckPerms availability
         if (!LuckPermsHelper.isAvailable()) {
             sender.sendMessage(Lang.get("rank-no-luckperms"));
             return true;
         }
 
-        // Require subcommand
         if (args.length == 0) {
             sender.sendMessage(Lang.get("rank-usage"));
             return true;
         }
 
-        String sub = args[0].toLowerCase();
-
-        switch (sub) {
-            case "set"    -> executeSet(sender, args);
-            case "random" -> executeRandom(sender, args);
-            case "clear"  -> executeClear(sender, args);
-            case "list"   -> executeList(sender);
-            default       -> sender.sendMessage(Lang.get("rank-usage"));
+        if (args[0].equalsIgnoreCase("list")) {
+            executeList(sender);
+            return true;
         }
-        
+
+        if (args[0].equalsIgnoreCase("random")) {
+            executeRandom(sender, args);
+            return true;
+        }
+
+        // /fpp rank <bot> <group|clear>
+        if (args.length < 2) {
+            sender.sendMessage(Lang.get("rank-usage"));
+            return true;
+        }
+
+        String botName  = args[0];
+        String groupArg = args[1];
+
+        FakePlayer fp = manager.getByName(botName);
+        if (fp == null) {
+            sender.sendMessage(Lang.get("rank-bot-not-found", "name", botName));
+            return true;
+        }
+
+        if (groupArg.equalsIgnoreCase("clear")) {
+            executeClear(sender, fp);
+        } else {
+            executeSet(sender, fp, groupArg);
+        }
         return true;
     }
 
-    // ── Subcommands ───────────────────────────────────────────────────────────
+    // ── Subcommand implementations ────────────────────────────────────────────
 
-    /**
-     * `/fpp rank set <bot> <group>` — Assign a specific bot to a LP group.
-     */
-    private void executeSet(CommandSender sender, String[] args) {
-        if (args.length < 3) {
-            sender.sendMessage(Lang.get("rank-set-usage"));
-            return;
-        }
+    private CompletableFuture<Void> applyGroup(FakePlayer fp, String groupName) {
+        return LuckPermsHelper.setPlayerGroup(fp.getUuid(), groupName).thenRun(() -> {
+            fp.setLuckpermsGroup(groupName);
+            org.bukkit.Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                if (manager.getByName(fp.getName()) == null) return;
+                manager.refreshLpDisplayName(fp);
+            }, 2L);
+        });
+    }
 
-        String botName = args[1];
-        String groupName = args[2];
-
-        // Find bot
-        FakePlayer bot = manager.getByName(botName);
-        if (bot == null) {
-            sender.sendMessage(Lang.get("rank-bot-not-found", "name", botName));
-            return;
-        }
-
-        // Validate LP group
+    private void executeSet(CommandSender sender, FakePlayer fp, String groupName) {
         if (!LuckPermsHelper.groupExists(groupName)) {
             sender.sendMessage(Lang.get("rank-group-not-found", "group", groupName));
             return;
         }
 
-        // Assign group
-        bot.setLuckpermsGroup(groupName);
+        sender.sendMessage(Component.text("Assigning ", NamedTextColor.GRAY)
+                .append(Component.text(fp.getName(), NamedTextColor.AQUA))
+                .append(Component.text(" → ", NamedTextColor.GRAY))
+                .append(Component.text(groupName, NamedTextColor.GREEN))
+                .append(Component.text("…", NamedTextColor.GRAY)));
 
-        // Update bot's prefix and tab-list immediately
-        manager.updateBotPrefix(bot);
-
-        sender.sendMessage(Lang.get("rank-set-success",
-                "bot", bot.getDisplayName(),
-                "group", groupName));
+        applyGroup(fp, groupName).thenRun(() -> {
+            sender.sendMessage(Component.text("✔ ", NamedTextColor.GREEN)
+                    .append(Component.text(fp.getName(), NamedTextColor.AQUA))
+                    .append(Component.text(" → ", NamedTextColor.GRAY))
+                    .append(Component.text(groupName, NamedTextColor.GREEN)));
+        }).exceptionally(throwable -> {
+            sender.sendMessage(Component.text("✘ Failed: " + throwable.getMessage(), NamedTextColor.RED));
+            return null;
+        });
     }
 
-    /**
-     * `/fpp rank random <group> <count|all>` — Assign random bots to a LP group.
-     * When count is "all", assigns ALL active bots to the group.
-     */
+    private void executeClear(CommandSender sender, FakePlayer fp) {
+        String defaultGroup = me.bill.fakePlayerPlugin.config.Config.luckpermsDefaultGroup();
+        String targetGroup  = (defaultGroup != null && !defaultGroup.trim().isEmpty())
+                ? defaultGroup.trim() : "default";
+
+        applyGroup(fp, targetGroup).thenRun(() -> {
+            sender.sendMessage(Component.text("✔ ", NamedTextColor.GREEN)
+                    .append(Component.text(fp.getName(), NamedTextColor.AQUA))
+                    .append(Component.text(" reset to group ", NamedTextColor.GRAY))
+                    .append(Component.text(targetGroup, NamedTextColor.GREEN)));
+        }).exceptionally(throwable -> {
+            sender.sendMessage(Component.text("✘ Failed: " + throwable.getMessage(), NamedTextColor.RED));
+            return null;
+        });
+    }
+
     private void executeRandom(CommandSender sender, String[] args) {
-        if (args.length < 3) {
-            sender.sendMessage(Lang.get("rank-random-usage"));
+        if (args.length < 2) {
+            sender.sendMessage(Lang.get("rank-usage"));
             return;
         }
 
         String groupName = args[1];
-        String countArg = args[2];
-        int count;
-        boolean assignAll = false;
-
-        // Handle "all" parameter
-        if ("all".equalsIgnoreCase(countArg)) {
-            assignAll = true;
-            count = Integer.MAX_VALUE; // Will be limited by actual bot count
-        } else {
-            try {
-                count = Integer.parseInt(countArg);
-                if (count <= 0) {
-                    sender.sendMessage(Lang.get("rank-invalid-count"));
-                    return;
-                }
-            } catch (NumberFormatException e) {
-                sender.sendMessage(Lang.get("rank-invalid-count"));
-                return;
-            }
-        }
-
-        // Validate LP group
         if (!LuckPermsHelper.groupExists(groupName)) {
             sender.sendMessage(Lang.get("rank-group-not-found", "group", groupName));
             return;
         }
 
-        // Get all active bots
-        List<FakePlayer> allBots = new ArrayList<>(manager.getActivePlayers());
-        if (allBots.isEmpty()) {
-            sender.sendMessage(Lang.get("rank-no-bots"));
-            return;
-        }
-
-        // Shuffle and take requested count (or all if "all" was specified)
-        Collections.shuffle(allBots, random);
-        int assigned = assignAll ? allBots.size() : Math.min(count, allBots.size());
-        List<FakePlayer> selected = allBots.subList(0, assigned);
-
-        // Assign group to selected bots
-        for (FakePlayer bot : selected) {
-            bot.setLuckpermsGroup(groupName);
-            manager.updateBotPrefix(bot);
-        }
-
-        if (assignAll) {
-            sender.sendMessage(Lang.get("rank-random-all-success",
-                    "count", String.valueOf(assigned),
-                    "group", groupName));
-        } else {
-            sender.sendMessage(Lang.get("rank-random-success",
-                    "count", String.valueOf(assigned),
-                    "group", groupName));
-        }
-    }
-
-    /**
-     * `/fpp rank clear <bot>` — Remove bot-specific LP group override.
-     */
-    private void executeClear(CommandSender sender, String[] args) {
-        if (args.length < 2) {
-            sender.sendMessage(Lang.get("rank-clear-usage"));
-            return;
-        }
-
-        String botName = args[1];
-
-        // Find bot
-        FakePlayer bot = manager.getByName(botName);
-        if (bot == null) {
-            sender.sendMessage(Lang.get("rank-bot-not-found", "name", botName));
-            return;
-        }
-
-        // Clear group override
-        bot.setLuckpermsGroup(null);
-
-        // Update bot's prefix and tab-list immediately
-        manager.updateBotPrefix(bot);
-
-        sender.sendMessage(Lang.get("rank-clear-success", "bot", bot.getDisplayName()));
-    }
-
-    /**
-     * `/fpp rank list` — Show all bots and their assigned LP groups.
-     */
-    private void executeList(CommandSender sender) {
-        List<FakePlayer> allBots = new ArrayList<>(manager.getActivePlayers());
-        if (allBots.isEmpty()) {
-            sender.sendMessage(Lang.get("rank-no-bots"));
-            return;
-        }
-
-        sender.sendMessage(Lang.get("rank-list-header", "count", String.valueOf(allBots.size())));
-
-        for (FakePlayer bot : allBots) {
-            String group = bot.getLuckpermsGroup();
-            if (group != null) {
-                // Bot has specific group assigned
-                sender.sendMessage(Lang.get("rank-list-entry-custom",
-                        "bot", bot.getDisplayName(),
-                        "group", group));
-            } else {
-                // Bot using global config/default
-                sender.sendMessage(Lang.get("rank-list-entry-default",
-                        "bot", bot.getDisplayName()));
+        int requested = 1;
+        if (args.length >= 3) {
+            try {
+                requested = Integer.parseInt(args[2]);
+            } catch (NumberFormatException ignored) {
+                sender.sendMessage(Component.text("✘ Invalid number: " + args[2], NamedTextColor.RED));
+                return;
             }
+        }
+
+        if (requested <= 0) {
+            sender.sendMessage(Component.text("✘ Number must be at least 1.", NamedTextColor.RED));
+            return;
+        }
+
+        List<FakePlayer> candidates = new ArrayList<>(manager.getActivePlayers());
+        if (candidates.isEmpty()) {
+            sender.sendMessage(Component.text("No active bots.", NamedTextColor.GRAY));
+            return;
+        }
+
+        Collections.shuffle(candidates);
+        int count = Math.min(requested, candidates.size());
+        List<FakePlayer> selected = new ArrayList<>(candidates.subList(0, count));
+
+        sender.sendMessage(Component.text("Assigning ", NamedTextColor.GRAY)
+                .append(Component.text(groupName, NamedTextColor.GREEN))
+                .append(Component.text(" to ", NamedTextColor.GRAY))
+                .append(Component.text(count + " random bot(s)", NamedTextColor.AQUA))
+                .append(Component.text("…", NamedTextColor.GRAY)));
+
+        List<CompletableFuture<Void>> futures = new ArrayList<>();
+        for (FakePlayer fp : selected) {
+            futures.add(applyGroup(fp, groupName));
+        }
+
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).thenRun(() ->
+                sender.sendMessage(Component.text("✔ ", NamedTextColor.GREEN)
+                        .append(Component.text("Assigned ", NamedTextColor.GRAY))
+                        .append(Component.text(groupName, NamedTextColor.GREEN))
+                        .append(Component.text(" to ", NamedTextColor.GRAY))
+                        .append(Component.text(count + " bot(s)", NamedTextColor.AQUA))))
+                .exceptionally(throwable -> {
+                    sender.sendMessage(Component.text("✘ Failed: " + throwable.getMessage(), NamedTextColor.RED));
+                    return null;
+                });
+    }
+
+    private void executeList(CommandSender sender) {
+        Collection<FakePlayer> bots = manager.getActivePlayers();
+        if (bots.isEmpty()) {
+            sender.sendMessage(Component.text("No active bots.", NamedTextColor.GRAY));
+            return;
+        }
+
+        sender.sendMessage(Component.text("─── Bot LP Groups ───", NamedTextColor.DARK_GRAY));
+        for (FakePlayer fp : bots) {
+            LuckPermsHelper.getStoredPrimaryGroup(fp.getUuid()).thenAccept(group -> {
+                sender.sendMessage(Component.text("  " + fp.getName(), NamedTextColor.AQUA)
+                        .append(Component.text(" → ", NamedTextColor.GRAY))
+                        .append(Component.text(group, NamedTextColor.GREEN)));
+            });
         }
     }
 
@@ -260,60 +229,33 @@ public final class RankCommand implements FppCommand {
 
     @Override
     public List<String> tabComplete(CommandSender sender, String[] args) {
-        if (!canUse(sender)) return List.of();
-
-        // First arg: subcommand
         if (args.length == 1) {
-            return List.of("set", "random", "clear", "list").stream()
-                    .filter(s -> s.startsWith(args[0].toLowerCase()))
-                    .collect(Collectors.toList());
+            List<String> options = new ArrayList<>();
+            options.add("list");
+            options.add("random");
+            manager.getActivePlayers().forEach(fp -> options.add(fp.getName()));
+            return filter(options, args[0]);
         }
-
-        String sub = args[0].toLowerCase();
-
-        // Second arg
-        if (args.length == 2) {
-            return switch (sub) {
-                case "set", "clear" -> {
-                    // Bot names
-                    yield manager.getActivePlayers().stream()
-                            .map(FakePlayer::getName)
-                            .filter(n -> n.toLowerCase().startsWith(args[1].toLowerCase()))
-                            .collect(Collectors.toList());
-                }
-                case "random" -> {
-                    // LP group names
-                    yield LuckPermsHelper.getAllGroupNames().stream()
-                            .filter(g -> g.toLowerCase().startsWith(args[1].toLowerCase()))
-                            .collect(Collectors.toList());
-                }
-                default -> List.of();
-            };
+        if (args.length == 2 && !args[0].equalsIgnoreCase("list")) {
+            List<String> options = new ArrayList<>(LuckPermsHelper.getAllGroupNames());
+            if (!args[0].equalsIgnoreCase("random")) {
+                options.add("clear");
+            }
+            return filter(options, args[1]);
         }
-
-        // Third arg
-        if (args.length == 3) {
-            return switch (sub) {
-                case "set" -> {
-                    // LP group names
-                    yield LuckPermsHelper.getAllGroupNames().stream()
-                            .filter(g -> g.toLowerCase().startsWith(args[2].toLowerCase()))
-                            .collect(Collectors.toList());
-                }
-                case "random" -> {
-                    // Count suggestions including 'all'
-                    List<String> suggestions = new ArrayList<>(List.of("1", "3", "5", "10", "all"));
-                    yield suggestions.stream()
-                            .filter(s -> s.toLowerCase().startsWith(args[2].toLowerCase()))
-                            .collect(Collectors.toList());
-                }
-                default -> List.of();
-            };
+        if (args.length == 3 && args[0].equalsIgnoreCase("random")) {
+            return filter(new ArrayList<>(List.of("1", "2", "3", "5", "10", "25", "50", "100")), args[2]);
         }
-
         return List.of();
     }
+
+    private static List<String> filter(List<String> list, String prefix) {
+        if (prefix.isBlank()) return list;
+        String lower = prefix.toLowerCase();
+        return list.stream().filter(s -> s.toLowerCase().startsWith(lower)).toList();
+    }
 }
+
 
 
 

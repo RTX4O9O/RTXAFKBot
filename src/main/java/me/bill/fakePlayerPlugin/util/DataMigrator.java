@@ -203,7 +203,8 @@ public final class DataMigrator {
                             safeStr(rs, "entity_type"),
                             rs.getLong("spawned_at"),
                             safeNullableLong(rs, "removed_at"),
-                            safeStr(rs, "remove_reason"));
+                            safeStr(rs, "remove_reason"),
+                            safeStr(rs, "server_id"));   // null → mergeSessionRow defaults to Config.serverId()
                     count++;
                 } catch (Exception e) {
                     FppLogger.debug("DataMigrator: skipped session row: " + e.getMessage());
@@ -235,7 +236,8 @@ public final class DataMigrator {
                             rs.getString("world_name"),
                             rs.getDouble("pos_x"), rs.getDouble("pos_y"), rs.getDouble("pos_z"),
                             safeFloat(rs, "pos_yaw"), safeFloat(rs, "pos_pitch"),
-                            rs.getLong("updated_at"));
+                            rs.getLong("updated_at"),
+                            safeStr(rs, "server_id"));   // null → mergeActiveBotRow defaults to Config.serverId()
                     count++;
                 } catch (Exception e) {
                     FppLogger.debug("DataMigrator: skipped active_bot row: " + e.getMessage());

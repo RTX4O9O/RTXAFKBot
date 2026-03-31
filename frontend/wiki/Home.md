@@ -71,6 +71,8 @@
 | [💭 Fake Chat](Fake-Chat.md) | Bot chat system and formatting |
 | [📊 Placeholders (PAPI)](Placeholders.md) | PlaceholderAPI integration |
 | [💾 Database](Database.md) | Analytics and session tracking |
+| [🌐 Proxy Support](Proxy-Support.md) | Velocity & BungeeCord multi-server networks |
+| [🔄 Config Sync](Config-Sync.md) | **NEW:** Synchronize configs across network |
 | [🔧 Migration](Migration.md) | Updating and data migration |
 
 ---

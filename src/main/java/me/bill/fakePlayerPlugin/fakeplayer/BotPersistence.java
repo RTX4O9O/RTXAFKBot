@@ -107,8 +107,6 @@ public final class BotPersistence {
             section.put("z",               loc.getZ());
             section.put("yaw",             (double) loc.getYaw());
             section.put("pitch",           (double) loc.getPitch());
-            if (fp.getLuckpermsGroup() != null)
-                section.put("luckperms-group", fp.getLuckpermsGroup());
             list.add(section);
         }
         return list;
@@ -138,11 +136,22 @@ public final class BotPersistence {
         me.bill.fakePlayerPlugin.database.DatabaseManager db =
                 plugin.getDatabaseManager();
         if (db != null) {
+            // ----------------------------------------------------------------
+            // DESIGN RULE — Bots are per-server only.
+            // The database may be shared across multiple servers (NETWORK mode),
+            // but Minecraft entities (NMS ServerPlayers, PlayerProfiles)
+            // are strictly local to the server that originally spawned them.
+            // We therefore ALWAYS restore only rows whose server_id matches
+            // Config.serverId(), regardless of the database mode.
+            // Never attempt to spawn another server's bots on this instance.
+            // ----------------------------------------------------------------
             List<me.bill.fakePlayerPlugin.database.DatabaseManager.ActiveBotRow> rows =
-                    db.getActiveBots();
+                    db.getActiveBotsForThisServer();
             if (!rows.isEmpty()) {
-                FppLogger.info("Restoring " + rows.size() + " bot(s) from database...");
-                // Clear the DB table immediately — bots are now being restored
+                FppLogger.info("Restoring " + rows.size() + " bot(s) from database (server='"
+                        + me.bill.fakePlayerPlugin.config.Config.serverId() + "')...");
+                // Clear only this server's rows immediately — bots are now being restored.
+                // Other servers' rows in a shared DB are left untouched.
                 db.clearActiveBots();
                 // Also discard the YAML file so we don't double-restore
                 deleteFile(dataFile);
@@ -159,7 +168,7 @@ public final class BotPersistence {
                                 row.world(),
                                 row.x(), row.y(), row.z(),
                                 row.yaw(), row.pitch(),
-                                row.luckpermsGroup()   // restore LP group override
+                                null   // No LP group from DB - LP handles natively now
                         ));
                     } catch (Exception e) {
                         FppLogger.warn("Skipping malformed DB active-bot row: " + e.getMessage());
@@ -198,10 +207,9 @@ public final class BotPersistence {
                 double z             = toDouble(map.get("z"));
                 float  yaw           = (float) toDouble(map.get("yaw"));
                 float  pitch         = (float) toDouble(map.get("pitch"));
-                String luckpermsGroup = (String) map.get("luckperms-group");  // Load LP group override
                 if (name == null || worldName == null) continue;
                 saved.add(new SavedBot(name, uuid, displayName, spawnedBy, spawnedByUuid,
-                        worldName, x, y, z, yaw, pitch, luckpermsGroup));
+                        worldName, x, y, z, yaw, pitch, null)); // No LP group from YAML
             } catch (Exception e) {
                 FppLogger.warn("Skipping malformed bot entry in " + FILE_NAME + ": " + e.getMessage());
             }
@@ -217,17 +225,9 @@ public final class BotPersistence {
     /** Spawns one saved bot and schedules the next with a random join-delay. */
     private void restoreChain(FakePlayerManager manager, List<SavedBot> saved, int index) {
         if (index >= saved.size()) {
-            // All bots have been queued — schedule one final prefix refresh 1 second later.
-            // This re-runs LP data resolution with a clean cache so every restored bot
-            // gets its correct coloured rank even if LP hadn't fully settled at restore time.
-            Bukkit.getScheduler().runTaskLater(plugin, () -> {
-                me.bill.fakePlayerPlugin.util.LuckPermsHelper.invalidateCache();
-                int n = manager.updateAllBotPrefixes();
-                if (n > 0)
-                    FppLogger.info("Post-restore prefix refresh: " + n + " bot(s) updated.");
-                // Signal that restoration is complete so players can now see bots correctly
-                manager.setRestorationInProgress(false);
-            }, 20L);
+            // All bots have been queued — signal that restoration is complete.
+            manager.setRestorationInProgress(false);
+            FppLogger.info("Bot restoration complete: " + saved.size() + " bot(s) restored.");
             return;
         }
 
@@ -243,8 +243,8 @@ public final class BotPersistence {
 
         Location loc = new Location(world, sb.x, sb.y, sb.z, sb.yaw, sb.pitch);
 
-        // Spawn with restored UUID, display name, and LP group override
-        manager.spawnRestored(sb.name, sb.uuid, sb.displayName, sb.spawnedBy, sb.spawnedByUuid, loc, sb.luckpermsGroup);
+        // Spawn with restored UUID and display name
+        manager.spawnRestored(sb.name, sb.uuid, sb.displayName, sb.spawnedBy, sb.spawnedByUuid, loc);
 
         // Stagger: use the configured join-delay range — values are TICKS (20 = 1 second)
         int delayMinTicks = Config.joinDelayMin();
@@ -269,7 +269,7 @@ public final class BotPersistence {
     /**
      * Entry point called from {@code onEnable}.
      * <ol>
-     *   <li>Sweeps every loaded world for Mannequin entities tagged with
+     *   <li>Sweeps every loaded world for NMS ServerPlayer entities tagged with
      *       {@link FakePlayerManager#FAKE_PLAYER_KEY} and removes them.
      *       This cleans up bodies left by a crash before restoration runs.</li>
      *   <li>Then calls {@link #restore(FakePlayerManager)} to spawn bots from
@@ -287,7 +287,7 @@ public final class BotPersistence {
     }
 
     /**
-     * Removes every Mannequin in all loaded worlds that carries the FPP PDC tag
+     * Removes every NMS ServerPlayer in all loaded worlds that carries the FPP PDC tag
      * but is not registered in the active bot map (i.e. a crash remnant).
      */
     private void purgeOrphanedBodies() {
@@ -299,7 +299,7 @@ public final class BotPersistence {
             for (org.bukkit.entity.Entity entity : world.getEntities()) {
                 if (!entity.getPersistentDataContainer().has(key, PersistentDataType.STRING)) continue;
                 String val = entity.getPersistentDataContainer().get(key, PersistentDataType.STRING);
-                // Matches both Mannequin bodies and nametag ArmorStands
+                // Matches NMS ServerPlayer bodies
                 if (val != null) {
                     entity.remove();
                     removed++;
@@ -330,12 +330,12 @@ public final class BotPersistence {
 
     private record SavedBot(
             String name, UUID uuid,
-            String displayName,  // Saved display name (with prefix) for restoration
+            String displayName,  // Saved display name for restoration
             String spawnedBy, UUID spawnedByUuid,
             String worldName,
             double x, double y, double z,
             float yaw, float pitch,
-            String luckpermsGroup  // LP group override, null for default
+            String luckpermsGroup  // Kept for compatibility, ignored in new system
     ) {}
 }
 

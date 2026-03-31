@@ -86,7 +86,7 @@ public final class BotTabTeam {
         for (Player p : Bukkit.getOnlinePlayers()) {
             ensureTeamExists(p);
         }
-        FppLogger.success("[BotTabTeam] Initialized team '" + TEAM_NAME
+        FppLogger.debug("[BotTabTeam] Initialized team '" + TEAM_NAME
                 + "' on " + Bukkit.getOnlinePlayers().size() + " player scoreboard(s).");
     }
 

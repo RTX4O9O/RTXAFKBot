@@ -17,7 +17,7 @@ import org.bukkit.event.player.PlayerChangedWorldEvent;
  * entries to the player after they finish the world transition so bots
  * remain visible in the tab list regardless of which world the player is in.
  *
- * <p>The entity bodies (Mannequin + ArmorStand) are real server-side
+ * <p>The NMS ServerPlayer entities are real server-side
  * entities kept alive by plugin chunk-tickets — they do not need to be
  * respawned. Only the packet-based tab-list entries need to be re-sent.
  */

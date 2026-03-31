@@ -101,7 +101,7 @@ public class StatsCommand implements FppCommand {
         statusBoolRow(sender, "ᴄʜᴜɴᴋ ʟᴏᴀᴅɪɴɢ", Config.chunkLoadingEnabled(),  "enabled",     "disabled");
         statusBoolRow(sender, "ᴘᴇʀꜱɪꜱᴛᴇɴᴄᴇ",   Config.persistOnRestart(),     "enabled",     "disabled");
         statusBoolRow(sender, "ʙᴏᴛ ʙᴏᴅɪᴇꜱ",    Config.spawnBody(),            "enabled",     "disabled");
-        sender.sendMessage(kvRow("ꜱᴋɪɴ ᴍᴏᴅᴇ", Config.skinMode()));
+        sender.sendMessage(kvRow("ꜱᴋɪɴ ᴍᴏᴅᴇ", "disabled"));
         int cooldown = Config.spawnCooldown();
         sender.sendMessage(kvRow("ꜱᴘᴀᴡɴ ᴄᴏᴏʟᴅᴏᴡɴ", cooldown > 0 ? cooldown + "s" : "off"));
 

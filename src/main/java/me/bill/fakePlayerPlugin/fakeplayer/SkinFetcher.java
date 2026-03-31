@@ -1,5 +1,9 @@
 package me.bill.fakePlayerPlugin.fakeplayer;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import me.bill.fakePlayerPlugin.util.FppLogger;
 
 import java.io.BufferedReader;
@@ -12,8 +16,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.*;
 import java.util.function.BiConsumer;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
  * Fetches Mojang skin textures for a given player name or URL asynchronously.
@@ -31,22 +33,13 @@ import java.util.regex.Pattern;
  *       instantly from cache.</li>
  *   <li><b>Callback deduplication</b> — simultaneous requests for the same name
  *       share one HTTP call.</li>
- *   <li><b>Rate-limited queue</b> — 200 ms between requests, well inside Mojang's
- *       limit (~1 req / 600 ms per IP).</li>
+ *   <li><b>Rate-limited queue</b> — 800 ms between requests, safely inside Mojang's
+ *       rate limits for shared server IPs.</li>
  * </ul>
  */
 public final class SkinFetcher {
 
     private SkinFetcher() {}
-
-    // ── Patterns ──────────────────────────────────────────────────────────────
-
-    private static final Pattern UUID_PATTERN  =
-            Pattern.compile("\"id\"\\s*:\\s*\"([0-9a-fA-F]{32})\"");
-    private static final Pattern VALUE_PATTERN =
-            Pattern.compile("\"value\"\\s*:\\s*\"([^\"]+)\"");
-    private static final Pattern SIG_PATTERN   =
-            Pattern.compile("\"signature\"\\s*:\\s*\"([^\"]+)\"");
 
     // ── Cache & queue ─────────────────────────────────────────────────────────
 
@@ -66,6 +59,7 @@ public final class SkinFetcher {
 
     /** Gap between consecutive Mojang API requests (ms). Mojang's limit is ~1 req/s — 800 ms is safely within it. */
     private static final long REQUEST_GAP_MS = 800;
+    private static final String USER_AGENT = "FakePlayerPlugin/1.5.0";
     private static long nextSlotMs = 0;
 
     /** Thrown internally when Mojang returns HTTP 429 (rate limited). Never cached. */
@@ -83,38 +77,47 @@ public final class SkinFetcher {
      */
     public static synchronized void fetchAsync(String playerName,
                                                BiConsumer<String, String> callback) {
+        String cacheKey = normalizePlayerName(playerName);
+        if (cacheKey == null) {
+            callback.accept(null, null);
+            return;
+        }
+        String requestName = playerName.trim();
+
         // 1. Cached — fire immediately
-        if (cache.containsKey(playerName)) {
-            String[] r = cache.get(playerName);
+        if (cache.containsKey(cacheKey)) {
+            String[] r = cache.get(cacheKey);
             callback.accept(r[0], r[1]);
             return;
         }
         // 2. Already in-flight — queue callback
-        if (pending.containsKey(playerName)) {
-            pending.get(playerName).add(callback);
+        if (pending.containsKey(cacheKey)) {
+            pending.get(cacheKey).add(callback);
             return;
         }
         // 3. New fetch
         List<BiConsumer<String, String>> cbs = new CopyOnWriteArrayList<>();
         cbs.add(callback);
-        pending.put(playerName, cbs);
+        pending.put(cacheKey, cbs);
 
         long now   = System.currentTimeMillis();
         long delay = Math.max(0, nextSlotMs - now);
         nextSlotMs = Math.max(now, nextSlotMs) + REQUEST_GAP_MS;
-        executor.schedule(() -> doFetch(playerName), delay, TimeUnit.MILLISECONDS);
+        executor.schedule(() -> doFetch(cacheKey, requestName), delay, TimeUnit.MILLISECONDS);
     }
 
     /** Returns cached skin data immediately, or {@code null} if not yet cached. */
     @SuppressWarnings("unused")
     public static synchronized String[] getCached(String playerName) {
-        return cache.get(playerName);
+        String cacheKey = normalizePlayerName(playerName);
+        return cacheKey != null ? cache.get(cacheKey) : null;
     }
 
     /** Returns {@code true} if this name has already been resolved. */
     @SuppressWarnings("unused")
     public static synchronized boolean isCached(String playerName) {
-        return cache.containsKey(playerName);
+        String cacheKey = normalizePlayerName(playerName);
+        return cacheKey != null && cache.containsKey(cacheKey);
     }
 
     /**
@@ -147,13 +150,14 @@ public final class SkinFetcher {
      * @param callback receives (value, signature) — both non-null on success
      */
     public static void fetchByUrl(String url, BiConsumer<String, String> callback) {
-        if (url == null || url.isBlank()) {
+        String normalizedUrl = normalizeUrl(url);
+        if (normalizedUrl == null) {
             callback.accept(null, null);
             return;
         }
 
         // Cache key based on URL
-        String cacheKey = "url:" + url;
+        String cacheKey = "url:" + normalizedUrl;
         synchronized (SkinFetcher.class) {
             if (cache.containsKey(cacheKey)) {
                 String[] r = cache.get(cacheKey);
@@ -171,7 +175,7 @@ public final class SkinFetcher {
             long now   = System.currentTimeMillis();
             long delay = Math.max(0, nextSlotMs - now);
             nextSlotMs = Math.max(now, nextSlotMs) + REQUEST_GAP_MS;
-            executor.schedule(() -> doFetchByUrl(cacheKey, url), delay, TimeUnit.MILLISECONDS);
+            executor.schedule(() -> doFetchByUrl(cacheKey, normalizedUrl), delay, TimeUnit.MILLISECONDS);
         }
     }
 
@@ -187,14 +191,12 @@ public final class SkinFetcher {
             } else {
                 // Strategy 2: try fetching it as a JSON endpoint (Mineskin API or similar)
                 String response = get(url);
-                if (response != null && !response.isBlank()) {
-                    Matcher vm = VALUE_PATTERN.matcher(response);
-                    Matcher sm = SIG_PATTERN.matcher(response);
-                    if (vm.find()) {
-                        value = vm.group(1);
-                        if (sm.find()) signature = sm.group(1);
-                        FppLogger.debug("SkinFetcher: extracted value+sig from URL response.");
-                    }
+                JsonObject json = parseJsonObject(response);
+                String[] texture = extractTexturePayload(json);
+                if (texture != null) {
+                    value = texture[0];
+                    signature = texture[1];
+                    FppLogger.debug("SkinFetcher: extracted value+sig from URL response.");
                 }
             }
         } catch (Exception e) {
@@ -217,7 +219,7 @@ public final class SkinFetcher {
 
     // ── Internal fetch ────────────────────────────────────────────────────────
 
-    private static void doFetch(String playerName) {
+    private static void doFetch(String cacheKey, String playerName) {
         String value = null, signature = null;
         boolean shouldCache = true;
         try {
@@ -241,10 +243,10 @@ public final class SkinFetcher {
         // Only cache definitive results (found or "name doesn't exist").
         // Rate-limited responses are NOT cached so a future call will retry.
         if (shouldCache) {
-            cache.put(playerName, new String[]{value, signature});
+            cache.put(cacheKey, new String[]{value, signature});
         }
 
-        List<BiConsumer<String, String>> cbs = pending.remove(playerName);
+        List<BiConsumer<String, String>> cbs = pending.remove(cacheKey);
         if (cbs != null) {
             for (BiConsumer<String, String> cb : cbs) {
                 try { cb.accept(value, signature); }
@@ -257,25 +259,15 @@ public final class SkinFetcher {
 
     // ── Mojang API ────────────────────────────────────────────────────────────
 
-    private static String fetchUuid(String name) {
-        try {
-            String json = get("https://api.mojang.com/users/profiles/minecraft/" + name);
-            if (json == null || json.isBlank()) return null;
-            Matcher m = UUID_PATTERN.matcher(json);
-            return m.find() ? m.group(1) : null;
-        } catch (Exception e) { return null; }
+    private static String fetchUuid(String name) throws Exception {
+        JsonObject json = parseJsonObject(get("https://api.mojang.com/users/profiles/minecraft/" + name));
+        return getString(json, "id");
     }
 
-    private static String[] fetchTextures(String rawUuid) {
-        try {
-            String json = get("https://sessionserver.mojang.com/session/minecraft/profile/"
-                    + rawUuid + "?unsigned=false");
-            if (json == null || json.isBlank()) return null;
-            Matcher vm = VALUE_PATTERN.matcher(json);
-            Matcher sm = SIG_PATTERN.matcher(json);
-            if (!vm.find()) return null;
-            return new String[]{vm.group(1), sm.find() ? sm.group(1) : null};
-        } catch (Exception e) { return null; }
+    private static String[] fetchTextures(String rawUuid) throws Exception {
+        JsonObject json = parseJsonObject(get("https://sessionserver.mojang.com/session/minecraft/profile/"
+                + rawUuid + "?unsigned=false"));
+        return extractTexturePayload(json);
     }
 
     private static String get(String urlStr) throws Exception {
@@ -284,7 +276,7 @@ public final class SkinFetcher {
         conn.setRequestMethod("GET");
         conn.setConnectTimeout(5_000);
         conn.setReadTimeout(5_000);
-        conn.setRequestProperty("User-Agent", "FakePlayerPlugin/1.2.2");
+        conn.setRequestProperty("User-Agent", USER_AGENT);
         int code = conn.getResponseCode();
         if (code == 429) {
             conn.disconnect();
@@ -292,11 +284,88 @@ public final class SkinFetcher {
         }
         if (code == 204 || code == 404) return null;
         try (BufferedReader br = new BufferedReader(
-                new InputStreamReader(conn.getInputStream()))) {
+                new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
             StringBuilder sb = new StringBuilder();
             String line;
             while ((line = br.readLine()) != null) sb.append(line);
             return sb.toString();
         } finally { conn.disconnect(); }
+    }
+
+    private static String normalizePlayerName(String playerName) {
+        if (playerName == null) return null;
+        String trimmed = playerName.trim();
+        return trimmed.isEmpty() ? null : trimmed.toLowerCase(java.util.Locale.ROOT);
+    }
+
+    private static String normalizeUrl(String url) {
+        if (url == null) return null;
+        String trimmed = url.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private static JsonObject parseJsonObject(String json) {
+        if (json == null || json.isBlank()) return null;
+        try {
+            JsonElement element = JsonParser.parseString(json);
+            return element != null && element.isJsonObject() ? element.getAsJsonObject() : null;
+        } catch (Exception e) {
+            FppLogger.debug("SkinFetcher JSON parse failed: " + e.getMessage());
+            return null;
+        }
+    }
+
+    private static String[] extractTexturePayload(JsonObject json) {
+        if (json == null) return null;
+
+        String directValue = getString(json, "value");
+        if (directValue != null && !directValue.isBlank()) {
+            return new String[]{directValue, getString(json, "signature")};
+        }
+
+        JsonArray properties = getArray(json, "properties");
+        if (properties != null) {
+            for (JsonElement element : properties) {
+                if (!element.isJsonObject()) continue;
+                JsonObject property = element.getAsJsonObject();
+                String propertyName = getString(property, "name");
+                if (propertyName != null && !"textures".equalsIgnoreCase(propertyName)) continue;
+
+                String value = getString(property, "value");
+                if (value != null && !value.isBlank()) {
+                    return new String[]{value, getString(property, "signature")};
+                }
+            }
+        }
+
+        JsonObject data = getObject(json, "data");
+        if (data != null) {
+            String[] nested = extractTexturePayload(data);
+            if (nested != null) return nested;
+        }
+
+        JsonObject texture = getObject(json, "texture");
+        if (texture != null) {
+            String[] nested = extractTexturePayload(texture);
+            if (nested != null) return nested;
+        }
+
+        return null;
+    }
+
+    private static JsonArray getArray(JsonObject json, String key) {
+        JsonElement element = json.get(key);
+        return element != null && element.isJsonArray() ? element.getAsJsonArray() : null;
+    }
+
+    private static JsonObject getObject(JsonObject json, String key) {
+        JsonElement element = json.get(key);
+        return element != null && element.isJsonObject() ? element.getAsJsonObject() : null;
+    }
+
+    private static String getString(JsonObject json, String key) {
+        if (json == null) return null;
+        JsonElement element = json.get(key);
+        return element != null && !element.isJsonNull() ? element.getAsString() : null;
     }
 }

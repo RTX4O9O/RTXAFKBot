@@ -16,7 +16,7 @@ import java.util.logging.Logger;
  *   <li>{@link #success} — bright green — positive confirmation</li>
  *   <li>{@link #warn}    — gold/amber   — non-fatal warnings</li>
  *   <li>{@link #error}   — bright red   — errors that need attention</li>
- *   <li>{@link #debug}   — yellow+grey  — verbose, only when {@code debug: true}</li>
+ *   <li>{@link #debug}   — yellow+grey  — verbose, only when a matching debug toggle is enabled</li>
  *   <li>{@link #highlight} — cyan bold  — important state changes (enable/disable)</li>
  * </ul>
  *
@@ -99,9 +99,18 @@ public final class FppLogger {
      * Prefixed with a grey [DEBUG] badge.
      */
     public static void debug(String message) {
-        if (Config.isDebug()) {
-            logger.info(TAG + " " + GRAY + "[" + YELLOW + "DEBUG" + GRAY + "] " + YELLOW + message + RESET);
-        }
+        debug("GENERAL", Config.isDebug(), message);
+    }
+
+    /**
+     * Category debug — only emitted when the provided toggle is enabled.
+     * Example badge: {@code [DEBUG/NMS]} or {@code [DEBUG/NETWORK]}.
+     */
+    public static void debug(String topic, boolean enabled, String message) {
+        if (!enabled) return;
+        String label = (topic == null || topic.isBlank()) ? "DEBUG" : topic.trim().toUpperCase();
+        logger.info(TAG + " " + GRAY + "[" + YELLOW + "DEBUG" + GRAY + "/"
+                + CYAN + label + GRAY + "] " + YELLOW + message + RESET);
     }
 
     /**
@@ -158,9 +167,9 @@ public final class FppLogger {
     }
 
     /**
-     * Prints a status row showing an OK (✔) or FAIL (✘) badge.
+     * Prints a status row showing an OK (+) or FAIL (✘) badge.
      * <pre>
-     *   [✔] Database ......... SQLite (local)
+     *   [+] Database ......... SQLite (local)
      *   [✘] MySQL ........... disabled
      * </pre>
      *
@@ -169,10 +178,35 @@ public final class FppLogger {
      * @param detail extra detail string shown after a colon
      */
     public static void statusRow(boolean ok, String label, String detail) {
-        String badge  = ok ? GREEN + "[✔]" + RESET : RED + "[✘]" + RESET;
+        String badge  = ok ? GREEN + "[+]" + RESET : RED + "[✘]" + RESET;
         int dots      = Math.max(1, KEY_WIDTH - label.length());
         String dotStr = DARK + ".".repeat(dots) + RESET;
         String valueColor = ok ? GREEN : GRAY;
+        logger.info(TAG + " " + GRAY + "  " + badge + " " + WHITE + label
+                + " " + dotStr + " " + valueColor + detail + RESET);
+    }
+
+    /** Status row with explicit state (OK/WARN/OFF) for startup summaries. */
+    private static void stateRow(RowState state, String label, String detail) {
+        String badge;
+        String valueColor;
+        switch (state) {
+            case OK -> {
+                badge = GREEN + "[+]" + RESET;
+                valueColor = GREEN;
+            }
+            case WARN -> {
+                badge = GOLD + "[!]" + RESET;
+                valueColor = GOLD;
+            }
+            default -> {
+                badge = GRAY + "[-]" + RESET;
+                valueColor = GRAY;
+            }
+        }
+
+        int dots = Math.max(1, KEY_WIDTH - label.length());
+        String dotStr = DARK + ".".repeat(dots) + RESET;
         logger.info(TAG + " " + GRAY + "  " + badge + " " + WHITE + label
                 + " " + dotStr + " " + valueColor + detail + RESET);
     }
@@ -197,8 +231,7 @@ public final class FppLogger {
      * @param authors          comma-joined author list
      * @param namePoolSize     number of names in the name pool
      * @param msgPoolSize      number of chat messages in the pool
-     * @param dbBackend        short label like "SQLite (local)" or "MySQL" or "none"
-     * @param dbOk             whether the DB connected successfully
+     * @param dbState          resolved DB state text, e.g. "SQLite (local)", "MySQL", "disabled", "MySQL (failed)"
      * @param skinMode         value from Config.skinMode()
      * @param bodyEnabled      whether physical bodies are spawned
      * @param persistEnabled   whether bot persistence is on
@@ -218,8 +251,7 @@ public final class FppLogger {
             String  authors,
             int     namePoolSize,
             int     msgPoolSize,
-            String  dbBackend,
-            boolean dbOk,
+            String  dbState,
             String  skinMode,
             boolean bodyEnabled,
             boolean persistEnabled,
@@ -233,38 +265,42 @@ public final class FppLogger {
             String  configVersion,
             int     backupCount,
             long    startupMs) {
-
         boldRule();
-        info("  " + BOLD + BLUE + "ꜰᴀᴋᴇ ᴘʟᴀʏᴇʀ ᴘʟᴜɢɪɴ" + RESET + WHITE + "  v" + version + RESET);
-        info("  " + GRAY + "Author  : " + WHITE + authors);
-        info("  " + GRAY + "Link    : " + BLUE + "https://modrinth.com/plugin/fake-player-plugin-(fpp)");
+        info("  " + BOLD + BLUE + "FakePlayerPlugin" + RESET + WHITE + " v" + version + RESET);
         rule();
 
-        section("Configuration");
-        kv("Skin mode",       skinMode);
-        kv("Name pool",       namePoolSize + " names");
-        kv("Msg pool",        msgPoolSize  + " messages");
-        kv("Max bots",        maxBots == 0 ? "unlimited" : String.valueOf(maxBots));
-        kv("Config version",  configVersion);
+        section("Runtime");
+        stateRow(compatRestricted ? RowState.WARN : RowState.OK,
+                "Compatibility", compatRestricted ? "restricted" : "ok");
+        stateRow(resolveDbState(dbState), "Database", dbState);
+        kv("Config version", configVersion);
+        kv("Backups", backupCount);
+        kv("Startup time", startupMs + "ms");
 
-        section("Subsystems");
-        statusRow(!compatRestricted, "Server compat",   !compatRestricted ? "OK" : "restricted — check logs");
-        statusRow(dbOk,              "Database",        dbBackend);
-        statusRow(bodyEnabled,       "Physical bodies", bodyEnabled      ? "enabled"       : "disabled");
-        statusRow(persistEnabled,    "Persistence",     persistEnabled   ? "enabled"       : "disabled");
-        statusRow(chunkLoading,      "Chunk loading",   chunkLoading     ? "enabled"       : "disabled");
-        statusRow(swapEnabled,       "Bot swap",        swapEnabled      ? "enabled"       : "disabled");
-        statusRow(fakeChatEnable,    "Fake chat",       fakeChatEnable   ? "enabled"       : "disabled");
-        statusRow(luckPermsFound,    "LuckPerms",       luckPermsFound   ? "detected"      : "not installed");
-        statusRow(metricsActive,     "Metrics",         metricsActive    ? "reporting"     : "disabled");
+        section("Features");
+        stateRow(bodyEnabled ? RowState.OK : RowState.OFF, "Physical bodies", onOff(bodyEnabled));
+        stateRow(persistEnabled ? RowState.OK : RowState.OFF, "Persistence", onOff(persistEnabled));
+        stateRow(chunkLoading ? RowState.OK : RowState.OFF, "Chunk loading", onOff(chunkLoading));
+        stateRow(swapEnabled ? RowState.OK : RowState.OFF, "Swap AI", onOff(swapEnabled));
+        stateRow(fakeChatEnable ? RowState.OK : RowState.OFF, "Fake chat", onOff(fakeChatEnable));
 
-        rule();
-        success("  Plugin started successfully! Type /fpp for help.");
-        String footerLine = "  " + GRAY + "Started in " + WHITE + startupMs + " ms" + RESET;
-        if (backupCount > 0) {
-            footerLine += GRAY + "  ·  " + WHITE + backupCount + " config backup(s) stored" + RESET;
+        section("Integrations");
+        stateRow(luckPermsFound ? RowState.OK : RowState.OFF, "LuckPerms", onOff(luckPermsFound));
+        stateRow(metricsActive ? RowState.OK : RowState.OFF, "Metrics", onOff(metricsActive));
+
+        section("Pools & Limits");
+        kv("Name pool", namePoolSize);
+        kv("Message pool", msgPoolSize);
+        kv("Skin mode", skinMode);
+        kv("Max bots", maxBots == 0 ? "unlimited" : maxBots);
+
+        if (Config.isDebug()) {
+            section("Debug");
+            kv("Authors", authors);
         }
-        info(footerLine);
+
+        rule();
+        success("  Ready: /fpp help");
         boldRule();
     }
 
@@ -301,5 +337,23 @@ public final class FppLogger {
         if (hours > 0) return hours + "h " + minutes + "m " + seconds + "s";
         if (minutes > 0) return minutes + "m " + seconds + "s";
         return seconds + "s";
+    }
+
+    private static String onOff(boolean enabled) {
+        return enabled ? "enabled" : "disabled";
+    }
+
+    private static RowState resolveDbState(String dbState) {
+        if (dbState == null) return RowState.WARN;
+        String s = dbState.toLowerCase();
+        if (s.contains("failed")) return RowState.WARN;
+        if (s.contains("disabled") || s.contains("none")) return RowState.OFF;
+        return RowState.OK;
+    }
+
+    private enum RowState {
+        OK,
+        WARN,
+        OFF
     }
 }

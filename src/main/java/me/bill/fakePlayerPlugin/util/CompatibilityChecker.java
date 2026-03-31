@@ -17,7 +17,7 @@ import java.util.regex.Pattern;
  *   <li><b>PaperMC detection</b> — the plugin requires Paper or a Paper fork.</li>
  *   <li><b>Minecraft version</b> — must be &ge; {@value #MIN_MC_VERSION}.</li>
  *   <li><b>Physical body support</b> — checks that the server version supports
- *       physical bot body rendering; required for the Mannequin-based entity stack.</li>
+ *       physical bot body rendering; required for the NMS ServerPlayer-based system.</li>
  * </ol>
  *
  * <p>Each failing check is logged individually on the console with a specific
@@ -49,8 +49,6 @@ public final class CompatibilityChecker {
         public final boolean      isPaper;
         /** {@code true} when the running Minecraft version meets {@link #MIN_MC_VERSION}. */
         public final boolean      isVersionSupported;
-        /** {@code true} when the server supports physical bot body rendering. */
-        public final boolean      hasMannequin;
         /** Detected Minecraft version, e.g. {@code "1.21.11"}. {@code "unknown"} if undetectable. */
         public final String       detectedVersion;
         /**
@@ -61,11 +59,10 @@ public final class CompatibilityChecker {
         public final List<String> failureLangKeys;
 
         Result(boolean restricted, boolean isPaper, boolean isVersionSupported,
-               boolean hasMannequin, String detectedVersion, List<String> failureLangKeys) {
+               String detectedVersion, List<String> failureLangKeys) {
             this.restricted         = restricted;
             this.isPaper            = isPaper;
             this.isVersionSupported = isVersionSupported;
-            this.hasMannequin       = hasMannequin;
             this.detectedVersion    = detectedVersion;
             this.failureLangKeys    = Collections.unmodifiableList(failureLangKeys);
         }
@@ -74,8 +71,7 @@ public final class CompatibilityChecker {
         public String toString() {
             return "CompatibilityResult{restricted=" + restricted
                     + ", paper=" + isPaper
-                    + ", version=" + detectedVersion + (isVersionSupported ? "✔" : "✗")
-                    + ", mannequin=" + hasMannequin + '}';
+                    + ", version=" + detectedVersion + (isVersionSupported ? "✔" : "✗") + '}';
         }
     }
 
@@ -91,7 +87,6 @@ public final class CompatibilityChecker {
     public static Result check() {
         boolean      isPaper            = false;
         boolean      isVersionSupported;
-        boolean      hasMannequin       = false;
         String       detectedVersion    = "unknown";
         List<String> failureKeys        = new ArrayList<>();
 
@@ -126,22 +121,6 @@ public final class CompatibilityChecker {
             failureKeys.add("compatibility-version-old");
         }
 
-        // ── 3. Physical body support ──────────────────────────────────────────
-        // Checks for the internal entity class used to render bot physical bodies.
-        // Intentionally avoids leaking internal class names in console output so
-        // server owners do not mistake this for a missing plugin or API download.
-        try {
-            hasMannequin = classExists("org.bukkit.entity.Mannequin");
-        } catch (Throwable t) {
-            FppLogger.debug("CompatibilityChecker: body support check threw: " + t.getMessage());
-        }
-        if (!hasMannequin) {
-            FppLogger.warn("━━ Compatibility Issue #3: Physical Bot Bodies Unavailable ━━");
-            FppLogger.warn("  Your server version does not support physical bot body rendering.");
-            FppLogger.warn("  Impact: physical bodies and related listeners/AI are disabled.");
-            FppLogger.warn("  Fix: update to Paper " + MIN_MC_VERSION + " or newer.");
-            failureKeys.add("compatibility-no-mannequin");
-        }
 
         boolean restricted = !failureKeys.isEmpty();
         if (restricted) {
@@ -152,7 +131,7 @@ public final class CompatibilityChecker {
         }
 
         return new Result(restricted, isPaper, isVersionSupported,
-                hasMannequin, detectedVersion, failureKeys);
+                detectedVersion, failureKeys);
     }
 
     /**

@@ -3,9 +3,8 @@ package me.bill.fakePlayerPlugin.fakeplayer;
 import com.destroystokyo.paper.profile.PlayerProfile;
 import me.bill.fakePlayerPlugin.database.BotRecord;
 import org.bukkit.Location;
-import org.bukkit.entity.ArmorStand;
 import org.bukkit.entity.Entity;
-import org.bukkit.entity.Mannequin;
+import org.bukkit.entity.Player;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -14,16 +13,18 @@ import java.util.UUID;
 /**
  * Represents a single active fake player.
  *
- * <p>Entity stack (two entities total):
- * <pre>
- *   ArmorStand  — invisible marker, custom name visible, rides the Mannequin
- *       ↓ rides
- *   Mannequin   — physics body + skin.
- *                 setImmovable(false)   → vanilla entity-separation push/knockback
- *                 setGravity(true)      → falls naturally
- *                 setInvulnerable(false)→ takes damage
- *                 setProfile(name)      → client resolves skin automatically
- * </pre>
+ * <p><b>NMS Entity System:</b> Each bot is a single NMS {@code ServerPlayer} entity
+ * spawned via {@link NmsPlayerSpawner}. The entity appears to clients as a genuine 
+ * player with a body, nametag, tab-list entry, and full interaction support (damage, 
+ * knockback, death, drowning, mob targeting, etc.).
+ *
+ * <p><b>Fake Connection:</b> The NMS player is backed by a fake {@code EmbeddedChannel} 
+ * connection that discards all outbound packets. The channel uses a discard-proxy
+ * (see {@link NmsPlayerSpawner#createDiscardChannel}) to prevent Netty NPEs during
+ * server tick flush operations.
+ *
+ * <p><b>Auth bypass:</b> The player is created directly in JVM memory without a TCP 
+ * connection, so the Mojang session server handshake is never triggered.
  */
 @SuppressWarnings("unused") // Public API — used by addons and InfoCommand
 public final class FakePlayer {
@@ -34,11 +35,8 @@ public final class FakePlayer {
 
     private Location   spawnLocation;
 
-    /** The Mannequin — physics body AND visual skin. */
-    private Entity     physicsEntity;
-
-    /** Invisible ArmorStand riding the Mannequin — displays the nametag. */
-    private ArmorStand nametagEntity;
+    /** The NMS ServerPlayer entity — physics, skin, nametag all in one. */
+    private Player     player;
 
     // ── Metadata ─────────────────────────────────────────────────────────────
     private String    spawnedBy     = "UNKNOWN";
@@ -47,10 +45,19 @@ public final class FakePlayer {
     private Instant   spawnTime     = Instant.now();
 
     /**
-     * Optional display name shown in the nametag and tab list.
+     * The text shown in the nametag and tab list.
      * When {@code null}, {@link #getName()} is used for display.
      */
     private String displayName = null;
+
+    /**
+     * The "raw" display content: the value that goes into the {@code {bot_name}}
+     * slot of {@code bot-name.tab-list-format} before LP prefix/suffix are added.
+     * Stored at spawn/restore time and used by
+     * {@code FakePlayerManager.refreshLpDisplayName()} to rebuild the full
+     * display name after LuckPerms assigns the bot's group.
+     */
+    private String rawDisplayName = null;
 
     /**
      * The Minecraft username used for skin resolution.
@@ -59,13 +66,6 @@ public final class FakePlayer {
      */
     private String skinName = null;
 
-    /**
-     * Optional override for the profile name sent in PlayerInfo packets (tab list).
-     * This is used to inject a small, non-visible sort prefix based on LuckPerms
-     * group weight so bots can be ordered in the tab list without changing their
-     * visible display name or skin lookup source.
-     */
-    private String packetProfileName = null;
 
     /**
      * The resolved skin texture (value + signature) for this bot.
@@ -88,6 +88,13 @@ public final class FakePlayer {
     private int lastChunkX = Integer.MIN_VALUE;
     private int lastChunkZ = Integer.MIN_VALUE;
 
+    // ── Legacy compatibility fields ───────────────────────────────────────────
+    /** Nametag entity - kept for compatibility with old systems */
+    private Entity nametagEntity = null;
+    
+    /** Packet profile name - since bots are real players now, this is just the real name */
+    private String packetProfileName = null;
+
     /** Whether the bot is currently alive (false after death, until respawn). */
     private boolean alive = true;
 
@@ -101,25 +108,9 @@ public final class FakePlayer {
      */
     private boolean frozen = false;
 
-    /**
-     * Sequential index for user-tier bots (the {@code {num}} placeholder value).
-     * Set to {@code -1} for admin-spawned bots.
-     * Stored so that {@link me.bill.fakePlayerPlugin.fakeplayer.FakePlayerManager#updateAllBotPrefixes()}
-     * can correctly rebuild display names after a LuckPerms group change without
-     * leaving {@code {spawner}} or {@code {num}} as literal text.
-     */
-    private int botIndex = -1;
-
     /** Last world name — used for fast orphan/cross-world detection. */
     private String lastKnownWorld = null;
 
-    /**
-     * Optional LuckPerms group override for this specific bot.
-     * When set, this bot will use this LP group's prefix and weight instead of
-     * the global {@code luckperms.bot-group} config or default group.
-     * Set via {@code /fpp rank set <bot> <group>}.
-     */
-    private String luckpermsGroup = null;
 
     /**
      * When {@code true}, this bot spawns without a physical body.
@@ -127,6 +118,14 @@ public final class FakePlayer {
      * Bots still appear in tab list and chat, but have no entity in the world.
      */
     private boolean bodyless = false;
+
+    /**
+     * The LuckPerms group currently assigned to this bot.
+     * Set by FakePlayerManager during spawn/restore (from LP storage) and by /fpp rank.
+     * {@code null} = not yet resolved (LP unavailable or not yet loaded).
+     * Used to avoid re-querying LP on every display-name rebuild and to survive reloads.
+     */
+    private String luckpermsGroup = null;
 
     public FakePlayer(UUID uuid, String name, PlayerProfile profile) {
         this.uuid    = uuid;
@@ -139,8 +138,24 @@ public final class FakePlayer {
     public String        getName()          { return name; }
     public PlayerProfile getProfile()       { return profile; }
     public Location      getSpawnLocation() { return spawnLocation; }
-    public Entity        getPhysicsEntity() { return physicsEntity; }
-    public ArmorStand    getNametagEntity() { return nametagEntity; }
+    
+    /** Returns the NMS Player entity (same as {@link #getPlayer()}). */
+    public org.bukkit.entity.Player getPhysicsEntity() { 
+        return player;
+    }
+    
+    /** Get the NMS Player entity. */
+    public org.bukkit.entity.Player getPlayer() { 
+        return player;
+    }
+
+    /** 
+     * Get the entity ID of the NMS Player entity.
+     * Returns -1 if no player entity is set.
+     */
+    public int getEntityId() { 
+        return player != null ? player.getEntityId() : -1; 
+    }
 
     /**
      * The text shown in the nametag and tab list.
@@ -154,26 +169,13 @@ public final class FakePlayer {
      */
     public String getSkinName() { return skinName != null ? skinName : name; }
 
-    /** Convenience cast — physicsEntity is always a Mannequin when body is enabled. */
-    public Mannequin getMannequin() {
-        return (physicsEntity instanceof Mannequin m) ? m : null;
-    }
-
-    /** Entity ID of the Mannequin body, or {@code -1} if no body. */
-    public int getEntityId() {
-        return physicsEntity != null ? physicsEntity.getEntityId() : -1;
-    }
-
-    // ── Live position ─────────────────────────────────────────────────────────
-
     /**
      * Returns the most accurate current location for this bot:
-     * the live Mannequin body position if available, otherwise the last
+     * the live NMS Player body position if available, otherwise the last
      * recorded spawn location.
      */
     public Location getLiveLocation() {
-        Entity body = physicsEntity;
-        if (body instanceof Mannequin m && m.isValid()) return m.getLocation();
+        if (player != null && player.isValid()) return player.getLocation();
         return spawnLocation;
     }
 
@@ -209,8 +211,6 @@ public final class FakePlayer {
     public void setAlive(boolean alive)          { this.alive = alive; }
     public void incrementTabRefresh()            { tabRefreshCount++; }
     public void setFrozen(boolean frozen)        { this.frozen = frozen; }
-    public int  getBotIndex()                    { return botIndex; }
-    public void setBotIndex(int index)           { this.botIndex = index; }
 
     // ── Chunk tracking (for ChunkLoader fast-path) ────────────────────────────
     public int getLastChunkX()                   { return lastChunkX; }
@@ -220,18 +220,25 @@ public final class FakePlayer {
 
     // ── Core setters ──────────────────────────────────────────────────────────
     public void setSpawnLocation(Location loc)    { this.spawnLocation = loc; }
-    public void setPhysicsEntity(Entity e)        { this.physicsEntity = e; }
-    public void setNametagEntity(ArmorStand as)   { this.nametagEntity = as; }
+    
+    /** Set the NMS Player entity. */
+    public void setPlayer(org.bukkit.entity.Player p) { this.player = p; }
+    
+    /** Set the physics entity (for compatibility — accepts Player or casts to Player). */
+    public void setPhysicsEntity(Entity e) { 
+        this.player = e instanceof org.bukkit.entity.Player ? (org.bukkit.entity.Player) e : null;
+    }
+    
     public void setDisplayName(String name)       { this.displayName   = name; }
+    /** Raw display content (the {@code {bot_name}} part before LP prefix/suffix). */
+    public String getRawDisplayName()             { return rawDisplayName; }
+    public void setRawDisplayName(String name)    { this.rawDisplayName = name; }
+    /** Currently-assigned LuckPerms group for this bot, or {@code null} if not yet set. */
+    public String getLuckpermsGroup()             { return luckpermsGroup; }
+    public void setLuckpermsGroup(String group)   { this.luckpermsGroup = group; }
     public void setSkinName(String name)          { this.skinName      = name; }
     public void setResolvedSkin(SkinProfile skin) { this.resolvedSkin  = skin; }
 
-    /** The profile name to use when building the GameProfile in tab packets. */
-    public String getPacketProfileName() {
-        return packetProfileName != null ? packetProfileName : name;
-    }
-
-    public void setPacketProfileName(String s) { this.packetProfileName = s; }
 
     /** The resolved skin for this bot, or {@code null} if not yet resolved or skin is off. */
     public SkinProfile getResolvedSkin()          { return resolvedSkin; }
@@ -249,18 +256,6 @@ public final class FakePlayer {
     public void setDbRecord(BotRecord record)    { this.dbRecord  = record; }
     public void setSpawnTime(Instant t)          { this.spawnTime = t; }
 
-    // ── LuckPerms group override ──────────────────────────────────────────────
-    /**
-     * Returns the LuckPerms group override for this bot, or {@code null} if using
-     * the global config/default group.
-     */
-    public String getLuckpermsGroup() { return luckpermsGroup; }
-
-    /**
-     * Sets a LuckPerms group override for this bot.
-     * Pass {@code null} to clear the override and use global config/default.
-     */
-    public void setLuckpermsGroup(String group) { this.luckpermsGroup = group; }
 
     // ── Bodyless spawn ────────────────────────────────────────────────────────
     /**
@@ -274,4 +269,21 @@ public final class FakePlayer {
      * Used for console spawns without location data.
      */
     public void setBodyless(boolean bodyless) { this.bodyless = bodyless; }
+
+    // ── Legacy compatibility methods ──────────────────────────────────────────
+    /** Get nametag entity (legacy compatibility) */
+    public Entity getNametagEntity() { return nametagEntity; }
+    
+    /** Set nametag entity (legacy compatibility) */
+    public void setNametagEntity(Entity entity) { this.nametagEntity = entity; }
+    
+    /** Get packet profile name - for real NMS players this is just the real name */
+    public String getPacketProfileName() { 
+        return packetProfileName != null ? packetProfileName : name; 
+    }
+    
+    /** Set packet profile name - for real NMS players this is just the real name */
+    public void setPacketProfileName(String name) { 
+        this.packetProfileName = name; 
+    }
 }

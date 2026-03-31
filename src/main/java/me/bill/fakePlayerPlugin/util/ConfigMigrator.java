@@ -42,7 +42,7 @@ public final class ConfigMigrator {
      * The config-version value written by this build.
      * <b>Increment this whenever config.yml structure changes.</b>
      */
-    public static final int CURRENT_VERSION = 29;
+    public static final int CURRENT_VERSION = 33;
 
     /**
      * Mirrors the {@code debug} flag read directly from the raw YAML during migration.
@@ -68,15 +68,14 @@ public final class ConfigMigrator {
 
         // First run — Bukkit hasn't saved defaults yet; nothing to migrate.
         if (!configFile.exists()) {
-            // Config.cfg is null here — use FppLogger.info which has no Config dependency
-            FppLogger.info("ConfigMigrator: no existing config.yml — skipping migration.");
             return false;
         }
 
         YamlConfiguration cfg = YamlConfiguration.loadConfiguration(configFile);
 
         // Read debug flag directly from raw YAML — Config.cfg is still null at this point.
-        rawDebug = cfg.getBoolean("debug", false);
+        rawDebug = cfg.getBoolean("debug", false)
+                || cfg.getBoolean("logging.debug.startup", false);
 
         int stored = cfg.getInt("config-version", 0);
 
@@ -87,10 +86,12 @@ public final class ConfigMigrator {
 
         // ── Pre-migration backup ───────────────────────────────────────────────
         String fromLabel = stored == 0 ? "legacy" : "v" + stored;
-        FppLogger.section("Config Migration");
-        FppLogger.info("Upgrading config from " + fromLabel + " → v" + CURRENT_VERSION + "…");
-        FppLogger.info("A backup will be created before any changes are written.");
-        BackupManager.createFullBackup(plugin, "pre-migration-" + fromLabel);
+        if (rawDebug) {
+            FppLogger.section("Config Migration");
+            FppLogger.info("Upgrading config from " + fromLabel + " → v" + CURRENT_VERSION + "…");
+            FppLogger.info("A backup will be created before any changes are written.");
+        }
+        BackupManager.createFullBackup(plugin, "pre-migration-" + fromLabel, rawDebug);
 
         // ── Apply migrations in order ──────────────────────────────────────────
         boolean anyChange = false;
@@ -120,6 +121,10 @@ public final class ConfigMigrator {
         if (stored < 26) anyChange |= v25to26(cfg);
         if (stored < 27) anyChange |= v26to27(cfg);
         if (stored < 28) anyChange |= v27to28(cfg);
+        if (stored < 30) anyChange |= v29to30(cfg);
+        if (stored < 31) anyChange |= v30to31(cfg);
+        if (stored < 32) anyChange |= v31to32(cfg);
+        if (stored < 33) anyChange |= v32to33(cfg);
 
         // ── Fill any remaining missing keys from jar defaults ──────────────────
         fillDefaults(plugin, cfg);
@@ -130,10 +135,16 @@ public final class ConfigMigrator {
         try {
             cfg.save(configFile);
             if (anyChange) {
-                FppLogger.success("Config migrated to v" + CURRENT_VERSION + " successfully.");
+                if (rawDebug) {
+                    FppLogger.success("Config migrated to v" + CURRENT_VERSION + " successfully.");
+                } else {
+                    FppLogger.info("Config migration applied (v" + fromLabel + " → v" + CURRENT_VERSION + ").");
+                }
             } else {
-                FppLogger.success("Config stamped as v" + CURRENT_VERSION
-                        + " (no structural changes needed; defaults filled).");
+                if (rawDebug) {
+                    FppLogger.success("Config stamped as v" + CURRENT_VERSION
+                            + " (no structural changes needed; defaults filled).");
+                }
             }
         } catch (IOException e) {
             FppLogger.error("ConfigMigrator: failed to save migrated config: " + e.getMessage());
@@ -705,6 +716,122 @@ public final class ConfigMigrator {
             cfg.set("body.damageable", true);
             log("v27→v28", "added body.damageable = true");
             changed = true;
+        }
+        return changed;
+    }
+
+    /**
+     * v29 → v30: Database mode and server identity.
+     * <ul>
+     *   <li>Adds {@code database.mode} (default {@code "LOCAL"}).</li>
+     *   <li>Adds {@code server.id} (default {@code "default"}) — superseded in v31.</li>
+     * </ul>
+     */
+    private static boolean v29to30(YamlConfiguration cfg) {
+        boolean changed = false;
+        if (!cfg.contains("database.mode")) {
+            cfg.set("database.mode", "LOCAL");
+            log("v29→v30", "added database.mode = LOCAL");
+            changed = true;
+        }
+        if (!cfg.contains("server.id")) {
+            cfg.set("server.id", "default");
+            log("v29→v30", "added server.id = default");
+            changed = true;
+        }
+        return changed;
+    }
+
+    /**
+     * v30 → v31: Consolidate server identity into the database section.
+     * <ul>
+     *   <li>Moves {@code server.id} → {@code database.server-id}, preserving the
+     *       user's existing value (e.g. "survival", "skyblock").</li>
+     *   <li>Removes the now-unused {@code server} top-level section entirely.</li>
+     * </ul>
+     */
+    private static boolean v30to31(YamlConfiguration cfg) {
+        boolean changed = false;
+
+        // Only migrate if the old key is present and the new one is not yet set
+        if (cfg.contains("server.id") && !cfg.contains("database.server-id")) {
+            String oldId = cfg.getString("server.id", "default");
+            cfg.set("database.server-id", oldId);
+            log("v30→v31", "moved server.id → database.server-id = " + oldId);
+            changed = true;
+        } else if (!cfg.contains("database.server-id")) {
+            cfg.set("database.server-id", "default");
+            log("v30→v31", "added database.server-id = default");
+            changed = true;
+        }
+
+        // Remove the old server: section entirely
+        if (cfg.contains("server")) {
+            cfg.set("server", null);
+            log("v30→v31", "removed unused server: section");
+            changed = true;
+        }
+
+        return changed;
+    }
+
+    private static boolean v31to32(YamlConfiguration cfg) {
+        boolean changed = false;
+
+        // Migrate old LuckPerms system to new simplified approach
+        if (cfg.contains("luckperms.use-prefix") || 
+            cfg.contains("luckperms.weight-ordering-enabled") ||
+            cfg.contains("luckperms.bot-group") ||
+            cfg.contains("luckperms.packet-prefix-char")) {
+            
+            // Preserve bot-group value as default-group if it was set
+            String oldBotGroup = cfg.getString("luckperms.bot-group", "");
+            
+            // Remove all old LP settings
+            cfg.set("luckperms", null);
+            log("v31→v32", "removed old luckperms section (weight-ordering, use-prefix, etc.)");
+            
+            // Set up new simplified LP section
+            cfg.set("luckperms.default-group", oldBotGroup);
+            log("v31→v32", "migrated luckperms.bot-group → luckperms.default-group = '" + oldBotGroup + "'");
+            
+            changed = true;
+        }
+        
+        // Also update bot-name.tab-list-format to remove prefix/suffix placeholders
+        String tabFormat = cfg.getString("bot-name.tab-list-format", "");
+        if (tabFormat.contains("{prefix}") || tabFormat.contains("{suffix}")) {
+            cfg.set("bot-name.tab-list-format", "{bot_name}");
+            log("v31→v32", "updated bot-name.tab-list-format to '{bot_name}' (LP handles prefix/suffix natively)");
+            changed = true;
+        }
+
+        return changed;
+    }
+
+    private static boolean v32to33(YamlConfiguration cfg) {
+        boolean changed = false;
+
+        String[] loggingKeys = {
+                "logging.debug.startup",
+                "logging.debug.nms",
+                "logging.debug.packets",
+                "logging.debug.luckperms",
+                "logging.debug.network",
+                "logging.debug.config-sync",
+                "logging.debug.skin",
+                "logging.debug.database"
+        };
+
+        for (String key : loggingKeys) {
+            if (!cfg.contains(key)) {
+                cfg.set(key, false);
+                changed = true;
+            }
+        }
+
+        if (changed) {
+            log("v32→v33", "added granular logging.debug.* toggles (all default false)");
         }
         return changed;
     }

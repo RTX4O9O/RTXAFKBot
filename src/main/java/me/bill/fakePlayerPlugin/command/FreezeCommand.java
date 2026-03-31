@@ -5,7 +5,8 @@ import me.bill.fakePlayerPlugin.fakeplayer.FakePlayerManager;
 import me.bill.fakePlayerPlugin.lang.Lang;
 import me.bill.fakePlayerPlugin.permission.Perm;
 import org.bukkit.command.CommandSender;
-import org.bukkit.entity.Mannequin;
+import org.bukkit.entity.Player;
+
 import org.bukkit.util.Vector;
 
 import java.util.Collection;
@@ -15,7 +16,7 @@ import java.util.stream.Collectors;
 /**
  * {@code /fpp freeze <bot|all> [on|off]}
  *
- * <p>Freezes or unfreezes a bot — the Mannequin body becomes immovable
+ * <p>Freezes or unfreezes a bot — the NMS ServerPlayer body becomes immovable
  * and gravity is disabled so the bot hovers in place. Frozen bots are
  * shown with an ❄ indicator in {@code /fpp list} and {@code /fpp stats}.
  *
@@ -110,11 +111,14 @@ public class FreezeCommand implements FppCommand {
     /** Applies or removes the frozen state to a single bot. */
     private static void applyFreeze(FakePlayer fp, boolean freeze) {
         fp.setFrozen(freeze);
-        if (fp.getPhysicsEntity() instanceof Mannequin m && m.isValid()) {
-            m.setImmovable(freeze);
-            m.setGravity(!freeze);
+        Player player = fp.getPlayer();
+        if (player != null && player.isValid()) {
+            // For NMS ServerPlayer entities, we handle freezing differently:
+            // - Frozen state is tracked in FakePlayer.isFrozen()
+            // - Movement is handled by BotCollisionListener which checks frozen state
+            // - No direct setImmovable/setGravity API available for ServerPlayer
             if (freeze) {
-                m.setVelocity(new Vector(0, 0, 0));
+                player.setVelocity(new Vector(0, 0, 0));
             }
         }
     }

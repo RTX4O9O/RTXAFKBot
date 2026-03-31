@@ -25,6 +25,9 @@ public class PlayerJoinListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void onJoin(PlayerJoinEvent event) {
+        // Skip NMS bot players — they show vanilla join messages automatically
+        if (manager.getByName(event.getPlayer().getName()) != null) return;
+
         // Also send compatibility warnings to admins/ops if configured
         try {
             var warnComp = plugin.getCompatibilityWarning();
@@ -55,18 +58,38 @@ public class PlayerJoinListener implements Listener {
             }
         } catch (Throwable ignored) {}
 
-        if (manager.getCount() == 0) return;
+        if (manager.getCount() == 0 && plugin.getRemoteBotCache().count() == 0) return;
         // If restoration is in progress, defer syncing until it completes (post-restore prefix refresh).
         // This ensures players see bots with correct ranks from the start, not with stale LP data.
         long delayTicks = manager.isRestorationInProgress() ? 40L : 5L;
         // Small delay so the client is fully ready to receive entity packets
         org.bukkit.Bukkit.getScheduler().runTaskLater(plugin, () -> {
-            try { 
+            try {
                 manager.syncToPlayer(event.getPlayer());
                 // Sync bot tab team to player's scoreboard
                 var btt = plugin.getBotTabTeam();
                 if (btt != null) btt.syncToPlayer(event.getPlayer());
             } catch (Throwable ignored) {}
+
+            // Add virtual tab-list entries for bots running on other proxy servers.
+            // These are purely client-side entries — no entity exists on this server.
+            if (me.bill.fakePlayerPlugin.config.Config.isNetworkMode()
+                    && me.bill.fakePlayerPlugin.config.Config.tabListEnabled()) {
+                try {
+                    var cache = plugin.getRemoteBotCache();
+                    if (cache != null) {
+                        for (var entry : cache.getAll()) {
+                            me.bill.fakePlayerPlugin.fakeplayer.PacketHelper.sendTabListAddRaw(
+                                    event.getPlayer(),
+                                    entry.uuid(),
+                                    entry.packetProfileName(),
+                                    entry.displayName(),
+                                    entry.skinValue(),
+                                    entry.skinSignature());
+                        }
+                    }
+                } catch (Throwable ignored) {}
+            }
         }, delayTicks);
     }
 
@@ -78,6 +101,10 @@ public class PlayerJoinListener implements Listener {
     @EventHandler(priority = EventPriority.MONITOR)
     public void onQuit(PlayerQuitEvent event) {
         if (manager.getCount() == 0) return;
+
+        // Skip NMS bot players — vanilla quit message shows automatically
+        if (manager.getByName(event.getPlayer().getName()) != null) return;
+
         java.util.UUID uuid = event.getPlayer().getUniqueId();
         String name         = event.getPlayer().getName();
         // Run one tick later so LP has a chance to process the disconnect first

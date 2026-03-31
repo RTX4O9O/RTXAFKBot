@@ -67,7 +67,11 @@ public final class FppPlaceholderExpansion extends PlaceholderExpansion {
 
     @Override
     public String onRequest(OfflinePlayer player, @NotNull String params) {
-        int bots  = manager.getCount();
+        int localBots  = manager.getCount();
+        // In NETWORK mode include bots from all other proxy servers in the count
+        int remoteBots = me.bill.fakePlayerPlugin.config.Config.isNetworkMode()
+                ? plugin.getRemoteBotCache().count() : 0;
+        int bots  = localBots + remoteBots;
         int real  = Bukkit.getOnlinePlayers().size();
 
         return switch (params.toLowerCase()) {
@@ -87,7 +91,7 @@ public final class FppPlaceholderExpansion extends PlaceholderExpansion {
                                     .collect(Collectors.joining(", "));
             case "chat"       -> Config.fakeChatEnabled()  ? "on" : "off";
             case "swap"       -> Config.swapEnabled()      ? "on" : "off";
-            case "skin"       -> Config.skinMode();
+            case "skin"       -> "disabled";
             case "body"       -> Config.spawnBody()        ? "on" : "off";
             case "pushable"   -> Config.bodyPushable()     ? "on" : "off";
             case "damageable" -> Config.bodyDamageable()   ? "on" : "off";
@@ -143,7 +147,7 @@ public final class FppPlaceholderExpansion extends PlaceholderExpansion {
                 .count();
     }
 
-    /** The world name for a bot: live Mannequin position first, then spawn location. */
+    /** The world name for a bot: live NMS Player position first, then spawn location. */
     private static String getBotWorldName(FakePlayer fp) {
         Entity body = fp.getPhysicsEntity();
         if (body != null && body.isValid()) {

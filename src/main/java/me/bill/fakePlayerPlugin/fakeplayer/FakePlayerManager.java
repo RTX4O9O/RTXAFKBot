@@ -7,11 +7,9 @@ import me.bill.fakePlayerPlugin.database.BotRecord;
 import me.bill.fakePlayerPlugin.database.DatabaseManager;
 import me.bill.fakePlayerPlugin.util.BotTabTeam;
 import me.bill.fakePlayerPlugin.util.FppLogger;
-import me.bill.fakePlayerPlugin.util.LuckPermsHelper;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.NamespacedKey;
-import org.bukkit.entity.ArmorStand;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 
@@ -58,7 +56,7 @@ public class FakePlayerManager {
         Bukkit.getScheduler().runTaskTimer(plugin, () -> {
             if (activePlayers.isEmpty()) return;
             for (FakePlayer fp : activePlayers.values()) {
-                // Use getLiveLocation() — prefers Mannequin body over stored spawn pos
+                // Use getLiveLocation() — prefers NMS Player body over stored spawn pos
                 org.bukkit.Location loc = fp.getLiveLocation();
                 if (loc == null || loc.getWorld() == null) continue;
                 String world = loc.getWorld().getName();
@@ -86,6 +84,42 @@ public class FakePlayerManager {
                 }
             }
         }, 20L, 20L);
+
+        // Every tick: run manual physics for each bot (gravity, velocity decay, knockback
+        // integration) then sync the updated position to nearby real players via packets.
+        // NMS ServerPlayer movement is client-authoritative — the server never moves a player
+        // on its own; without this loop bots float, ignore gravity, and can't be knocked back.
+        Bukkit.getScheduler().runTaskTimer(plugin, () -> {
+            if (activePlayers.isEmpty()) return;
+            List<Player> online = new ArrayList<>(Bukkit.getOnlinePlayers());
+            for (FakePlayer fp : activePlayers.values()) {
+                Player bot = fp.getPlayer();
+                if (bot == null || !bot.isValid()) continue;
+                Location before = bot.getLocation();
+
+                // Physics tick: apply gravity + integrate velocity → moves bot server-side
+                if (!fp.isFrozen()) {
+                    NmsPlayerSpawner.tickPhysics(bot);
+                }
+
+                // Broadcast updated position to nearby real players.
+                // Sync on real displacement OR remaining velocity. Using only velocity misses
+                // cases where the bot moved this tick (falling, landing, knockback) but friction
+                // or collision reduced velocity to ~0 by the end of the integration step.
+                Location after = bot.getLocation();
+                boolean moved = before.getWorld() == after.getWorld()
+                        && before.distanceSquared(after) > 1e-8;
+                org.bukkit.util.Vector vel = bot.getVelocity();
+                if (moved || vel.lengthSquared() > 1e-6) {
+                    if (!online.isEmpty()) {
+                        for (Player p : online) {
+                            if (p.equals(bot)) continue;
+                            PacketHelper.sendPositionSync(p, bot);
+                        }
+                    }
+                }
+            }
+        }, 1L, 1L);
     }
 
     /**
@@ -133,7 +167,7 @@ public class FakePlayerManager {
      * <p>
      * Names are pre-generated and reserved immediately, then bots appear one
      * by one with a random join delay. Skin is resolved automatically by the
-     * client via the Mannequin's {@code setProfile(name)} — no HTTP calls.
+     * client via the NMS ServerPlayer's GameProfile — no HTTP calls.
      *
      * @param spawner the player who issued the command (may be null for console)
      * @return number of bots queued (-1 if at limit)
@@ -184,21 +218,14 @@ public class FakePlayerManager {
             // For user bots the internal name (ubot_*) has no Mojang skin —
             // pick a random name from the pool to use for skin lookup instead.
             fp.setSkinName(pickRandomSkinName());
-            // Store the sequential index so updateAllBotPrefixes() can rebuild
-            // this bot's display name correctly after a LuckPerms group change.
-            fp.setBotIndex(alreadyOwned + i + 1);
-            // Resolve LP data using the spawner's UUID so user bots mirror their owner's rank.
-            LuckPermsHelper.LpData lpData = LuckPermsHelper.getBotLpData(spawnerUuid);
+            // Build display name from format — LP prefix/suffix injected later by refreshLpDisplayName.
             String rawUserName = Config.userBotNameFormat()
                     .replace("{spawner}", spawnerName)
                     .replace("{num}", String.valueOf(alreadyOwned + i + 1))
                     .replace("{bot_name}", ubn.internalName());
-            String userDisplay = finalizeDisplayName(rawUserName, ubn.internalName(), lpData);
+            fp.setRawDisplayName(rawUserName);
+            String userDisplay = finalizeDisplayName(rawUserName, ubn.internalName());
             fp.setDisplayName(userDisplay);
-            String pktName = LuckPermsHelper.buildPacketProfileName(lpData.weight(), ubn.internalName());
-            fp.setPacketProfileName(pktName);
-            Config.debug("[LP] user-bot '" + ubn.internalName() + "' owner=" + spawnerUuid
-                    + " weight=" + lpData.weight() + " pkt='" + pktName + "'");
             fp.setSpawnLocation(location);
             fp.setSpawnedBy(spawnerName, spawnerUuid);
             activePlayers.put(uuid, fp);
@@ -261,16 +288,11 @@ public class FakePlayerManager {
             FakePlayer fp = new FakePlayer(uuid, name, profile);
             // For admin bots the internal name IS the skin name (e.g. "Notch", "Dream")
             fp.setSkinName(name);
-            // Resolve LP data (prefix + weight) for this bot.
-            // Admin bots use the bot-group config or the 'default' group — no owner UUID.
-            LuckPermsHelper.LpData lpData = LuckPermsHelper.getBotLpData(null);
+            // Build display name from format — LP prefix/suffix injected later by refreshLpDisplayName.
             String rawAdminName = Config.adminBotNameFormat().replace("{bot_name}", name);
-            String displayName  = finalizeDisplayName(rawAdminName, name, lpData);
+            fp.setRawDisplayName(rawAdminName);
+            String displayName  = finalizeDisplayName(rawAdminName, name);
             fp.setDisplayName(displayName);
-            String pktAdmin = LuckPermsHelper.buildPacketProfileName(lpData.weight(), name);
-            fp.setPacketProfileName(pktAdmin);
-            Config.debug("[LP] admin-bot '" + name + "' display='" + displayName
-                    + "' pkt='" + pktAdmin + "' weight=" + lpData.weight());
             fp.setSpawnLocation(location);
             fp.setSpawnedBy(spawnerName, spawnerUuid);
             activePlayers.put(uuid, fp);
@@ -294,7 +316,7 @@ public class FakePlayerManager {
         if (batch.isEmpty()) return 0;
 
         int total = batch.size();
-        // Mannequin.setProfile(name) makes the client resolve the correct skin
+        // NmsPlayerSpawner creates ServerPlayer with GameProfile containing skin data
         // automatically — no HTTP skin fetch needed. Start visual chain immediately.
         Bukkit.getScheduler().runTask(plugin, () -> visualChain(batch, 0, location));
         return total;
@@ -373,35 +395,72 @@ public class FakePlayerManager {
     private void finishSpawn(FakePlayer fp, Location spawnLoc) {
         fp.setSpawnTime(java.time.Instant.now());
 
-        // ── Skin-first pipeline ───────────────────────────────────────────────
-        // We resolve the skin BEFORE sending the tab-list packet so the client
-        // never sees a "default Steve" flash.  Everything downstream fires from
-        // the skin callback — guaranteed to run on the main thread.
+        // ── LuckPerms pre-assignment ──────────────────────────────────────────
+        // We MUST assign the LP group BEFORE the NMS ServerPlayer body spawns.
+        // When FakePlayerBody.spawn() is called it fires PlayerJoinEvent; LuckPerms
+        // and tab-list plugins (e.g. TAB) read the player's group inside that event.
+        // If we assign the group afterwards (as before) those plugins always see
+        // group=(none) at join time and sort/display the bot incorrectly.
+        //
+        // ensureGroupBeforeSpawn() intelligently preserves a bot's existing rank
+        // across restarts (unless overridden by luckperms.default-group).
+        if (me.bill.fakePlayerPlugin.util.LuckPermsHelper.isAvailable()) {
+            String cfgGroup = Config.luckpermsDefaultGroup();
+            UUID botUuid = fp.getUuid();
+
+            me.bill.fakePlayerPlugin.util.LuckPermsHelper.ensureGroupBeforeSpawn(botUuid, cfgGroup)
+                .thenAccept(appliedGroup -> {
+                    // Record the group in the bot object for diagnostics + consistency
+                    fp.setLuckpermsGroup(appliedGroup);
+                    Bukkit.getScheduler().runTask(plugin, () -> {
+                        if (!activePlayers.containsKey(botUuid)) return;
+                        spawnBodyAndFinish(fp, spawnLoc);
+                    });
+                })
+                .exceptionally(ex -> {
+                    FppLogger.warn("[LP] Pre-assign failed for '" + fp.getName() + "': " + ex.getMessage());
+                    // Still spawn the bot (LP might be temporarily unreachable)
+                    Bukkit.getScheduler().runTask(plugin, () -> {
+                        if (!activePlayers.containsKey(botUuid)) return;
+                        spawnBodyAndFinish(fp, spawnLoc);
+                    });
+                    return null;
+                });
+        } else {
+            spawnBodyAndFinish(fp, spawnLoc);
+        }
+    }
+
+    /**
+     * Second half of the spawn pipeline: completes any final pre-spawn work and
+     * spawns the NMS body. Called after the LP group has been pre-assigned in
+     * storage (or immediately when LP is not installed).
+     */
+    private void spawnBodyAndFinish(FakePlayer fp, Location spawnLoc) {
+        // ── Final spawn pipeline ──────────────────────────────────────────────
+        // Skins are disabled, but we keep this callback boundary so spawn guards
+        // remain centralised in one place.
         FakePlayerBody.resolveAndFinish(plugin, fp, spawnLoc, () -> {
-            // Guard: bot may have been removed while skin was resolving (e.g. /fpp despawn all
-            // fired during a join-delay chain or async skin fetch).  Abort entirely so no
-            // stale tab-list add, scoreboard entry, or join message is ever sent.
+            // Guard: bot may have been removed before the body spawn callback fired.
+            // Abort entirely so no stale tab-list add, scoreboard entry, or join
+            // message is ever sent.
             if (!activePlayers.containsKey(fp.getUuid())) {
                 Config.debug("finishSpawn aborted for '" + fp.getName()
-                        + "' — removed before skin callback fired.");
+                        + "' — removed before body spawn callback fired.");
                 return;
             }
 
-            // At this point fp.getResolvedSkin() is populated (or null for off/auto).
-
-            // 1. Spawn body (Mannequin) — profile already has texture data
+            // 1. Spawn body — NMS ServerPlayer entity
             // Skip if bodyless flag is set (console spawn without location data)
             if (!fp.isBodyless() && Config.spawnBody() && !plugin.isCompatibilityRestricted()) {
-                Entity body = FakePlayerBody.spawn(fp, spawnLoc);
+                Player body = FakePlayerBody.spawn(fp, spawnLoc);
                 if (body != null) {
                     fp.setPhysicsEntity(body);
                     entityIdIndex.put(body.getEntityId(), fp);
-                    Bukkit.getScheduler().runTaskLater(plugin, () -> {
-                        if (!body.isValid()) return;
-                        if (!activePlayers.containsKey(fp.getUuid())) return; // removed mid-spawn
-                        FakePlayerBody.applyResolvedSkin(plugin, fp, body);
-                        fp.setNametagEntity(FakePlayerBody.spawnNametag(fp, body));
-                    }, 1L);
+                    // Use the real name as the packet profile name so tab-list packets
+                    // and BotTabTeam use the real name — prevents {_ prefix appearing
+                    // in client command suggestions.
+                    fp.setPacketProfileName(fp.getName());
                 }
             } else if (fp.isBodyless()) {
                 // Bodyless spawn: no physical body, tab-list only
@@ -411,46 +470,89 @@ public class FakePlayerManager {
                 Config.debug("Compatibility restricted: skipping physical body spawn for " + fp.getName());
             }
 
-            // 2. Send tab list — now carries the correct skin texture
+            // 2. Send tab list
             List<Player> online = new ArrayList<>(Bukkit.getOnlinePlayers());
             if (Config.tabListEnabled()) {
-                Config.debug("Sending tab-list add for '" + fp.getName() + "' display='" + fp.getDisplayName() + "' packet='" + fp.getPacketProfileName() + "'");
-                for (Player p : online) PacketHelper.sendTabListAdd(p, fp);
+                boolean isNmsPlayer = fp.getPlayer() != null;
+                Config.debug("Sending tab-list for '" + fp.getName() + "' display='" + fp.getDisplayName()
+                        + "' packet='" + fp.getPacketProfileName() + "' nms=" + isNmsPlayer);
 
-                // Send immediate UPDATE_DISPLAY_NAME to try and override TAB plugins
-                for (Player p : online) PacketHelper.sendTabListDisplayNameUpdate(p, fp);
+                if (isNmsPlayer) {
+                    // NMS player: the server already sent a PlayerInfo ADD packet with the real
+                    // name when placeNewPlayer() was called. Sending another ADD with a modified
+                    // profile name would overwrite it and show the {_ prefix in command suggestions.
+                    // Only update the display name shown in the tab list.
+                    for (Player p : online) PacketHelper.sendTabListDisplayNameUpdate(p, fp);
+                } else {
+                    // Bodyless bot: no server-side PlayerInfo entry — send full ADD.
+                    for (Player p : online) PacketHelper.sendTabListAdd(p, fp);
+                    for (Player p : online) PacketHelper.sendTabListDisplayNameUpdate(p, fp);
+                }
 
-                // 3. Re-send after 3 ticks and again after 20 ticks in case TAB plugin overwrites it
+                // Re-send after 3 ticks and again after 20 ticks in case TAB plugin overwrites it
                 Bukkit.getScheduler().runTaskLater(plugin, () -> {
-                    if (!activePlayers.containsKey(fp.getUuid())) return; // removed mid-spawn
-                    Config.debug("Re-sending tab-list add (3t) for '" + fp.getName() + "' display='" + fp.getDisplayName() + "' packet='" + fp.getPacketProfileName() + "'");
-                    for (Player p : Bukkit.getOnlinePlayers()) PacketHelper.sendTabListAdd(p, fp);
+                    if (!activePlayers.containsKey(fp.getUuid())) return;
+                    boolean nms = fp.getPlayer() != null;
+                    Config.debug("Re-sending tab-list (3t) for '" + fp.getName() + "' nms=" + nms);
+                    if (!nms) for (Player p : Bukkit.getOnlinePlayers()) PacketHelper.sendTabListAdd(p, fp);
                     for (Player p : Bukkit.getOnlinePlayers()) PacketHelper.sendTabListDisplayNameUpdate(p, fp);
                 }, 3L);
 
                 Bukkit.getScheduler().runTaskLater(plugin, () -> {
-                    if (!activePlayers.containsKey(fp.getUuid())) return; // removed mid-spawn
-                    Config.debug("Re-sending tab-list add (20t) for '" + fp.getName() + "' display='" + fp.getDisplayName() + "' packet='" + fp.getPacketProfileName() + "'");
-                    for (Player p : Bukkit.getOnlinePlayers()) PacketHelper.sendTabListAdd(p, fp);
+                    if (!activePlayers.containsKey(fp.getUuid())) return;
+                    boolean nms = fp.getPlayer() != null;
+                    Config.debug("Re-sending tab-list (20t) for '" + fp.getName() + "' nms=" + nms);
+                    if (!nms) for (Player p : Bukkit.getOnlinePlayers()) PacketHelper.sendTabListAdd(p, fp);
                     for (Player p : Bukkit.getOnlinePlayers()) PacketHelper.sendTabListDisplayNameUpdate(p, fp);
-                    
+
                     // Add bot to ~fpp scoreboard team AFTER tab packets are sent
                     if (botTabTeam != null) botTabTeam.addBot(fp);
+
+                    // Broadcast full bot profile to all other servers in the proxy network
+                    var vc = plugin.getVelocityChannel();
+                    if (vc != null) vc.broadcastBotSpawn(fp);
                 }, 20L);
             } else {
                 Config.debug("Tab-list disabled — skipping tab add for '" + fp.getName() + "'");
             }
 
-            // 4. Broadcast join message
-            if (Config.joinMessage()) {
+            // 4. NMS ServerPlayer bots fire vanilla PlayerJoinEvent which already broadcasts
+            // "X joined the game" to all players — no custom broadcast needed.
+            // For bodyless bots only: forward join event to the proxy network.
+            if (fp.isBodyless()) {
                 Bukkit.getScheduler().runTaskLater(plugin, () -> {
                     if (!activePlayers.containsKey(fp.getUuid())) return; // removed mid-spawn
-                    BotBroadcast.broadcastJoin(fp);
+                    var vc = plugin.getVelocityChannel();
+                    if (vc != null) vc.broadcastJoinToNetwork(fp);
                 }, 2L);
             }
 
             if (persistence != null && Config.persistOnRestart()) {
                 persistence.saveAsync(activePlayers.values());
+            }
+
+            // 5. LP prefix — apply group directly to the online User object LP loaded at
+            // PlayerJoinEvent, then save. saveUser() on an online User fires
+            // UserDataRecalculateEvent which our subscriber handles to refresh the display name.
+            if (me.bill.fakePlayerPlugin.util.LuckPermsHelper.isAvailable()) {
+                UUID botUuid = fp.getUuid();
+                String group  = fp.getLuckpermsGroup() != null && !fp.getLuckpermsGroup().isBlank()
+                        ? fp.getLuckpermsGroup()
+                        : (!me.bill.fakePlayerPlugin.config.Config.luckpermsDefaultGroup().isBlank()
+                                ? me.bill.fakePlayerPlugin.config.Config.luckpermsDefaultGroup()
+                                : "default");
+
+                // Wait 5 ticks for LP to finish loading the user at PlayerJoinEvent,
+                // then apply the group to the live online User instance.
+                Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                    if (!activePlayers.containsKey(botUuid)) return;
+                    me.bill.fakePlayerPlugin.util.LuckPermsHelper
+                            .applyGroupToOnlineUser(botUuid, group)
+                            .thenRun(() -> Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                                if (!activePlayers.containsKey(botUuid)) return;
+                                refreshLpDisplayName(fp);
+                            }, 2L));
+                }, 5L);
             }
 
             if (swapAI != null) swapAI.schedule(fp);
@@ -464,85 +566,60 @@ public class FakePlayerManager {
      * The original UUID and display name are reused so database records stay linked
      * and bots maintain their original appearance (prefix, format, etc.).
      *
-     * @param luckpermsGroup the LP group override to restore, or {@code null} for default
+     * <p><b>Design rule — bots are per-server only.</b>
+     * The database may be shared (NETWORK mode), but this method must only be called
+     * with rows that belong to THIS server (filtered by {@code server_id} before
+     * reaching here). FakePlayer instances and NMS ServerPlayer entities
+     * are never shared or teleported across servers — they exist only on the server
+     * that originally spawned them.
+     *
      */
     public void spawnRestored(String name, UUID uuid, String savedDisplayName,
-                              String spawnedBy, UUID spawnedByUuid, Location location,
-                              String luckpermsGroup) {
+                              String spawnedBy, UUID spawnedByUuid, Location location) {
         // Skip if name already active (e.g. duplicate in save file)
         if (usedNames.contains(name)) return;
 
         PlayerProfile profile = Bukkit.createProfile(uuid, name);
         FakePlayer fp = new FakePlayer(uuid, name, profile);
 
-        // Restore the LP group override FIRST — LP resolution below will use it.
-        fp.setLuckpermsGroup(luckpermsGroup);
-
         // User bots (ubot_*) have no Mojang skin — pick a random pool name for skin resolution.
         // Admin bots use their own name (e.g. "Notch") for skin lookup.
         boolean isUserBot = name.startsWith("ubot_");
         fp.setSkinName(isUserBot ? pickRandomSkinName() : name);
 
-        // Extract botIndex (ubot_PlayerName_N → N) so updateAllBotPrefixes() can correctly
-        // rebuild the display name after an LP change without re-parsing the internal name.
-        if (isUserBot) {
-            int lastUs = name.lastIndexOf('_');
-            if (lastUs > 0 && lastUs < name.length() - 1) {
-                try { fp.setBotIndex(Integer.parseInt(name.substring(lastUs + 1))); }
-                catch (NumberFormatException ignored) { fp.setBotIndex(1); }
-            } else {
-                fp.setBotIndex(1);
-            }
-        }
-
-        // ── Resolve display name ──────────────────────────────────────────────
-        // ALWAYS reconstruct from current LP data + format for EVERY bot type.
-        //
-        // Why never trust savedDisplayName:
-        //  1. The database stores it as plain text (PlainTextComponentSerializer strips
-        //     all MiniMessage / colour codes) — re-using it produces a rank label without
-        //     any colour, which is exactly the "rank without colour" bug.
-        //  2. The LP prefix or format string may have changed between restarts; the saved
-        //     value would be stale even if it were stored with colour tags.
-        //
-        // Reconstructing here guarantees the correct colour-coded prefix is applied at
-        // the exact moment the bot's join message fires, with no visible plain-text flash.
+        // Resolve display name from the current format strings.
+        // LP will apply its own prefix/suffix natively once the player entity is online.
         String effectiveSpawner = (spawnedBy != null && !spawnedBy.isBlank()) ? spawnedBy : "Unknown";
-        // Use the restored LP group override (if any), otherwise fall back to owner/config/default.
-        LuckPermsHelper.LpData lpData  = LuckPermsHelper.getBotLpData(luckpermsGroup, isUserBot ? spawnedByUuid : null);
         String displayName;
 
         if (isUserBot) {
-            int    botIdx = fp.getBotIndex();
-            String numStr = String.valueOf(botIdx > 0 ? botIdx : 1);
+            int lastUs = name.lastIndexOf('_');
+            int botIdx = 1;
+            if (lastUs > 0 && lastUs < name.length() - 1) {
+                try { botIdx = Integer.parseInt(name.substring(lastUs + 1)); }
+                catch (NumberFormatException ignored) { botIdx = 1; }
+            }
             String rawName = Config.userBotNameFormat()
                     .replace("{spawner}", effectiveSpawner)
-                    .replace("{num}",     numStr)
+                    .replace("{num}",     String.valueOf(botIdx))
                     .replace("{bot_name}", name);
-            Config.debug("[Restore] user-bot '" + name + "' spawner='" + effectiveSpawner
-                    + "' num=" + numStr + "'");
-            displayName = finalizeDisplayName(rawName, name, lpData);
+            Config.debug("[Restore] user-bot '" + name + "' spawner='" + effectiveSpawner + "' num=" + botIdx);
+            fp.setRawDisplayName(rawName);
+            displayName = finalizeDisplayName(rawName, name);
         } else {
             String rawName = Config.adminBotNameFormat().replace("{bot_name}", name);
             Config.debug("[Restore] admin-bot '" + name + "'");
-            displayName = finalizeDisplayName(rawName, name, lpData);
+            fp.setRawDisplayName(rawName);
+            displayName = finalizeDisplayName(rawName, name);
         }
 
         fp.setDisplayName(displayName);
-
-        // Build packet name for tab-list ordering — reuse the lpData already resolved above.
-        String pktRestored = LuckPermsHelper.buildPacketProfileName(lpData.weight(), name);
-        fp.setPacketProfileName(pktRestored);
-        Config.debug("[LP] restored-bot '" + name + "' weight=" + lpData.weight()
-                + " pkt='" + pktRestored + "'");
-
         fp.setSpawnLocation(location);
         fp.setSpawnedBy(effectiveSpawner, spawnedByUuid);
         usedNames.add(name);
         activePlayers.put(uuid, fp);
 
-        // Record to database — pass the resolved display name so fpp_active_bots.bot_display
-        // is never NULL after a restore (fixes plain-text round-trip on subsequent restarts).
+        // Record to database
         if (db != null) {
             BotRecord record = new BotRecord(
                     0, name, uuid,
@@ -555,7 +632,7 @@ public class FakePlayerManager {
             fp.setDbRecord(record);
             String plainDisplay = net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer
                     .plainText().serialize(me.bill.fakePlayerPlugin.util.TextUtil.colorize(displayName));
-            db.recordSpawn(record, plainDisplay, fp.getLuckpermsGroup());
+            db.recordSpawn(record, plainDisplay);
         }
 
         // Visual spawn (no skin fetch on restore — keeps startup fast)
@@ -585,29 +662,22 @@ public class FakePlayerManager {
             // Only act when there are still unresolved placeholders
             if (!PLACEHOLDER_PATTERN.matcher(current).find()) continue;
 
-            // Reconstruct from current format
-            LuckPermsHelper.LpData lpData = LuckPermsHelper.getBotLpData(fp.getLuckpermsGroup(), spawnerUuid);
-            int idx = fp.getBotIndex();
-            if (idx <= 0) {
-                String botName = fp.getName();
-                int lastUs = botName.lastIndexOf('_');
-                if (lastUs > 0 && lastUs < botName.length() - 1) {
-                    try { idx = Integer.parseInt(botName.substring(lastUs + 1)); }
-                    catch (NumberFormatException ignored) { idx = 1; }
-                } else { idx = 1; }
+            // Reconstruct from current format (LP prefix applied natively by LP)
+            String botName = fp.getName();
+            int lastUs = botName.lastIndexOf('_');
+            int idx = 1;
+            if (lastUs > 0 && lastUs < botName.length() - 1) {
+                try { idx = Integer.parseInt(botName.substring(lastUs + 1)); }
+                catch (NumberFormatException ignored) { idx = 1; }
             }
             String rawDisplay = Config.userBotNameFormat()
                     .replace("{spawner}", spawnerName)
                     .replace("{num}",     String.valueOf(idx))
                     .replace("{bot_name}", fp.getName());
-            String newDisplay = finalizeDisplayName(rawDisplay, fp.getName(), lpData);
+            fp.setRawDisplayName(rawDisplay);
+            String newDisplay = finalizeDisplayName(rawDisplay, fp.getName());
             fp.setDisplayName(newDisplay);
 
-            // Update nametag entity
-            ArmorStand nametag = fp.getNametagEntity();
-            if (nametag != null && nametag.isValid()) {
-                nametag.customName(me.bill.fakePlayerPlugin.util.TextUtil.colorize(newDisplay));
-            }
             // Refresh tab-list entry
             if (Config.tabListEnabled()) {
                 for (Player p : online) PacketHelper.sendTabListDisplayNameUpdate(p, fp);
@@ -665,10 +735,16 @@ public class FakePlayerManager {
                 List<Player> snapshot = new ArrayList<>(Bukkit.getOnlinePlayers());
                 for (Player online : snapshot) PacketHelper.sendTabListRemove(online, target);
 
+                // NMS player's quit event fires naturally — no custom leave message needed.
+                // Forward to proxy network for cross-server tab sync.
                 if (Config.leaveMessage()) {
-                    BotBroadcast.broadcastLeave(target);
+                    var vc = plugin.getVelocityChannel();
+                    if (vc != null) vc.broadcastLeaveToNetwork(target.getDisplayName());
                 }
                 if (db != null) db.recordRemoval(target.getUuid(), "DELETED");
+                // Notify other servers to remove this bot's virtual tab entry
+                var vc2 = plugin.getVelocityChannel();
+                if (vc2 != null) vc2.broadcastBotDespawn(target.getUuid());
                 Config.debug("Removed bot: " + target.getName());
             };
 
@@ -679,16 +755,13 @@ public class FakePlayerManager {
             }
         }
 
-        // Final orphan sweep: runs 20 ticks after all bots should be removed.
-        // Catches any entity that didn't clean up properly (cross-world, chunk issues).
-        final long sweepDelay = maxDelay + 20L;
+        // Final persistence save after all bots are removed
+        final long saveDelay = maxDelay + 20L;
         Bukkit.getScheduler().runTaskLater(plugin, () -> {
-            int swept = FakePlayerBody.sweepOrphans(java.util.Collections.emptySet());
-            if (swept > 0) FppLogger.info("Post-removeAll orphan sweep: removed " + swept + " entities.");
             if (persistence != null && Config.persistOnRestart()) {
                 persistence.saveAsync(activePlayers.values());
             }
-        }, sweepDelay);
+        }, saveDelay);
 
         Config.debug("Staggered visual removal of " + toRemove.size() + " fake player(s).");
     }
@@ -743,21 +816,27 @@ public class FakePlayerManager {
             List<Player> snapshot = new ArrayList<>(Bukkit.getOnlinePlayers());
             for (Player online : snapshot) PacketHelper.sendTabListRemove(online, target);
 
-            if (Config.leaveMessage()) {
-                BotBroadcast.broadcastLeave(target);
-            }
+            // NMS player's quit event fires naturally — no custom leave message needed.
+            // Forward to proxy network for cross-server tab sync.
+            var vc = plugin.getVelocityChannel();
+            if (vc != null) vc.broadcastLeaveToNetwork(target.getDisplayName());
             if (db != null) db.recordRemoval(target.getUuid(), "DELETED");
+            // Clean up LuckPerms user data for this bot
+            if (me.bill.fakePlayerPlugin.util.LuckPermsHelper.isAvailable()) {
+                me.bill.fakePlayerPlugin.util.LuckPermsHelper.setPlayerGroup(target.getUuid(), "default")
+                    .thenRun(() -> Config.debug("Cleaned up LP data for bot: " + botName))
+                    .exceptionally(throwable -> {
+                        me.bill.fakePlayerPlugin.util.FppLogger.warn("Failed to cleanup LP data for bot " + botName + ": " + throwable.getMessage());
+                        return null;
+                    });
+            }
+            // Notify other servers to remove this bot's virtual tab entry
+            var vc2 = plugin.getVelocityChannel();
+            if (vc2 != null) vc2.broadcastBotDespawn(target.getUuid());
             Config.debug("Deleted fake player: " + botName);
             if (persistence != null && Config.persistOnRestart()) {
                 persistence.saveAsync(activePlayers.values());
             }
-
-            // Deferred world-scan to catch any entity that survived the direct remove
-            // (e.g., entity in a chunk that was loading at delete-time)
-            Bukkit.getScheduler().runTaskLater(plugin, () -> {
-                FakePlayerBody.removeOrphanedBodies(botName);
-                FakePlayerBody.removeOrphanedNametags(botName);
-            }, 10L);
         };
 
         if (leaveDelay <= 0) {
@@ -803,10 +882,8 @@ public class FakePlayerManager {
             if (botTabTeam != null) botTabTeam.removeBot(fp);
             for (Player online : snapshot) PacketHelper.sendTabListRemove(online, fp);
 
-            // 3. Leave message
-            if (Config.leaveMessage()) {
-                BotBroadcast.broadcastLeave(fp);
-            }
+            // 3. NMS player's quit event fires naturally — no custom leave message needed.
+            // (velocity network broadcast not available during shutdown sync)
 
             // 4. DB record
             if (db != null) db.recordRemoval(fp.getUuid(), "SHUTDOWN");
@@ -870,37 +947,30 @@ public class FakePlayerManager {
     }
 
     /**
-     * Immediately removes the physical Mannequin body and nametag ArmorStand
+     * Immediately removes the physical NMS ServerPlayer body
      * from every active bot when {@code body.enabled} is {@code false}.
      * Safe to call on the main thread after a config reload.
      * Has no effect when bodies are enabled.
      */
     public void applyBodyConfig() {
         if (physicalBodiesEnabled()) {
-            // Bodies enabled — apply damageable/pushable to all existing Mannequins
-            boolean invulnerable = !Config.bodyDamageable();
-            boolean immovable    = !Config.bodyPushable();
+            // Keep runtime body flags in sync after /fpp reload.
             for (FakePlayer fp : activePlayers.values()) {
-                Entity body = fp.getPhysicsEntity();
-                if (body instanceof org.bukkit.entity.Mannequin m && m.isValid()) {
-                    m.setInvulnerable(invulnerable);
-                    m.setImmovable(immovable);
+                Player body = fp.getPlayer();
+                if (body != null && body.isValid()) {
+                    body.setInvulnerable(!Config.bodyDamageable());
+                    body.setCollidable(Config.bodyPushable());
                 }
             }
             return;
         }
         // Bodies disabled — remove all physical entities
         for (FakePlayer fp : activePlayers.values()) {
-            Entity body = fp.getPhysicsEntity();
+            Player body = fp.getPlayer();
             if (body != null) {
                 try { body.remove(); } catch (Exception ignored) {}
                 entityIdIndex.remove(body.getEntityId());
                 fp.setPhysicsEntity(null);
-            }
-            ArmorStand as = fp.getNametagEntity();
-            if (as != null) {
-                try { as.remove(); } catch (Exception ignored) {}
-                fp.setNametagEntity(null);
             }
         }
     }
@@ -928,14 +998,28 @@ public class FakePlayerManager {
      * Syncs all existing fake players' tab list entries to a real player.
      * Called after initial join AND after world changes.
      *
-     * <p>The Mannequin body and ArmorStand nametag are real server-side entities
+     * <p>The NMS ServerPlayer body is a real server-side entity
      * kept alive by chunk tickets — no respawn needed. Only the packet-based
      * tab-list entries must be re-sent (Minecraft clears them on world transitions).
+     * 
+     * <p><b>Important:</b> For NMS players (bots with physical bodies), we only send
+     * UPDATE_DISPLAY_NAME because the vanilla server already sent a PlayerInfo ADD
+     * packet for them when the joining player connected. Sending another ADD would
+     * create duplicate tab list entries.
      */
     public void syncToPlayer(Player player) {
         if (!Config.tabListEnabled()) return;
         for (FakePlayer fp : activePlayers.values()) {
-            PacketHelper.sendTabListAdd(player, fp);
+            // Check if this bot has an NMS ServerPlayer body
+            boolean isNmsPlayer = fp.getPlayer() != null;
+            
+            if (isNmsPlayer) {
+                // NMS player: server already sent ADD packet, only update display name
+                PacketHelper.sendTabListDisplayNameUpdate(player, fp);
+            } else {
+                // Bodyless bot: no server-side entity, must send full ADD packet
+                PacketHelper.sendTabListAdd(player, fp);
+            }
         }
     }
 
@@ -980,7 +1064,7 @@ public class FakePlayerManager {
      * Performs a periodic validation pass across all active bots:
      * <ol>
      *   <li>Checks that each bot's physics entity is still valid.</li>
-     *   <li>If the body has become invalid (e.g., Mannequin entered DYING pose
+     *   <li>If the body has become invalid (e.g., NMS ServerPlayer was removed
      *       and was removed by Minecraft), attempts to respawn it.</li>
      *   <li>Sweeps all loaded worlds for orphaned FPP entities that belong to
      *       bots no longer in the active map and removes them.</li>
@@ -1005,11 +1089,6 @@ public class FakePlayerManager {
                     entityIdIndex.remove(body.getEntityId());
                     fp.setPhysicsEntity(null);
                 }
-                ArmorStand as = fp.getNametagEntity();
-                if (as != null) {
-                    try { as.remove(); } catch (Exception ignored) {}
-                    fp.setNametagEntity(null);
-                }
                 continue;
             }
 
@@ -1020,38 +1099,22 @@ public class FakePlayerManager {
             Config.debug("validateEntities: body of '" + fp.getName() + "' invalid — attempting respawn.");
 
             fp.setPhysicsEntity(null);
-            ArmorStand as = fp.getNametagEntity();
-            if (as != null) {
-                try { as.remove(); } catch (Exception ignored) {}
-                fp.setNametagEntity(null);
-            }
-
 
             // Try to re-spawn at last known location
             org.bukkit.Location loc = fp.getSpawnLocation();
             if (loc == null || loc.getWorld() == null) continue;
 
-            Entity newBody = FakePlayerBody.spawn(fp, loc);
+            Player newBody = FakePlayerBody.spawn(fp, loc);
             if (newBody == null) continue;
 
             fp.setPhysicsEntity(newBody);
             entityIdIndex.put(newBody.getEntityId(), fp);
 
+            // Re-send tab list so skin + name update for everyone
             final FakePlayer target = fp;
-            final Entity bodyRef   = newBody;
             Bukkit.getScheduler().runTaskLater(plugin, () -> {
-                if (!bodyRef.isValid()) return;
-                FakePlayerBody.applyResolvedSkin(plugin, target, bodyRef);
-                target.setNametagEntity(FakePlayerBody.spawnNametag(target, bodyRef));
-                // Re-send tab list so skin + name update for everyone
                 for (Player p : Bukkit.getOnlinePlayers()) PacketHelper.sendTabListAdd(p, target);
             }, 2L);
-        }
-
-        // ── Sweep orphaned entities ──────────────────────────────────────────
-        int swept = FakePlayerBody.sweepOrphans(activeNames);
-        if (swept > 0) {
-            FppLogger.info("Orphan sweep: removed " + swept + " stale FPP entity/entities.");
         }
     }
 
@@ -1083,11 +1146,16 @@ public class FakePlayerManager {
         }
 
         // Update the entity reference and re-register with the new id
-        candidate.setPhysicsEntity(entity);
-        entityIdIndex.put(entity.getEntityId(), candidate);
-        Config.debug("getByEntity: recovered '" + botName
-                + "' via PDC after world-change — new entityId=" + entity.getEntityId());
-        return candidate;
+        if (entity instanceof org.bukkit.entity.Player player) {
+            candidate.setPhysicsEntity(player);
+            entityIdIndex.put(entity.getEntityId(), candidate);
+            Config.debug("getByEntity: recovered '" + botName
+                    + "' via PDC after world-change — new entityId=" + entity.getEntityId());
+            return candidate;
+        }
+        
+        Config.debug("getByEntity: entity is not a Player, cannot recover bot: " + botName);
+        return null;
     }
 
     /**
@@ -1186,257 +1254,36 @@ public class FakePlayerManager {
      * Called automatically when LuckPerms group data changes.
      * @return number of bots updated
      */
-    public int updateAllBotPrefixes() {
-        if (activePlayers.isEmpty()) return 0;
-
-        int updated = 0;
-        List<Player> online = new ArrayList<>(Bukkit.getOnlinePlayers());
-
-        for (FakePlayer fp : activePlayers.values()) {
-            try {
-                // Re-resolve LP data for this bot, respecting the bot's stored LP group override (if any)
-                UUID ownerUuid = fp.getSpawnedByUuid();
-                LuckPermsHelper.LpData lpData = LuckPermsHelper.getBotLpData(fp.getLuckpermsGroup(), ownerUuid);
-
-                // Build new display name with updated prefix.
-                String botName    = fp.getName();
-                boolean isUserBot = botName.startsWith("ubot_");
-                String rawName;
-
-                if (isUserBot) {
-                    String spawnerName = fp.getSpawnedBy();
-                    if (spawnerName == null || spawnerName.isBlank()) spawnerName = "Unknown";
-                    int idx = fp.getBotIndex();
-                    if (idx <= 0) {
-                        int lastUs = botName.lastIndexOf('_');
-                        if (lastUs > 0 && lastUs < botName.length() - 1) {
-                            try { idx = Integer.parseInt(botName.substring(lastUs + 1)); }
-                            catch (NumberFormatException ignored) { idx = 1; }
-                        } else { idx = 1; }
-                    }
-                    rawName = Config.userBotNameFormat()
-                            .replace("{spawner}", spawnerName)
-                            .replace("{num}",     String.valueOf(idx))
-                            .replace("{bot_name}", botName);
-                } else {
-                    rawName = Config.adminBotNameFormat().replace("{bot_name}", botName);
-                }
-                String newDisplayName = finalizeDisplayName(rawName, botName, lpData);
-
-                // Update if the stored display name differs — compare both the raw
-                // MiniMessage string AND the rendered plain-text form.  This catches
-                // the case where the saved name was stored as plain text (colours
-                // stripped) while the new name has full colour tags: the raw strings
-                // differ, but even if they accidentally matched we still want to
-                // push a fresh nametag/tab-list packet so colours are never missing.
-                String oldDisplay = fp.getDisplayName();
-                boolean rawChanged   = !newDisplayName.equals(oldDisplay);
-                boolean colorChanged = rawChanged || !net.kyori.adventure.text.serializer.plain
-                        .PlainTextComponentSerializer.plainText()
-                        .serialize(me.bill.fakePlayerPlugin.util.TextUtil.colorize(newDisplayName))
-                        .equals(net.kyori.adventure.text.serializer.plain
-                        .PlainTextComponentSerializer.plainText()
-                        .serialize(me.bill.fakePlayerPlugin.util.TextUtil.colorize(oldDisplay)));
-
-                if (rawChanged || colorChanged) {
-                    fp.setDisplayName(newDisplayName);
-                    
-                    // Update packet profile name for tab-list ordering.
-                    // Compute BEFORE calling setPacketProfileName so we can detect a change.
-                    String newPacketName = LuckPermsHelper.buildPacketProfileName(lpData.weight(), botName);
-                    boolean profileNameChanged = !newPacketName.equals(fp.getPacketProfileName());
-                    fp.setPacketProfileName(newPacketName);
-                    
-                    // Update nametag entity if it exists
-                    ArmorStand nametag = fp.getNametagEntity();
-                    if (nametag != null && nametag.isValid()) {
-                        nametag.customName(me.bill.fakePlayerPlugin.util.TextUtil.colorize(newDisplayName));
-                    }
-                    
-                    if (profileNameChanged) {
-                        // The sort key changed — we must remove and re-add the tab entry so
-                        // the Minecraft client repositions the bot in the tab list.
-                        // UPDATE_DISPLAY_NAME alone cannot move an entry; only ADD_PLAYER can.
-                        for (Player p : online) {
-                            PacketHelper.sendTabListRemove(p, fp);
-                            PacketHelper.sendTabListAdd(p, fp);
-                        }
-                        Config.debug("[LP-Auto-Update] Updated bot '" + botName + "' -> '" + newDisplayName
-                                + "' [profile-name-changed → remove+re-add, pkt='" + newPacketName + "']");
-                    } else {
-                        // Only the display name changed — lighter UPDATE_DISPLAY_NAME is enough.
-                        for (Player p : online) {
-                            PacketHelper.sendTabListDisplayNameUpdate(p, fp);
-                        }
-                        Config.debug("[LP-Auto-Update] Updated bot '" + botName + "' -> '" + newDisplayName
-                                + "' [display-name-only]");
-                    }
-                    updated++;
-                }
-            } catch (Exception e) {
-                Config.debug("[LP-Auto-Update] Failed to update bot: " + e.getMessage());
-            }
-        }
-
-        return updated;
-    }
-
-    /**
-     * Updates the LP prefix, display name, and tab-list for a single bot.
-     * Call this when a bot's LP group is changed via `/fpp rank set`.
-     * 
-     * @param fp the bot to update
-     */
-    public void updateBotPrefix(FakePlayer fp) {
-        if (fp == null) return;
-
-        try {
-            List<Player> online = new ArrayList<>(Bukkit.getOnlinePlayers());
-
-            // Re-resolve LP data for this bot (respecting bot-specific group override)
-            UUID ownerUuid = fp.getSpawnedByUuid();
-            String botSpecificGroup = fp.getLuckpermsGroup();
-            
-            // Only invalidate cache for the specific group we're changing to get fresh weight
-            if (botSpecificGroup != null && !botSpecificGroup.isBlank()) {
-                LuckPermsHelper.invalidateGroup(botSpecificGroup);
-                // Refresh rank list to ensure the new group's weight is included in ranking
-                LuckPermsHelper.refreshRankList();
-            }
-            
-            LuckPermsHelper.LpData lpData = LuckPermsHelper.getBotLpData(botSpecificGroup, ownerUuid);
-
-            // Build new display name with updated prefix
-            String botName    = fp.getName();
-            boolean isUserBot = botName.startsWith("ubot_");
-            String rawName;
-
-            if (isUserBot) {
-                String spawnerName = fp.getSpawnedBy();
-                if (spawnerName == null || spawnerName.isBlank()) spawnerName = "Unknown";
-                int idx = fp.getBotIndex();
-                if (idx <= 0) {
-                    int lastUs = botName.lastIndexOf('_');
-                    if (lastUs > 0 && lastUs < botName.length() - 1) {
-                        try { idx = Integer.parseInt(botName.substring(lastUs + 1)); }
-                        catch (NumberFormatException ignored) { idx = 1; }
-                    } else { idx = 1; }
-                }
-                rawName = Config.userBotNameFormat()
-                        .replace("{spawner}", spawnerName)
-                        .replace("{num}",     String.valueOf(idx))
-                        .replace("{bot_name}", botName);
-            } else {
-                rawName = Config.adminBotNameFormat().replace("{bot_name}", botName);
-            }
-            String newDisplayName = finalizeDisplayName(rawName, botName, lpData);
-
-            // Update display name and packet profile name
-            fp.setDisplayName(newDisplayName);
-            
-            // Update packet profile name for tab-list ordering
-            String oldPacketName = fp.getPacketProfileName();
-            String newPacketName = LuckPermsHelper.buildPacketProfileName(lpData.weight(), botName);
-            boolean profileNameChanged = !newPacketName.equals(oldPacketName);
-            fp.setPacketProfileName(newPacketName);
-            
-            // Debug: log the weight and packet name changes
-            Config.debug("[Rank] Bot '" + botName + "' group='" + botSpecificGroup 
-                    + "' weight=" + lpData.weight() + " packet='" + newPacketName + "' changed=" + profileNameChanged);
-            
-            // Update nametag entity
-            ArmorStand nametag = fp.getNametagEntity();
-            if (nametag != null && nametag.isValid()) {
-                nametag.customName(me.bill.fakePlayerPlugin.util.TextUtil.colorize(newDisplayName));
-            }
-            
-            // Update tab list for all online players
-            if (profileNameChanged) {
-                // Profile name changed → remove old team entry and re-add with new one
-                if (botTabTeam != null) {
-                    botTabTeam.removeEntry(oldPacketName);  // Remove old packet name
-                    botTabTeam.addBot(fp);                  // Add new packet name
-                }
-                
-                // Remove and re-add to reposition in tab list
-                for (Player p : online) {
-                    PacketHelper.sendTabListRemove(p, fp);
-                    PacketHelper.sendTabListAdd(p, fp);
-                }
-                Config.debug("[Rank] Updated bot '" + botName + "' -> '" + newDisplayName
-                        + "' [profile-name-changed → remove+re-add, pkt='" + newPacketName + "']");
-            } else {
-                // Only display name changed
-                for (Player p : online) {
-                    PacketHelper.sendTabListDisplayNameUpdate(p, fp);
-                }
-                Config.debug("[Rank] Updated bot '" + botName + "' -> '" + newDisplayName
-                        + "' [display-name-only]");
-            }
-
-            // Persist the LP group override to the DB so it survives a server restart.
-            if (db != null) db.updateBotLpGroup(fp.getUuid(), fp.getLuckpermsGroup());
-
-        } catch (Exception e) {
-            Config.debug("[Rank] Failed to update bot: " + e.getMessage());
-        }
-    }
-
     /**
      * Moves the physics body of {@code fp} to {@code destination} immediately.
      * Used by the tph / tp commands.
      */
     public boolean teleportBot(FakePlayer fp, org.bukkit.Location destination) {
-        org.bukkit.entity.Entity body = fp.getPhysicsEntity();
+        Player body = fp.getPlayer();
         if (body == null || !body.isValid()) return false;
-
-        // Passengers are ejected when an entity is teleported in Bukkit.
-        // Eject the nametag ArmorStand first, teleport the body, then re-mount it.
-        org.bukkit.entity.ArmorStand nametag = fp.getNametagEntity();
-        if (nametag != null && nametag.isValid()) {
-            body.removePassenger(nametag);
-        }
-
         body.teleport(destination);
-
-        // Re-add nametag as passenger so it rides the Mannequin again
-        if (nametag != null && nametag.isValid()) {
-            nametag.teleport(destination);
-            body.addPassenger(nametag);
-        }
-
         fp.setSpawnLocation(destination.clone());
         return true;
     }
 
-    // ── Name generation ──────────────────────────────────────────────────────
+    // ── Display name ──────────────────────────────────────────────────────────
 
     /**
-     * Builds the final display name for a bot by applying {@code bot-name.tab-list-format},
-     * PAPI expansion, and sanitization.
+     * Builds the final display name for a bot.
      *
-     * <p>Placeholders resolved:
-     * <ul>
-     *   <li>{@code {prefix}} — LP group prefix (empty when {@code use-prefix: false})</li>
-     *   <li>{@code {bot_name}} — base name already resolved from admin/user format</li>
-     *   <li>{@code {suffix}} — LP group suffix (empty when {@code use-prefix: false})</li>
-     *   <li>Any {@code %papi_placeholder%} tokens when PlaceholderAPI is installed</li>
-     * </ul>
+     * <p>Bots are now real NMS ServerPlayer entities — LuckPerms applies their
+     * prefix and suffix natively in chat and the tab list. This method only
+     * applies the {@code bot-name.tab-list-format} template and any PlaceholderAPI
+     * tokens to produce the FPP-side custom name (shown via the name packet).
      *
-     * @param rawName base name resolved from admin/user format (placeholders already applied)
-     * @param botName internal bot name for sanitize-log context
-     * @param lpData  resolved LP data (prefix, weight, suffix)
-     * @return fully resolved, sanitized MiniMessage-compatible display string
+     * @param rawName base name resolved from admin/user format
+     * @param botName internal bot name used for sanitize-log context
      */
-    private String finalizeDisplayName(String rawName, String botName,
-                                        me.bill.fakePlayerPlugin.util.LuckPermsHelper.LpData lpData) {
-        String prefix = Config.luckpermsUsePrefix() ? lpData.prefix() : "";
-        String suffix = Config.luckpermsUsePrefix() ? lpData.suffix() : "";
-
+    private String finalizeDisplayName(String rawName, String botName) {
         String display = Config.tabListNameFormat()
-                .replace("{prefix}", prefix)
+                .replace("{prefix}", "")        // LP prefix added later by refreshLpDisplayName()
                 .replace("{bot_name}", rawName)
-                .replace("{suffix}", suffix);
+                .replace("{suffix}", "");        // LP suffix added later by refreshLpDisplayName()
 
         // Expand PlaceholderAPI placeholders (server-wide, null player context)
         if (display.contains("%")) {
@@ -1451,8 +1298,90 @@ public class FakePlayerManager {
     }
 
     /**
+     * Re-reads the bot's LuckPerms prefix and suffix from LP's in-memory meta cache
+     * and rebuilds its display name using {@code bot-name.tab-list-format}.
+     *
+     * <p>Call this after a LP group assignment completes so the prefix/suffix appear
+     * correctly in the tab list and nametag. Must be called on the main server thread.
+     *
+     * <p>No-op when LP is unavailable or the bot is no longer active.
+     *
+     * @param fp the bot whose display name should be refreshed
+     */
+    public void refreshLpDisplayName(FakePlayer fp) {
+        if (!activePlayers.containsKey(fp.getUuid())) return;
+        if (!me.bill.fakePlayerPlugin.util.LuckPermsHelper.isAvailable()) return;
+
+        String prefix = me.bill.fakePlayerPlugin.util.LuckPermsHelper.getResolvedPrefix(fp.getUuid());
+        String suffix = me.bill.fakePlayerPlugin.util.LuckPermsHelper.getResolvedSuffix(fp.getUuid());
+
+        // Use the raw display content stored at spawn/restore time
+        String rawContent = fp.getRawDisplayName();
+        if (rawContent == null || rawContent.isBlank()) rawContent = fp.getName();
+
+        String display = Config.tabListNameFormat()
+                .replace("{prefix}", prefix)
+                .replace("{bot_name}", rawContent)
+                .replace("{suffix}", suffix);
+
+        // PAPI expansion
+        if (display.contains("%")) {
+            try {
+                if (org.bukkit.Bukkit.getPluginManager().getPlugin("PlaceholderAPI") != null) {
+                    display = me.clip.placeholderapi.PlaceholderAPI.setPlaceholders(null, display);
+                }
+            } catch (Exception ignored) {}
+        }
+
+        display = sanitizeDisplayName(display, fp.getName());
+        fp.setDisplayName(display);
+
+        // Resend tab-list display name to all online players
+        if (Config.tabListEnabled()) {
+            List<Player> online = new ArrayList<>(Bukkit.getOnlinePlayers());
+            for (Player p : online) PacketHelper.sendTabListDisplayNameUpdate(p, fp);
+        }
+
+        Config.debug("[LP] Refreshed display name for '" + fp.getName() + "': '" + display + "'");
+    }
+
+    /**
+     * Refreshes LP display name with retry logic. If the prefix is still empty after the
+     * first attempt, forces LP to refresh cached metadata and retries after a delay.
+     * This handles the race condition where LP hasn't finished calculating metadata yet.
+     *
+     * @param fp the bot whose display name should be refreshed
+     * @param attempt current retry attempt (0-indexed, max 2 retries)
+     */
+    private void refreshLpDisplayNameWithRetry(FakePlayer fp, int attempt) {
+        if (!activePlayers.containsKey(fp.getUuid())) return;
+        if (!me.bill.fakePlayerPlugin.util.LuckPermsHelper.isAvailable()) return;
+
+        String prefix = me.bill.fakePlayerPlugin.util.LuckPermsHelper.getResolvedPrefix(fp.getUuid());
+        String suffix = me.bill.fakePlayerPlugin.util.LuckPermsHelper.getResolvedSuffix(fp.getUuid());
+
+        // If we still have no prefix/suffix after initial delay and haven't exceeded retry limit,
+        // force LP to refresh cached data and retry
+        if (prefix.isEmpty() && suffix.isEmpty() && attempt < 2) {
+            Config.debug("[LP] No prefix/suffix for '" + fp.getName() + "' on attempt " + (attempt + 1) 
+                    + ", forcing LP refresh...");
+            me.bill.fakePlayerPlugin.util.LuckPermsHelper.refreshUserCache(fp.getUuid());
+            
+            UUID botUuid = fp.getUuid();
+            Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                if (!activePlayers.containsKey(botUuid)) return;
+                refreshLpDisplayNameWithRetry(fp, attempt + 1);
+            }, 10L); // Wait 10 more ticks after forcing refresh
+            return;
+        }
+
+        // Apply the display name (even if prefix/suffix are empty on final attempt)
+        refreshLpDisplayName(fp);
+    }
+
+    /**
      * Compiled pattern that matches unreplaced {@code {placeholder}} tokens in
-     * display-name strings. Deliberately excludes LuckPerms gradient shorthand
+     * display-name strings. Excludes LuckPerms gradient shorthand
      * ({@code {#rrggbb>}text{#rrggbb<}}) by requiring the first char to be a
      * letter or underscore (not {@code #}).
      */
@@ -1460,19 +1389,7 @@ public class FakePlayerManager {
             java.util.regex.Pattern.compile("\\{[a-zA-Z_][a-zA-Z0-9_]*\\}");
 
     /**
-     * Replaces any unreplaced {@code {placeholder}} patterns left in a
-     * display-name string with a random name drawn from the bot-names pool.
-     *
-     * <p>This is a <em>safety net</em> — the primary fix for known placeholders
-     * lives in the callers. The sanitizer fires when:
-     * <ul>
-     *   <li>A config format string contains a misspelled or unknown placeholder.</li>
-     *   <li>A code path forgot to substitute a placeholder.</li>
-     * </ul>
-     *
-     * @param displayName the built display string to check
-     * @param context     bot name used only for the warning log
-     * @return the sanitized display name (original if nothing was replaced)
+     * Replaces any unreplaced {@code {placeholder}} patterns with a fallback name.
      */
     private String sanitizeDisplayName(String displayName, String context) {
         if (displayName == null || !displayName.contains("{")) return displayName;
@@ -1486,15 +1403,14 @@ public class FakePlayerManager {
         return sanitized;
     }
 
+    // ── Name generation ──────────────────────────────────────────────────────
+
     /**
-     * Picks a random name from the bot-names pool for use as a skin source.
-     * Unlike {@link #generateName()}, this does NOT reserve the name —
-     * it is used only for skin lookup (Mojang API / auto resolution).
-     * Falls back to a random entry without worrying about uniqueness.
+     * Picks a random name from the bot-names pool for skin lookup.
      */
     private String pickRandomSkinName() {
         List<String> pool = Config.namePool();
-        if (pool.isEmpty()) return "Steve"; // absolute fallback
+        if (pool.isEmpty()) return "Steve";
         return pool.get(ThreadLocalRandom.current().nextInt(pool.size()));
     }
 
@@ -1502,10 +1418,9 @@ public class FakePlayerManager {
         List<String> pool = Config.namePool();
         if (pool.isEmpty()) return fallbackName();
 
-        String chosen  = null;
-        int    count   = 0;
+        String chosen = null;
+        int    count  = 0;
         for (String n : pool) {
-            // Enforce Minecraft username constraints: 1-16 chars, letters/digits/underscore
             if (n == null || n.isEmpty() || n.length() > 16
                     || !n.matches("[a-zA-Z0-9_]+")) continue;
             if (usedNames.contains(n) || Bukkit.getPlayerExact(n) != null) continue;
@@ -1514,7 +1429,6 @@ public class FakePlayerManager {
         }
         if (chosen != null) {
             usedNames.add(chosen);
-            // Only return the valid Minecraft identifier for GameProfile
             return chosen;
         }
         return fallbackName();
@@ -1525,7 +1439,7 @@ public class FakePlayerManager {
         int attempts = 0;
         do {
             generated = "Bot" + ThreadLocalRandom.current().nextInt(1000, 9999);
-            if (++attempts > 200) return null; // safety cap
+            if (++attempts > 200) return null;
         } while (usedNames.contains(generated) || Bukkit.getPlayerExact(generated) != null);
         usedNames.add(generated);
         return generated;
@@ -1536,8 +1450,8 @@ public class FakePlayerManager {
     /**
      * Result holder for a generated user-bot name pair.
      *
-     * @param internalName valid Minecraft identifier used for the GameProfile / skin lookup
-     * @param displayName  rich display text shown in nametag and tab list
+     * @param internalName valid Minecraft identifier used for the GameProfile
+     * @param displayName  display text shown in nametag and tab list
      */
     public record UserBotName(String internalName, String displayName) {}
 
@@ -1545,32 +1459,24 @@ public class FakePlayerManager {
      * Generates a valid internal Minecraft name and a display name for a user-tier bot.
      *
      * <p>Internal name format: {@code ubot_<spawner>_<N>} (max 16 chars).
-     * The spawner portion is truncated if necessary so the {@code _N} suffix is
-     * always present and parseable — this ensures {@link FakePlayer#getBotIndex()}
-     * can be reliably recovered from the internal name on restart.
      *
      * @param spawnerName   the spawning player's Minecraft name
-     * @param existingCount bots this player already owns (used for the numeric suffix)
+     * @param existingCount bots this player already owns
      */
     public UserBotName generateUserBotName(String spawnerName, int existingCount) {
         String suffix    = String.valueOf(existingCount + 1);
-        // Reserve exactly enough space for "ubot_" + sep + suffix so truncation
-        // never cuts off the _N segment.
-        final String UBOT_PREFIX = "ubot_";
-        final String SEP         = "_";
-        int maxSpawnerLen = 16 - UBOT_PREFIX.length() - SEP.length() - suffix.length();
+        final String PREFIX = "ubot_";
+        final String SEP    = "_";
+        int maxSpawnerLen = 16 - PREFIX.length() - SEP.length() - suffix.length();
         String truncated  = spawnerName.length() > maxSpawnerLen
                 ? spawnerName.substring(0, Math.max(1, maxSpawnerLen))
                 : spawnerName;
-        String internal   = UBOT_PREFIX + truncated + SEP + suffix;
-        // Safety cap (shouldn't trigger with the math above, but keep it safe)
+        String internal   = PREFIX + truncated + SEP + suffix;
         if (internal.length() > 16) internal = internal.substring(0, 16);
         usedNames.add(internal);
-        // Display name is computed by the caller (spawnUserBot) using the full LP data;
-        // we include it here for consistency and legacy callers.
-        String lpPrefix = LuckPermsHelper.getBotPrefix();
-        String display  = sanitizeDisplayName(
-                lpPrefix + Config.userBotNameFormat()
+
+        String display = sanitizeDisplayName(
+                Config.userBotNameFormat()
                         .replace("{spawner}", spawnerName)
                         .replace("{num}",     suffix)
                         .replace("{bot_name}", internal),
@@ -1578,14 +1484,14 @@ public class FakePlayerManager {
         return new UserBotName(internal, display);
     }
 
-    // ── LuckPerms public accessor ─────────────────────────────────────────────
-
     /**
-     * Returns the detected LP prefix for startup/reload diagnostic logging.
-     * Delegates entirely to {@link LuckPermsHelper#detectDefaultPrefix()}.
+     * Legacy compatibility method for updating bot prefixes.
+     * Since bots are now real NMS ServerPlayer entities, LuckPerms applies
+     * prefixes/suffixes natively without manual intervention.
      */
-    public String detectLuckPermsPrefix() {
-        return LuckPermsHelper.detectDefaultPrefix();
+    public void updateAllBotPrefixes() {
+        // No-op - LP handles prefix updates natively for real players
+        Config.debug("updateAllBotPrefixes: skipped (bots are real players, LP handles natively)");
     }
 
 }
