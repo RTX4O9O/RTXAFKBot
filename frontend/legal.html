@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Legal — Fake Player Plugin</title>
+    <meta name="description" content="Legal information for Fake Player Plugin — Privacy Policy, Terms of Service, and License.">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="Legal — Fake Player Plugin">
+    <meta property="og:image" content="/Icon/FPP.png">
+    <link rel="icon" type="image/png" href="/Icon/FPP.png">
+    <link rel="shortcut icon" type="image/png" href="/Icon/FPP.png">
+    <link rel="apple-touch-icon" href="/Icon/FPP.png">
+    <style>
+        /* ==================== DESIGN TOKENS ==================== */
+        :root {
+            --primary-color: #667eea;
+            --primary-dark: #5568d3;
+            --primary-light: #7b8ef0;
+            --secondary-color: #764ba2;
+            --accent-color: #0079FF;
+            --success-color: #00AF5C;
+            --warning-color: #FF9500;
+            --danger-color: #FF3B30;
+            --bg-primary: #ffffff;
+            --bg-secondary: #f8f9fa;
+            --bg-tertiary: #e9ecef;
+            --bg-card: #ffffff;
+            --text-primary: #1a1a1a;
+            --text-secondary: #6c757d;
+            --text-tertiary: #adb5bd;
+            --text-inverse: #ffffff;
+            --border-color: #dee2e6;
+            --border-light: #e9ecef;
+            --shadow: rgba(0,0,0,0.08);
+            --shadow-lg: rgba(0,0,0,0.15);
+            --header-height: 64px;
+            --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            --font-mono: 'SF Mono', Monaco, 'Cascadia Code', Consolas, 'Courier New', monospace;
+            --transition: 0.2s cubic-bezier(0.4,0,0.2,1);
+            --radius: 12px;
+            --radius-sm: 6px;
+            --gradient-primary: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        [data-theme="dark"] {
+            --bg-primary: #0d1117;
+            --bg-secondary: #161b22;
+            --bg-tertiary: #21262d;
+            --bg-card: #161b22;
+            --text-primary: #e6edf3;
+            --text-secondary: #8b949e;
+            --text-tertiary: #6e7681;
+            --border-color: #30363d;
+            --border-light: #21262d;
+            --shadow: rgba(0,0,0,0.4);
+            --shadow-lg: rgba(0,0,0,0.6);
+            --primary-color: #7b8ef0;
+            --primary-dark: #667eea;
+            --primary-light: #8fa3f3;
+            --secondary-color: #8b5bc4;
+        }
+
+        /* ==================== RESET ==================== */
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        html { scroll-behavior: smooth; font-size: 16px; }
+        body { font-family: var(--font-sans); line-height: 1.6; color: var(--text-primary); background: var(--bg-primary); }
+
+        /* ==================== HEADER ==================== */
+        .site-header {
+            position: fixed; top: 0; left: 0; right: 0;
+            height: var(--header-height);
+            background: var(--bg-primary);
+            border-bottom: 1px solid var(--border-color);
+            z-index: 1000;
+            box-shadow: 0 2px 8px var(--shadow);
+            transition: background var(--transition), border-color var(--transition);
+        }
+        [data-theme="dark"] .site-header {
+            border-bottom: 2px solid transparent;
+            border-image: var(--gradient-primary) 1;
+        }
+        .header-content {
+            display: flex; align-items: center; justify-content: space-between;
+            height: 100%; max-width: 1280px; margin: 0 auto; padding: 0 1.5rem;
+        }
+        .logo { display: flex; align-items: center; gap: 0.75rem; text-decoration: none; }
+        .logo-icon { width: 2rem; height: 2rem; border-radius: 6px; box-shadow: 0 2px 8px var(--shadow); transition: transform var(--transition); }
+        .logo-icon:hover { transform: scale(1.05); }
+        .logo-text { font-size: 1.25rem; font-weight: 700; background: var(--gradient-primary); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+        .header-nav { display: flex; align-items: center; gap: 0.25rem; }
+        .nav-link { padding: 0.5rem 0.875rem; color: var(--text-secondary); text-decoration: none; font-size: 0.9375rem; font-weight: 500; border-radius: var(--radius-sm); transition: all var(--transition); }
+        .nav-link:hover { color: var(--text-primary); background: var(--bg-secondary); }
+        .nav-link.active { color: var(--primary-color); background: var(--bg-secondary); }
+        .header-actions { display: flex; align-items: center; gap: 0.5rem; }
+        .icon-btn { display: flex; align-items: center; justify-content: center; width: 40px; height: 40px; border: none; background: transparent; color: var(--text-secondary); cursor: pointer; border-radius: var(--radius-sm); transition: all var(--transition); }
+        .icon-btn:hover { background: var(--bg-secondary); color: var(--text-primary); }
+        .icon-btn:active { transform: scale(0.95); }
+        [data-theme="light"] .moon-icon, [data-theme="dark"] .sun-icon { display: none; }
+        .btn-header { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.5rem 1rem; background: var(--gradient-primary); color: #fff; text-decoration: none; border-radius: var(--radius-sm); font-weight: 600; font-size: 0.875rem; transition: all var(--transition); box-shadow: 0 2px 8px rgba(102,126,234,0.3); }
+        .btn-header:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(102,126,234,0.4); }
+        .mobile-menu-btn { display: none; }
+
+        /* ==================== LAYOUT ==================== */
+        .page-wrapper {
+            max-width: 1300px;
+            margin: 0 auto;
+            padding: calc(var(--header-height) + 2.5rem) 1.5rem 5rem;
+        }
+
+        /* ==================== BREADCRUMB ==================== */
+        .breadcrumb {
+            display: flex; align-items: center; gap: 0.5rem;
+            font-size: 0.875rem; color: var(--text-tertiary);
+            margin-bottom: 2rem;
+        }
+        .breadcrumb a { color: var(--text-tertiary); text-decoration: none; transition: color var(--transition); }
+        .breadcrumb a:hover { color: var(--primary-color); }
+        .breadcrumb-sep { color: var(--border-color); }
+        .breadcrumb-current { color: var(--text-secondary); font-weight: 500; }
+
+        /* ==================== LEGAL NAV TABS ==================== */
+        .legal-tabs {
+            display: flex; gap: 0.5rem;
+            margin-bottom: 2.5rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .legal-tab {
+            padding: 0.6rem 1.25rem;
+            border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+            text-decoration: none;
+            font-size: 0.9375rem;
+            font-weight: 500;
+            color: var(--text-secondary);
+            border: 1px solid transparent;
+            border-bottom: none;
+            transition: all var(--transition);
+            position: relative;
+            bottom: -1px;
+            cursor: pointer;
+        }
+        .legal-tab:hover { color: var(--text-primary); background: var(--bg-secondary); }
+        .legal-tab.active {
+            color: var(--primary-color);
+            background: var(--bg-primary);
+            border-color: var(--border-color);
+            border-bottom-color: var(--bg-primary);
+        }
+
+        /* ==================== CONTENT CARD ==================== */
+        .legal-content {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius);
+            padding: 2.5rem 3rem;
+            box-shadow: 0 1px 4px var(--shadow);
+        }
+
+        /* ==================== LOADING / ERROR ==================== */
+        .loading { text-align: center; padding: 4rem 2rem; color: var(--text-secondary); }
+        .spinner {
+            width: 36px; height: 36px;
+            border: 3px solid var(--border-color);
+            border-top-color: var(--primary-color);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin: 0 auto 1rem;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .error-box { text-align: center; padding: 4rem 2rem; }
+        .error-box h2 { font-size: 1.5rem; margin-bottom: 0.75rem; }
+        .error-box p { color: var(--text-secondary); margin-bottom: 1.5rem; }
+        .btn-primary {
+            display: inline-flex; align-items: center; gap: 0.5rem;
+            padding: 0.7rem 1.5rem; background: var(--gradient-primary);
+            color: #fff; text-decoration: none; border-radius: var(--radius);
+            font-weight: 600; font-size: 0.9375rem;
+            transition: all var(--transition); border: none; cursor: pointer;
+        }
+        .btn-primary:hover { opacity: 0.9; transform: translateY(-1px); }
+
+        /* ==================== MARKDOWN TYPOGRAPHY ==================== */
+        .legal-content h1 {
+            font-size: 2rem; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 0.35rem;
+            background: var(--gradient-primary); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+        }
+        .legal-content > p:first-of-type { color: var(--text-tertiary); font-size: 0.9rem; margin-bottom: 2rem; margin-top: 0.25rem; }
+        .legal-content h2 {
+            font-size: 1.2rem; font-weight: 700; margin-top: 2.25rem; margin-bottom: 0.75rem;
+            color: var(--text-primary); padding-bottom: 0.4rem; border-bottom: 1px solid var(--border-light);
+        }
+        .legal-content h3 { font-size: 1rem; font-weight: 600; margin-top: 1.5rem; margin-bottom: 0.5rem; color: var(--text-primary); }
+        .legal-content p { margin-bottom: 1rem; color: var(--text-secondary); line-height: 1.75; }
+        .legal-content ul, .legal-content ol { margin: 0.5rem 0 1rem 1.5rem; color: var(--text-secondary); line-height: 1.75; }
+        .legal-content li { margin-bottom: 0.35rem; }
+        .legal-content a { color: var(--primary-color); text-decoration: none; }
+        .legal-content a:hover { text-decoration: underline; }
+        .legal-content code { font-family: var(--font-mono); font-size: 0.85em; padding: 0.15em 0.45em; background: var(--bg-tertiary); border-radius: var(--radius-sm); color: var(--primary-light); }
+        .legal-content pre { background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 1rem 1.25rem; overflow-x: auto; margin: 1rem 0; }
+        .legal-content pre code { background: none; padding: 0; font-size: 0.875rem; color: var(--text-primary); }
+        .legal-content blockquote { border-left: 3px solid var(--primary-color); padding: 0.5rem 1rem; margin: 1rem 0; background: var(--bg-secondary); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
+        .legal-content blockquote p { margin-bottom: 0; }
+        .legal-content hr { border: none; border-top: 1px solid var(--border-color); margin: 2rem 0; }
+        .legal-content strong { color: var(--text-primary); font-weight: 600; }
+        .legal-content em { color: var(--text-secondary); }
+        .legal-content table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.9375rem; }
+        .legal-content th { background: var(--bg-secondary); padding: 0.75rem 1rem; text-align: left; font-size: 0.8125rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-tertiary); border-bottom: 1px solid var(--border-color); }
+        .legal-content td { padding: 0.75rem 1rem; border-bottom: 1px solid var(--border-light); color: var(--text-secondary); }
+
+        /* ==================== FOOTER ==================== */
+        .site-footer { background: var(--bg-secondary); border-top: 1px solid var(--border-color); padding: 3rem 1.5rem 2rem; }
+        .footer-inner { max-width: 1100px; margin: 0 auto; }
+        .footer-top { display: grid; grid-template-columns: 1.5fr repeat(4, 1fr); gap: 2.5rem; padding-bottom: 2.5rem; border-bottom: 1px solid var(--border-color); }
+        .footer-brand p { font-size: 0.875rem; color: var(--text-secondary); line-height: 1.6; max-width: 240px; margin-top: 0.75rem; }
+        .footer-col h4 { font-size: 0.8125rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-tertiary); margin-bottom: 1rem; }
+        .footer-col ul { list-style: none; }
+        .footer-col li { margin-bottom: 0.6rem; }
+        .footer-col a { font-size: 0.9rem; color: var(--text-secondary); text-decoration: none; transition: color var(--transition); }
+        .footer-col a:hover { color: var(--primary-color); }
+        .footer-bottom { display: flex; align-items: center; justify-content: space-between; padding-top: 1.75rem; flex-wrap: wrap; gap: 0.75rem; }
+        .footer-bottom p { font-size: 0.875rem; color: var(--text-tertiary); }
+        .footer-badges { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+        .footer-badge { display: inline-flex; align-items: center; gap: 0.375rem; padding: 0.3rem 0.7rem; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 99px; font-size: 0.75rem; color: var(--text-secondary); font-weight: 500; }
+        .footer-badge-dot { width: 6px; height: 6px; border-radius: 50%; }
+        .dot-blue { background: var(--accent-color); }
+        .dot-green { background: var(--success-color); }
+        .dot-purple { background: var(--primary-color); }
+
+        /* ==================== RESPONSIVE ==================== */
+        @media (max-width: 768px) {
+            .header-nav { display: none; }
+            .mobile-menu-btn { display: flex; }
+            .legal-content { padding: 1.5rem 1.25rem; }
+            .footer-top { grid-template-columns: repeat(2, 1fr); }
+            .footer-brand { grid-column: 1 / -1; }
+        }
+        @media (max-width: 480px) {
+            .footer-top { grid-template-columns: 1fr; }
+            .footer-bottom { flex-direction: column; align-items: flex-start; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header class="site-header" id="siteHeader">
+    <div class="header-content">
+        <a href="/" class="logo">
+            <img src="/Icon/FPP.png" alt="FPP Logo" class="logo-icon">
+            <span class="logo-text">Fake Player Plugin</span>
+        </a>
+        <nav class="header-nav">
+            <a href="/" class="nav-link">Home</a>
+            <a href="/wiki" class="nav-link">Wiki</a>
+            <a href="https://discord.gg/QSN7f67nkJ" target="_blank" rel="noopener" class="nav-link">Discord</a>
+        </nav>
+        <div class="header-actions">
+            <button id="themeToggle" class="icon-btn" aria-label="Toggle theme" title="Toggle Dark/Light Mode">
+                <svg class="sun-icon" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <circle cx="12" cy="12" r="5"/>
+                    <path d="M12 1v2m0 18v2M4.22 4.22l1.42 1.42m12.72 12.72 1.42 1.42M1 12h2m18 0h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+                </svg>
+                <svg class="moon-icon" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+                </svg>
+            </button>
+            <button id="menuToggle" class="icon-btn mobile-menu-btn" aria-label="Toggle menu">
+                <svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+            </button>
+            <a href="https://modrinth.com/plugin/fake-player-plugin-(fpp)" target="_blank" rel="noopener" class="btn-header">
+                <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Download
+            </a>
+        </div>
+    </div>
+</header>
+
+<!-- MAIN -->
+<main class="page-wrapper">
+    <!-- Breadcrumb -->
+    <div class="breadcrumb">
+        <a href="/">Home</a>
+        <span class="breadcrumb-sep">›</span>
+        <a href="/legal/privacy-policy">Legal</a>
+        <span class="breadcrumb-sep">›</span>
+        <span class="breadcrumb-current" id="breadcrumbCurrent">Privacy Policy</span>
+    </div>
+
+    <!-- Tabs -->
+    <nav class="legal-tabs" id="legalTabs">
+        <a href="/legal/privacy-policy" class="legal-tab" data-page="privacy-policy">🔒 Privacy Policy</a>
+        <a href="/legal/terms-of-service" class="legal-tab" data-page="terms-of-service">📄 Terms of Service</a>
+        <a href="/legal/copyright" class="legal-tab" data-page="copyright">©️ Copyright &amp; License</a>
+    </nav>
+
+    <!-- Content -->
+    <div class="legal-content" id="legalContent">
+        <div class="loading">
+            <div class="spinner"></div>
+            <p>Loading…</p>
+        </div>
+    </div>
+</main>
+
+<!-- FOOTER (identical to index.html) -->
+<footer class="site-footer">
+    <div class="footer-inner">
+        <div class="footer-top">
+            <div class="footer-brand">
+                <a href="/" class="logo">
+                    <img src="/Icon/FPP.png" alt="FPP Logo" class="logo-icon">
+                    <span class="logo-text" style="font-size:1.125rem;">Fake Player Plugin</span>
+                </a>
+                <p>The most advanced fake player plugin for Paper 1.21.x. Built by Bill_Hub aka El_Pepes.</p>
+            </div>
+            <div class="footer-col">
+                <h4>Download</h4>
+                <ul>
+                    <li><a href="https://modrinth.com/plugin/fake-player-plugin-(fpp)" target="_blank" rel="noopener">Modrinth</a></li>
+                    <li><a href="https://www.spigotmc.org/resources/fake-player-plugin-fpp.133572/" target="_blank" rel="noopener">SpigotMC</a></li>
+                    <li><a href="https://hangar.papermc.io/Pepe-tf/FakePlayerPlugin" target="_blank" rel="noopener">PaperMC Hangar</a></li>
+                    <li><a href="https://builtbybit.com/resources/fake-player-plugin.98704/" target="_blank" rel="noopener">BuiltByBit</a></li>
+                </ul>
+            </div>
+            <div class="footer-col">
+                <h4>Documentation</h4>
+                <ul>
+                    <li><a href="/wiki">Wiki Home</a></li>
+                    <li><a href="/wiki#Getting-Started">Getting Started</a></li>
+                    <li><a href="/wiki#Commands">Commands</a></li>
+                    <li><a href="/wiki#Configuration">Configuration</a></li>
+                    <li><a href="/wiki#Changelog">Changelog</a></li>
+                </ul>
+            </div>
+            <div class="footer-col">
+                <h4>Community</h4>
+                <ul>
+                    <li><a href="https://discord.gg/QSN7f67nkJ" target="_blank" rel="noopener">Discord</a></li>
+                    <li><a href="https://ko-fi.com/fakeplayerplugin" target="_blank" rel="noopener">Ko-fi</a></li>
+                </ul>
+            </div>
+            <div class="footer-col">
+                <h4>Legal</h4>
+                <ul>
+                    <li><a href="/legal/privacy-policy">Privacy Policy</a></li>
+                    <li><a href="/legal/terms-of-service">Terms of Service</a></li>
+                    <li><a href="/legal/copyright">Copyright &amp; License</a></li>
+                </ul>
+            </div>
+        </div>
+        <div class="footer-bottom">
+            <p>&copy; 2026 Fake Player Plugin. All rights reserved. · Made by Bill_Hub</p>
+            <div class="footer-badges">
+                <span class="footer-badge"><span class="footer-badge-dot dot-purple"></span>v1.5.8</span>
+                <span class="footer-badge"><span class="footer-badge-dot dot-blue"></span>Paper 1.21.x</span>
+                <span class="footer-badge"><span class="footer-badge-dot dot-green"></span>Java 21+</span>
+            </div>
+        </div>
+    </div>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.8/dist/purify.min.js"></script>
+<script>
+    // ── Theme (shared key with index + wiki) ──────────────────────────────────
+    (function () {
+        const saved = localStorage.getItem('wiki-theme') || 'dark';
+        document.documentElement.setAttribute('data-theme', saved);
+    })();
+    document.getElementById('themeToggle').addEventListener('click', () => {
+        const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', next);
+        localStorage.setItem('wiki-theme', next);
+    });
+
+    // ── Header shadow on scroll ───────────────────────────────────────────────
+    window.addEventListener('scroll', () => {
+        document.getElementById('siteHeader').style.boxShadow =
+            window.scrollY > 10 ? '0 4px 20px var(--shadow-lg)' : '0 2px 8px var(--shadow)';
+    }, { passive: true });
+
+    // ── Page detection ────────────────────────────────────────────────────────
+    const VALID_LEGAL_PAGES = ['privacy-policy', 'terms-of-service', 'copyright'];
+    const PAGE_TITLES = {
+        'privacy-policy':  'Privacy Policy',
+        'terms-of-service': 'Terms of Service',
+        'copyright': 'Copyright & License'
+    };
+
+    function getPageFromPath() {
+        const parts = window.location.pathname.split('/').filter(Boolean);
+        const candidate = parts[parts.length - 1] || '';
+        return VALID_LEGAL_PAGES.includes(candidate) ? candidate : 'privacy-policy';
+    }
+
+    // ── Active tab + meta ─────────────────────────────────────────────────────
+    function setActiveTab(page) {
+        document.querySelectorAll('.legal-tab').forEach(tab => {
+            tab.classList.toggle('active', tab.dataset.page === page);
+        });
+        const title = PAGE_TITLES[page] || 'Legal';
+        document.getElementById('breadcrumbCurrent').textContent = title;
+        document.title = `${title} — Fake Player Plugin`;
+    }
+
+    // ── Load & render ─────────────────────────────────────────────────────────
+    async function loadLegalPage(page) {
+        const container = document.getElementById('legalContent');
+        container.innerHTML = '<div class="loading"><div class="spinner"></div><p>Loading…</p></div>';
+        setActiveTab(page);
+
+        try {
+            const res = await fetch(`/legal/${page}.md`);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const md = await res.text();
+
+            if (md.trimStart().startsWith('<!DOCTYPE') || md.trimStart().startsWith('<html')) {
+                throw new Error('Received HTML instead of markdown');
+            }
+
+            marked.setOptions({ breaks: true, gfm: true, mangle: false, headerIds: true });
+            const html = DOMPurify.sanitize(marked.parse(md), { ADD_ATTR: ['target', 'rel'] });
+            container.innerHTML = html;
+
+            container.querySelectorAll('a[href^="http"]').forEach(a => {
+                a.setAttribute('target', '_blank');
+                a.setAttribute('rel', 'noopener noreferrer');
+            });
+
+            window.scrollTo({ top: 0, behavior: 'instant' });
+        } catch (err) {
+            container.innerHTML = `
+                <div class="error-box">
+                    <h2>⚠️ Could not load page</h2>
+                    <p>${err.message}</p>
+                    <button class="btn-primary" onclick="loadLegalPage('${page}')">🔄 Try Again</button>
+                </div>`;
+        }
+    }
+
+    // ── Tab clicks ────────────────────────────────────────────────────────────
+    document.getElementById('legalTabs').addEventListener('click', e => {
+        const tab = e.target.closest('.legal-tab');
+        if (!tab) return;
+        e.preventDefault();
+        const page = tab.dataset.page;
+        if (!VALID_LEGAL_PAGES.includes(page)) return;
+        window.history.pushState({}, '', `/legal/${page}`);
+        loadLegalPage(page);
+    });
+
+    // ── Browser back/forward ──────────────────────────────────────────────────
+    window.addEventListener('popstate', () => loadLegalPage(getPageFromPath()));
+
+    // ── Init ──────────────────────────────────────────────────────────────────
+    loadLegalPage(getPageFromPath());
+</script>
+</body>
+</html>
+

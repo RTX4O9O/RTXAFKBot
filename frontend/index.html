@@ -223,7 +223,7 @@
         /* ==================== FOOTER ==================== */
         .site-footer { background: var(--bg-secondary); border-top: 1px solid var(--border-color); padding: 3rem 1.5rem 2rem; }
         .footer-inner { max-width: 1100px; margin: 0 auto; }
-        .footer-top { display: grid; grid-template-columns: 1.5fr repeat(3, 1fr); gap: 3rem; padding-bottom: 2.5rem; border-bottom: 1px solid var(--border-color); }
+        .footer-top { display: grid; grid-template-columns: 1.5fr repeat(4, 1fr); gap: 2.5rem; padding-bottom: 2.5rem; border-bottom: 1px solid var(--border-color); }
         .footer-brand p { font-size: 0.875rem; color: var(--text-secondary); line-height: 1.6; max-width: 240px; margin-top: 0.75rem; }
         .footer-col h4 { font-size: 0.8125rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-tertiary); margin-bottom: 1rem; }
         .footer-col ul { list-style: none; }
@@ -243,7 +243,7 @@
         @media (max-width: 768px) {
             .header-nav { display: none; }
             .mobile-menu-btn { display: flex; }
-            .footer-top { grid-template-columns: 1fr 1fr; }
+            .footer-top { grid-template-columns: repeat(2, 1fr); }
             .footer-brand { grid-column: 1 / -1; }
             .hero-stat-divider { display: none; }
             .cta-banner { padding: 2.5rem 1.5rem; }
@@ -264,10 +264,10 @@
             <span class="logo-text">Fake Player Plugin</span>
         </a>
         <nav class="header-nav">
-            <a href="/" class="nav-link active">Home</a>
-            <a href="/wiki" class="nav-link">Wiki</a>
-            <a href="/wiki#Commands" class="nav-link">Commands</a>
-            <a href="/wiki#Changelog" class="nav-link">Changelog</a>
+            <a href="#home" class="nav-link">Home</a>
+            <a href="#features" class="nav-link">Features</a>
+            <a href="#installation" class="nav-link">Installation</a>
+            <a href="#commands" class="nav-link">Commands</a>
             <a href="https://discord.gg/QSN7f67nkJ" target="_blank" rel="noopener" class="nav-link">Discord</a>
         </nav>
         <div class="header-actions">
@@ -292,7 +292,7 @@
 </header>
 
 <!-- HERO -->
-<section class="hero">
+<section id="home" class="hero">
     <div class="hero-bg">
         <div class="hero-orb hero-orb-1"></div>
         <div class="hero-orb hero-orb-2"></div>
@@ -342,7 +342,7 @@
 </section>
 
 <!-- FEATURES -->
-<section class="features-section">
+<section id="features" class="features-section">
     <div class="section-inner">
         <div class="section-header text-center">
             <span class="section-label">Features</span>
@@ -415,7 +415,7 @@
 </section>
 
 <!-- QUICK START -->
-<section class="quickstart-section">
+<section id="installation" class="quickstart-section">
     <div class="section-inner">
         <div class="section-header text-center">
             <span class="section-label">Installation</span>
@@ -425,31 +425,26 @@
         <div class="steps-grid">
             <div class="step-card">
                 <div class="step-number">1</div>
-                <h4>Install PacketEvents</h4>
-                <p>Download <a href="https://modrinth.com/plugin/packetevents" target="_blank" rel="noopener">PacketEvents 2.x</a> and drop it in your <code>plugins/</code> folder. Required dependency.</p>
-            </div>
-            <div class="step-card">
-                <div class="step-number">2</div>
-                <h4>Install FPP</h4>
+                <h4>Download FPP</h4>
                 <p>Download the latest <code>fpp-*.jar</code> from <a href="https://modrinth.com/plugin/fake-player-plugin-(fpp)" target="_blank" rel="noopener">Modrinth</a> and place it in <code>plugins/</code>.</p>
             </div>
             <div class="step-card">
-                <div class="step-number">3</div>
+                <div class="step-number">2</div>
                 <h4>Restart Server</h4>
                 <p>Start your server. FPP auto-generates <code>config.yml</code>, <code>bot-names.yml</code>, <code>bot-messages.yml</code>, and more.</p>
             </div>
             <div class="step-card">
-                <div class="step-number">4</div>
+                <div class="step-number">3</div>
                 <h4>Set Permissions</h4>
                 <p>Give yourself <code>fpp.*</code> for full access, or configure granular permissions with LuckPerms for your staff and players.</p>
             </div>
             <div class="step-card">
-                <div class="step-number">5</div>
+                <div class="step-number">4</div>
                 <h4>Spawn Bots</h4>
                 <p>Run <code>/fpp spawn 5</code> in-game. Five bots will join with random names, real skins, and full tab-list entries.</p>
             </div>
             <div class="step-card">
-                <div class="step-number">6</div>
+                <div class="step-number">5</div>
                 <h4>Customise</h4>
                 <p>Edit <code>config.yml</code> and run <code>/fpp reload</code> to apply changes live. Check the <a href="/wiki">Wiki</a> for all options.</p>
             </div>
@@ -458,7 +453,7 @@
 </section>
 
 <!-- COMMANDS -->
-<section class="commands-section">
+<section id="commands" class="commands-section">
     <div class="section-inner">
         <div class="section-header">
             <span class="section-label">Commands</span>
@@ -505,11 +500,6 @@
                 <span class="req-badge required">Required</span>
                 <h4>☕ Java 21+</h4>
                 <p>JDK 21 or later. Oracle or Eclipse Temurin recommended.</p>
-            </div>
-            <div class="req-card">
-                <span class="req-badge required">Required</span>
-                <h4>📦 PacketEvents 2.x</h4>
-                <p>Used for tab-list packet integration. Place alongside FPP in <code>plugins/</code>.</p>
             </div>
             <div class="req-card">
                 <span class="req-badge optional">Optional</span>
@@ -590,7 +580,7 @@
                     <img src="/Icon/FPP.png" alt="FPP Logo" class="logo-icon">
                     <span class="logo-text" style="font-size:1.125rem;">Fake Player Plugin</span>
                 </a>
-                <p>The most advanced fake player plugin for Paper 1.21.x. Built by Bill_Hub.</p>
+                <p>The most advanced fake player plugin for Paper 1.21.x. Built by Bill_Hub aka El_Pepes.</p>
             </div>
             <div class="footer-col">
                 <h4>Download</h4>
@@ -615,13 +605,20 @@
                 <h4>Community</h4>
                 <ul>
                     <li><a href="https://discord.gg/QSN7f67nkJ" target="_blank" rel="noopener">Discord</a></li>
-                    <li><a href="https://github.com/Pepe-tf/Fake-Player-Plugin-Public-" target="_blank" rel="noopener">GitHub</a></li>
                     <li><a href="https://ko-fi.com/fakeplayerplugin" target="_blank" rel="noopener">Ko-fi</a></li>
+                </ul>
+            </div>
+            <div class="footer-col">
+                <h4>Legal</h4>
+                <ul>
+                    <li><a href="/legal/privacy-policy">Privacy Policy</a></li>
+                    <li><a href="/legal/terms-of-service">Terms of Service</a></li>
+                    <li><a href="/legal/copyright">Copyright &amp; License</a></li>
                 </ul>
             </div>
         </div>
         <div class="footer-bottom">
-            <p>&copy; 2026 Fake Player Plugin · Built for Paper 1.21.x · by Bill_Hub</p>
+            <p>&copy; 2026 Fake Player Plugin. All rights reserved. · Made by Bill_Hub</p>
             <div class="footer-badges">
                 <span class="footer-badge"><span class="footer-badge-dot dot-purple"></span>v1.5.8</span>
                 <span class="footer-badge"><span class="footer-badge-dot dot-blue"></span>Paper 1.21.x</span>
@@ -647,6 +644,60 @@
         document.querySelector('.site-header').style.boxShadow =
             window.scrollY > 10 ? '0 4px 20px var(--shadow-lg)' : '0 2px 8px var(--shadow)';
     }, { passive: true });
+
+    // ── Smooth scroll with offset for fixed header ──────────────────────────
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener('click', function (e) {
+            e.preventDefault();
+            const targetId = this.getAttribute('href');
+            if (targetId === '#') return;
+
+            const targetElement = document.querySelector(targetId);
+            if (targetElement) {
+                const headerOffset = 80; // Height of fixed header
+                const elementPosition = targetElement.getBoundingClientRect().top;
+                const offsetPosition = elementPosition + window.pageYOffset - headerOffset;
+
+                window.scrollTo({
+                    top: offsetPosition,
+                    behavior: 'smooth'
+                });
+
+                // Update active link
+                document.querySelectorAll('.nav-link').forEach(link => {
+                    link.classList.remove('active');
+                });
+                this.classList.add('active');
+            }
+        });
+    });
+
+    // ── Highlight active section in nav on scroll ───────────────────────────
+    const sections = document.querySelectorAll('section[id]');
+    const navLinks = document.querySelectorAll('.nav-link[href^="#"]');
+
+    function highlightNav() {
+        let current = '';
+        const headerOffset = 100;
+
+        sections.forEach(section => {
+            const sectionTop = section.offsetTop;
+            const sectionHeight = section.clientHeight;
+            if (window.pageYOffset >= (sectionTop - headerOffset)) {
+                current = section.getAttribute('id');
+            }
+        });
+
+        navLinks.forEach(link => {
+            link.classList.remove('active');
+            if (link.getAttribute('href') === `#${current}`) {
+                link.classList.add('active');
+            }
+        });
+    }
+
+    window.addEventListener('scroll', highlightNav, { passive: true });
+    highlightNav(); // Run on page load
 
     // ── Count-up animation ──────────────────────────────────────────────────
     function animateCount(element, target, duration = 1500, suffix = '') {

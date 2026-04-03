@@ -314,7 +314,7 @@ For better performance with many bots:
 
 ### 💬 **Get Support**
 - **Discord:** [Join Community](https://discord.gg/QSN7f67nkJ) — Fastest response
-- **GitHub:** [Report Issues](https://github.com/Pepe-tf/Fake-Player-Plugin-Public-) — Bug reports
+- **Discord:** [Report Issues](https://discord.gg/QSN7f67nkJ) — Bug reports
 - **Wiki:** [Browse Docs](.) — Comprehensive guides
 
 ### 📚 **Additional Resources**

@@ -6,20 +6,31 @@
     { "src": "frontend/api/online-stats.js", "use": "@vercel/node"   },
     { "src": "frontend/index.html",          "use": "@vercel/static" },
     { "src": "frontend/wiki.html",           "use": "@vercel/static" },
+    { "src": "frontend/legal.html",          "use": "@vercel/static" },
     { "src": "frontend/wiki-styles.css",     "use": "@vercel/static" },
     { "src": "frontend/wiki-script.js",      "use": "@vercel/static" },
     { "src": "frontend/Icon/**",             "use": "@vercel/static" },
-    { "src": "frontend/wiki/**",             "use": "@vercel/static" }
+    { "src": "frontend/wiki/**",             "use": "@vercel/static" },
+    { "src": "frontend/legal/**",            "use": "@vercel/static" }
   ],
   "routes": [
     { "src": "/api/check-update",  "dest": "/frontend/api/check-update.js" },
     { "src": "/api/status",        "dest": "/frontend/api/status.js"       },
     { "src": "/api/online-stats",  "dest": "/frontend/api/online-stats.js" },
+
     { "src": "/wiki-styles.css",   "dest": "/frontend/wiki-styles.css"     },
     { "src": "/wiki-script.js",    "dest": "/frontend/wiki-script.js"      },
     { "src": "/Icon/(.*)",         "dest": "/frontend/Icon/$1"             },
+
     { "src": "/wiki/(.+\\.md)",    "dest": "/frontend/wiki/$1"             },
+
+    { "src": "/legal/(.+\\.md)",   "dest": "/frontend/legal/$1"            },
+    { "src": "/legal",             "status": 301, "headers": { "Location": "/legal/privacy-policy" } },
+    { "src": "/legal/(privacy-policy|terms-of-service|copyright)", "dest": "/frontend/legal.html" },
+    { "src": "/legal/(.*)",        "status": 301, "headers": { "Location": "/legal/privacy-policy" } },
+
     { "src": "/wiki(.*)",          "dest": "/frontend/wiki.html"           },
+
     { "src": "/",                  "dest": "/frontend/index.html"          },
     { "src": "/(.*)",              "dest": "/frontend/index.html"          }
   ],
@@ -42,21 +53,44 @@
     {
       "source": "/wiki-styles.css",
       "headers": [
-        { "key": "Content-Type", "value": "text/css; charset=utf-8" },
+        { "key": "Content-Type",  "value": "text/css; charset=utf-8" },
         { "key": "Cache-Control", "value": "public, max-age=3600" }
       ]
     },
     {
       "source": "/wiki-script.js",
       "headers": [
-        { "key": "Content-Type", "value": "application/javascript; charset=utf-8" },
+        { "key": "Content-Type",  "value": "application/javascript; charset=utf-8" },
         { "key": "Cache-Control", "value": "public, max-age=3600" }
       ]
     },
     {
-      "source": "/(index|wiki).html",
+      "source": "/(index|wiki|legal).html",
       "headers": [
         { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }
+      ]
+    },
+    {
+      "source": "/wiki/(.*\\.md)",
+      "headers": [
+        { "key": "Content-Type",  "value": "text/plain; charset=utf-8" },
+        { "key": "Cache-Control", "value": "public, max-age=300" }
+      ]
+    },
+    {
+      "source": "/legal/(.*\\.md)",
+      "headers": [
+        { "key": "Content-Type",  "value": "text/plain; charset=utf-8" },
+        { "key": "Cache-Control", "value": "public, max-age=300" }
+      ]
+    },
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "X-Frame-Options",        "value": "SAMEORIGIN" },
+        { "key": "X-XSS-Protection",       "value": "1; mode=block" },
+        { "key": "Referrer-Policy",        "value": "strict-origin-when-cross-origin" }
       ]
     }
   ]

@@ -982,7 +982,7 @@ rm plugins/fpp-*.jar
 - Screen sharing for complex issues  
 - Community troubleshooting
 
-**GitHub Issues:** [Report Bugs](https://github.com/Pepe-tf/Fake-Player-Plugin-Public-)
+**Discord:** [Report Bugs](https://discord.gg/QSN7f67nkJ)
 - Bug reports with logs
 - Feature requests
 - Technical discussions

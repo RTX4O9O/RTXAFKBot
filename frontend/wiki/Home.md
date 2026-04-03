@@ -226,7 +226,7 @@ FPP provides **29+ placeholders** for use with other plugins:
 
 ### 💬 **Get Help**
 - **Discord Server:** [Join Community](https://discord.gg/QSN7f67nkJ)
-- **GitHub Issues:** [Report Bugs](https://github.com/Pepe-tf/Fake-Player-Plugin-Public-)
+- **Discord:** [Report Bugs](https://discord.gg/QSN7f67nkJ)
 - **Wiki:** You're reading it! 📚
 
 ### 📢 **Stay Updated**  

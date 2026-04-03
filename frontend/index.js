@@ -144,16 +144,19 @@ function findBestObject(result) {
 const projectRoot = findProjectRoot(__dirname);
 console.log("Using project root:", projectRoot);
 
-// ── Static assets (CSS, JS, icons — no HTML) ────────────────────────────────
-// Must come AFTER /api routes to avoid conflicts
+// ── Static assets ────────────────────────────────────────────────────────────
+// Serve all static files (CSS, JS, images, fonts, .md) from the frontend dir.
+// index:false prevents directory index serving; HTML files are handled by explicit routes below.
 app.use(express.static(__dirname, {
   dotfiles: 'deny',
   index: false,
-  extensions: ['css', 'png', 'jpg', 'svg', 'ico', 'woff', 'woff2']  // Removed 'js' to not catch /api/*.js
 }));
 
-// Serve wiki markdown source files
-app.use('/wiki', express.static(path.join(__dirname, 'wiki')));
+// Serve wiki markdown source files at /wiki/*.md
+app.use('/wiki', express.static(path.join(__dirname, 'wiki'), { dotfiles: 'deny' }));
+
+// Serve legal markdown source files at /legal/*.md
+app.use('/legal', express.static(path.join(__dirname, 'legal'), { dotfiles: 'deny' }));
 
 // ── Protected API routes ─────────────────────────────────────────────────────
 
@@ -408,19 +411,25 @@ app.get("/api/check-update", protectAPI, async (req, res) => {
 
 
 // ── Page routes ─────────────────────────────────────────────────────────────
+
 // Home page
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// Wiki (any /wiki or /wiki/* path serves the SPA shell; JS handles the hash)
-app.get('/wiki', (req, res) => {
+// Wiki SPA shell — /wiki and /wiki/<anything that isn't a .md file>
+app.get(['/wiki', '/wiki/*'], (req, res) => {
   res.sendFile(path.join(__dirname, 'wiki.html'));
 });
-app.get('/wiki/*', (req, res) => {
-  // Markdown fetch requests (.md) are already handled by the static middleware above.
-  // Anything else (e.g. /wiki/some-page) gets the wiki SPA shell.
-  res.sendFile(path.join(__dirname, 'wiki.html'));
+
+// Legal pages — /legal redirects to privacy policy by default
+app.get('/legal', (req, res) => {
+  res.redirect(301, '/legal/privacy-policy');
+});
+
+// Legal SPA shell — /legal/<page>  (.md files already handled by static middleware above)
+app.get('/legal/*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'legal.html'));
 });
 
 // ── Catch-all: unknown routes → home page ───────────────────────────────────
