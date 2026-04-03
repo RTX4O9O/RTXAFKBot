@@ -394,45 +394,26 @@ Placeholders: [FONT=monospace]{prefix}[/FONT] (LP prefix), [FONT=monospace]{bot_
 
 [SIZE=5][B]v1.5.6[/B][/SIZE] [I](2026-04-03)[/I]
 
-[B]Knockback fix (1.21.9 – 1.21.11)[/B]
+[B]Knockback fix (1.21.9–1.21.11)[/B]
 [LIST]
 [*]Bots now correctly receive knockback on 1.21.9+ servers
-[*]In MC 1.21.9 Mojang replaced the individual getXa/Ya/Za() packet accessors with a single getMovement() → Vec3; the old code silently skipped knockback because all accessors returned null
-[*]New tiered strategy system resolves the correct API once at startup and caches it — zero reflection overhead per hit:
-[LIST]
-[*]GET_MOVEMENT (1.21.9+): packet.getMovement() → Vec3 → player.lerpMotion(Vec3) (matches hello09x/fakeplayer reference plugin)
-[*]GET_XA (≤ 1.21.8): packet.getXa/Ya/Za() → lerpMotion(double,double,double) or setDeltaMovement(Vec3) fallback
-[*]NONE: no compatible API found — silently skipped, debug-logged
-[/LIST]
-[*]Enable logging.debug.nms: true to see which strategy was selected on first use
+[*]Tiered strategy system auto-detects the correct MC version API at startup (zero reflection overhead per hit)
+[*]GET_MOVEMENT (1.21.9+): uses packet.getMovement() → Vec3 → player.lerpMotion(Vec3)
+[*]GET_XA (≤1.21.8): uses packet.getXa/Ya/Za() → lerpMotion(double,double,double) or setDeltaMovement(Vec3) fallback
 [/LIST]
 
 [B]Double-disconnect crash fix (Paper 1.21+)[/B]
 [LIST]
-[*]Fixed IllegalStateException: Already retired spam in server logs when a bot is slain
-[*]Root cause: injectFakeListener was replacing ServerPlayer.connection but not Connection.packetListener — the field Connection.handleDisconnection() uses to call onDisconnect(); the vanilla SGPL (with no double-retirement guard) was being called instead of our override
-[*]Fix: injectPacketListenerIntoConnection() now scans the Connection object's field hierarchy at spawn time and replaces the vanilla listener reference with our FakeServerGamePacketListenerImpl; the existing onDisconnect try-catch then correctly suppresses the second "Already retired" error
-[*]Side-effect improvement: Connection.tick() now calls our fake listener's tick() instead of the vanilla SGPL, eliminating any lingering awaitingPositionFromClient processing
+[*]Fixed IllegalStateException: Already retired spam when bots are slain
+[*]injectPacketListenerIntoConnection() now updates both ServerPlayer.connection AND Connection.packetListener fields
+[*]Ensures our onDisconnect override handles double-retirement gracefully
 [/LIST]
 
 [B]Bot Protection System[/B]
 [LIST]
-[*][B]Command blocking[/B] — bots can no longer execute commands from ANY source (4-layer protection system)
-[*][B]Lobby spawn fix[/B] — 5-tick grace period prevents lobby plugins from teleporting bots during spawn
-[*]New BotCommandBlocker listener blocks commands at LOWEST, HIGHEST, and MONITOR priorities
-[*]New BotSpawnProtectionListener prevents lobby/spawn plugin teleports
-[*]Command suggestion blocking prevents auto-command discovery
-[*]Blocks all execution paths: typing, Player.performCommand(), Bukkit.dispatchCommand()
-[*]Works with first-join command plugins, auto-command schedulers, and permission-based executors
-[/LIST]
-
-[B]Technical[/B]
-[LIST]
-[*]Enhanced event handling with ignoreCancelled checks
-[*]Smart teleport cause filtering (blocks PLUGIN/UNKNOWN, allows COMMAND)
-[*]Debug logging via logging.debug.nms: true
-[*]Self-cleaning protection sets (no memory leaks)
-[*]100% backward compatible
+[*]Command blocking — bots can no longer execute commands from ANY source (4-layer protection)
+[*]Lobby spawn fix — 5-tick grace period prevents lobby plugins from teleporting bots
+[*]New BotCommandBlocker and BotSpawnProtectionListener
 [/LIST]
 
 [SIZE=5][B]v1.5.4[/B][/SIZE] [I](2026-04-03)[/I]
