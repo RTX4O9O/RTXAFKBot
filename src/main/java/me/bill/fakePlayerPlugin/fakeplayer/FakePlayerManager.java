@@ -32,6 +32,18 @@ public class FakePlayerManager {
     private final Set<String> usedNames = new HashSet<>();
     /** Per-player spawn cooldown: UUID → last spawn timestamp (ms). */
     private final Map<UUID, Long> spawnCooldowns = new ConcurrentHashMap<>();
+    /**
+     * Smooth head rotation state for the head-AI system.
+     * float[0] = current yaw, float[1] = current pitch (both in degrees).
+     * Initialised lazily on first head-AI tick for each bot.
+     */
+    private final Map<UUID, float[]> botHeadRotation = new ConcurrentHashMap<>();
+    /**
+     * The rotation a bot faces when idle (i.e. no visible target nearby).
+     * Captured from the spawn location on first head-AI tick so the bot always
+     * returns to its original facing direction instead of freezing mid-track.
+     */
+    private final Map<UUID, float[]> botSpawnRotation = new ConcurrentHashMap<>();
     /** Flag set to true during bot restoration, cleared after prefix refresh completes. */
     private volatile boolean restorationInProgress = false;
     private ChunkLoader     chunkLoader;
@@ -94,12 +106,92 @@ public class FakePlayerManager {
             List<Player> online = new ArrayList<>(Bukkit.getOnlinePlayers());
             for (FakePlayer fp : activePlayers.values()) {
                 Player bot = fp.getPlayer();
-                if (bot == null || !bot.isValid()) continue;
+                // Skip bots that are dead, offline, or invalid — they cannot be ticked.
+                // Dead bots are handled by FakePlayerEntityListener.onEntityDeath and will
+                // be removed shortly; ticking them would cause NMS errors.
+                if (bot == null || !bot.isValid() || !bot.isOnline() || bot.isDead()) continue;
                 Location before = bot.getLocation();
 
                 // Physics tick: apply gravity + integrate velocity → moves bot server-side
                 if (!fp.isFrozen()) {
+                    // Swim AI: mimic a player holding spacebar in water so the bot swims
+                    // up to the surface instead of sinking.  We set the NMS `jumping` flag
+                    // before doTick() so the vanilla fluid-travel code applies the upward
+                    // impulse (+0.04 m/s) on this same tick.
+                    // The flag MUST be explicitly cleared when outside fluid — bots have no
+                    // real client to reset it, so it would persist and cause endless jumping
+                    // on land after exiting water.
+                    if (Config.swimAiEnabled()) {
+                        NmsPlayerSpawner.setJumping(bot, bot.isInWater() || bot.isInLava());
+                    }
                     NmsPlayerSpawner.tickPhysics(bot);
+
+                    // Head AI: smoothly rotate the bot's head toward the nearest visible
+                    // real player within the configured look-range.
+                    // Visibility is checked via hasLineOfSight so bots never stare through walls.
+                    if (Config.headAiEnabled()) {
+                        double rangeSq = Config.headAiLookRange() * Config.headAiLookRange();
+                        float  speed   = Config.headAiTurnSpeed();
+
+                        // Find the nearest real (non-bot) player within range AND line-of-sight
+                        Player target = null;
+                        double bestSq = rangeSq;
+                        for (Player p : online) {
+                            if (activePlayers.containsKey(p.getUniqueId())) continue; // skip bots
+                            if (!p.getWorld().equals(bot.getWorld())) continue;
+                            double dSq = bot.getLocation().distanceSquared(p.getLocation());
+                            if (dSq > bestSq) continue;              // outside range
+                            if (!bot.hasLineOfSight(p)) continue;    // wall in the way
+                            bestSq = dSq;
+                            target = p;
+                        }
+
+                        // Retrieve (or lazily initialise) this bot's current smooth rotation
+                        float[] rot = botHeadRotation.computeIfAbsent(fp.getUuid(), k -> {
+                            Location l = bot.getLocation();
+                            return new float[]{l.getYaw(), l.getPitch()};
+                        });
+
+                        // Capture the spawn (idle) rotation once per bot — used as the
+                        // target when no visible player is within range.
+                        float[] spawnRot = botSpawnRotation.computeIfAbsent(fp.getUuid(), k -> {
+                            Location sl = fp.getSpawnLocation();
+                            if (sl != null) return new float[]{sl.getYaw(), sl.getPitch()};
+                            Location l = bot.getLocation();
+                            return new float[]{l.getYaw(), l.getPitch()};
+                        });
+
+                        float prevYaw   = rot[0];
+                        float prevPitch = rot[1];
+
+                        if (target != null) {
+                            // Calculate the yaw/pitch required to face the target's eye
+                            Location eye = bot.getEyeLocation();
+                            Location tgt = target.getEyeLocation();
+                            double dx    = tgt.getX() - eye.getX();
+                            double dy    = tgt.getY() - eye.getY();
+                            double dz    = tgt.getZ() - eye.getZ();
+                            double horiz = Math.sqrt(dx * dx + dz * dz);
+                            float targetYaw   = (float) (-Math.toDegrees(Math.atan2(dx, dz)));
+                            float targetPitch = (float) (-Math.toDegrees(Math.atan2(dy, horiz)));
+                            rot[0] = lerpAngle(rot[0], targetYaw,   speed);
+                            rot[1] = lerpAngle(rot[1], targetPitch, speed);
+                        } else {
+                            // No visible target — smoothly return to spawn-facing direction.
+                            rot[0] = lerpAngle(rot[0], spawnRot[0], speed);
+                            rot[1] = lerpAngle(rot[1], spawnRot[1], speed);
+                        }
+
+                        // Only send packets when rotation actually changed (avoids 20 pkt/s spam)
+                        if (Math.abs(rot[0] - prevYaw) > 0.01f || Math.abs(rot[1] - prevPitch) > 0.01f) {
+                            bot.setRotation(rot[0], rot[1]);
+                            NmsPlayerSpawner.setHeadYaw(bot, rot[0]);
+                            for (Player p : online) {
+                                if (p.getUniqueId().equals(fp.getUuid())) continue;
+                                PacketHelper.sendRotation(p, fp, rot[0], rot[1], rot[0]);
+                            }
+                        }
+                    }
                 }
 
                 // Broadcast updated position to nearby real players.
@@ -123,11 +215,10 @@ public class FakePlayerManager {
     }
 
     /**
-     * Returns true when the plugin is configured to spawn physical bodies
-     * and the runtime compatibility check did not disable them.
+     * Returns true when the plugin is configured to spawn physical bodies.
      */
     public boolean physicalBodiesEnabled() {
-        return Config.spawnBody() && !plugin.isCompatibilityRestricted();
+        return Config.spawnBody();
     }
 
     /** Returns true when restoration is currently in progress (bots being restored from persistence). */
@@ -438,8 +529,10 @@ public class FakePlayerManager {
      */
     private void spawnBodyAndFinish(FakePlayer fp, Location spawnLoc) {
         // ── Final spawn pipeline ──────────────────────────────────────────────
-        // Skins are disabled, but we keep this callback boundary so spawn guards
-        // remain centralised in one place.
+        // Fast path: if the skin is already cached the lambda fires on this tick.
+        // Async path: the lambda fires immediately (bot spawns without skin), and
+        //   once the Mojang/Mineskin fetch completes the skin is pushed to the live
+        //   entity — onSkinApplied refreshes display names for all online players.
         FakePlayerBody.resolveAndFinish(plugin, fp, spawnLoc, () -> {
             // Guard: bot may have been removed before the body spawn callback fired.
             // Abort entirely so no stale tab-list add, scoreboard entry, or join
@@ -452,7 +545,7 @@ public class FakePlayerManager {
 
             // 1. Spawn body — NMS ServerPlayer entity
             // Skip if bodyless flag is set (console spawn without location data)
-            if (!fp.isBodyless() && Config.spawnBody() && !plugin.isCompatibilityRestricted()) {
+            if (!fp.isBodyless() && Config.spawnBody()) {
                 Player body = FakePlayerBody.spawn(fp, spawnLoc);
                 if (body != null) {
                     fp.setPhysicsEntity(body);
@@ -465,9 +558,6 @@ public class FakePlayerManager {
             } else if (fp.isBodyless()) {
                 // Bodyless spawn: no physical body, tab-list only
                 Config.debug("Bodyless spawn: skipping physical body for " + fp.getName());
-            } else if (plugin.isCompatibilityRestricted()) {
-                // Compatibility mode: don't spawn physical bodies, keep tab-list only
-                Config.debug("Compatibility restricted: skipping physical body spawn for " + fp.getName());
             }
 
             // 2. Send tab list
@@ -556,6 +646,17 @@ public class FakePlayerManager {
             }
 
             if (swapAI != null) swapAI.schedule(fp);
+        }, () -> {
+            // onSkinApplied — called on the main thread after an async skin fetch completes
+            // and Paper's setPlayerProfile() has been applied to the live entity.
+            // Re-send display name packets so our custom format overwrites whatever
+            // Paper's internal ADD_PLAYER packet set.
+            if (!activePlayers.containsKey(fp.getUuid())) return;
+            if (Config.tabListEnabled()) {
+                for (Player p : Bukkit.getOnlinePlayers()) {
+                    PacketHelper.sendTabListDisplayNameUpdate(p, fp);
+                }
+            }
         });
     }
 
@@ -920,6 +1021,8 @@ public class FakePlayerManager {
     public void swapRemove(FakePlayer fp) {
         activePlayers.remove(fp.getUuid());
         usedNames.remove(fp.getName());
+        botHeadRotation.remove(fp.getUuid());
+        botSpawnRotation.remove(fp.getUuid());
         if (chunkLoader != null) chunkLoader.releaseForBot(fp);
         if (botTabTeam  != null) botTabTeam.removeBot(fp);
         if (db != null) db.recordRemoval(fp.getUuid(), "SWAP");
@@ -982,6 +1085,8 @@ public class FakePlayerManager {
         activePlayers.values().removeIf(fp -> {
             if (!fp.getName().equals(name)) return false;
             usedNames.remove(fp.getName());
+            botHeadRotation.remove(fp.getUuid());
+            botSpawnRotation.remove(fp.getUuid());
             if (swapAI != null) swapAI.cancel(fp.getUuid());
             if (db != null) db.recordRemoval(fp.getUuid(), "DIED");
             Config.debug("Removed from registry: " + name);
@@ -1492,6 +1597,24 @@ public class FakePlayerManager {
     public void updateAllBotPrefixes() {
         // No-op - LP handles prefix updates natively for real players
         Config.debug("updateAllBotPrefixes: skipped (bots are real players, LP handles natively)");
+    }
+
+    // ── Head-AI helpers ───────────────────────────────────────────────────────
+
+    /**
+     * Linearly interpolates between two angles in degrees, always taking the
+     * shortest arc across the 360°/−180° boundary.
+     *
+     * @param from  current angle in degrees
+     * @param to    target angle in degrees
+     * @param t     blend factor – 0 = stay, 1 = snap immediately
+     * @return interpolated angle
+     */
+    private static float lerpAngle(float from, float to, float t) {
+        float diff = to - from;
+        while (diff >  180f) diff -= 360f;
+        while (diff < -180f) diff += 360f;
+        return from + diff * t;
     }
 
 }

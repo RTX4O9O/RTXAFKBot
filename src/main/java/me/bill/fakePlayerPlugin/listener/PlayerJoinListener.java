@@ -28,21 +28,6 @@ public class PlayerJoinListener implements Listener {
         // Skip NMS bot players — they show vanilla join messages automatically
         if (manager.getByName(event.getPlayer().getName()) != null) return;
 
-        // Also send compatibility warnings to admins/ops if configured
-        try {
-            var warnComp = plugin.getCompatibilityWarning();
-            if (warnComp != null && me.bill.fakePlayerPlugin.config.Config.warningsNotifyAdmins()) {
-                if (me.bill.fakePlayerPlugin.permission.Perm.hasOrOp(event.getPlayer(), me.bill.fakePlayerPlugin.permission.Perm.ALL)) {
-                    try {
-                        // Preferred: send as Component (Adventure API)
-                        event.getPlayer().sendMessage(warnComp);
-                    } catch (NoSuchMethodError | NoClassDefFoundError e) {
-                        // Older Bukkit without Adventure: fall back to plain text (strip tags)
-                        event.getPlayer().sendMessage(warnComp.toString());
-                    }
-                }
-            }
-        } catch (Throwable ignored) {}
 
         // Send any stored update notification to admins/ops who join after startup
         try {

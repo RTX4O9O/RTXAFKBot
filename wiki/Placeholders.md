@@ -4,10 +4,11 @@
 
 # Placeholders (PlaceholderAPI)
 
-FPP provides **18+ PlaceholderAPI placeholders** organized into four categories.  
+FPP provides **24+ PlaceholderAPI placeholders** organized into five categories.  
 Requires [PlaceholderAPI](https://www.spigotmc.org/resources/placeholderapi.6245/) — FPP auto-registers on startup, no `/papi ecloud` needed.
 
 > For the full technical reference including integration examples and troubleshooting, see [PLACEHOLDERAPI.md](../PLACEHOLDERAPI.md).
+> **Version:** 1.5.4+ · **Total placeholders:** 26+ (8 server-wide · 9 config state · 3 network · 3 per-world dynamic · 3 player-relative)
 
 ---
 
@@ -24,7 +25,7 @@ Same value for all players — no player context required.
 | `%fpp_online%` | `integer` | Alias for `%fpp_total%` | `17` |
 | `%fpp_frozen%` | `integer` | Bots frozen via `/fpp freeze` | `2` |
 | `%fpp_names%` | `string` | Comma-separated bot display names | `Steve, Alex, Notch` |
-| `%fpp_version%` | `string` | Plugin version | `1.5.0` |
+| `%fpp_version%` | `string` | Plugin version | `1.5.4` |
 
 ---
 
@@ -42,6 +43,19 @@ Reflect live `config.yml` values — update instantly after `/fpp reload`.
 | `%fpp_tab%` | `on` / `off` | `tab-list.enabled` |
 | `%fpp_skin%` | `auto` / `custom` / `off` | `skin.mode` |
 | `%fpp_max_health%` | number | `combat.max-health` |
+| `%fpp_persistence%` | `on` / `off` | `persistence.enabled` |
+
+---
+
+## Network / Proxy Placeholders
+
+Useful when running FPP in NETWORK mode across multiple backend servers.
+
+| Placeholder | Values / Type | Description |
+|-------------|---------------|-------------|
+| `%fpp_network%` | `on` / `off` | `on` when `database.mode: NETWORK`; `off` otherwise |
+| `%fpp_server_id%` | `string` | Value of `database.server-id` for this server |
+| `%fpp_spawn_cooldown%` | `integer` | Configured spawn cooldown in seconds (`0` = off) |
 
 ---
 
@@ -140,6 +154,13 @@ header:
 &7Skin: %fpp_skin%  &8│  &7Tab: %fpp_tab%
 ```
 
+### Network / Proxy Status Board
+
+```
+&7Network: %fpp_network%  &8│  &7Server: %fpp_server_id%
+&7Cooldown: %fpp_spawn_cooldown%s  &8│  &7Persist: %fpp_persistence%
+```
+
 ### Using PAPI Placeholders in Tab-List Format
 
 ```yaml
@@ -162,6 +183,9 @@ bot-name:
 | Per-world placeholder always `0` | Check world name — case-insensitive but spelling must match; use underscores for spaces |
 | Config state shows stale value | Run `/fpp reload` — config state placeholders update immediately |
 | `%fpp_pushable%` or `%fpp_damageable%` wrong | Edit `body.pushable` / `body.damageable` in config.yml then run `/fpp reload` |
+| `%fpp_network%` always `off` | Only `on` when `database.enabled: true` and `database.mode: NETWORK` |
+| `%fpp_server_id%` shows `default` | Set `database.server-id` in config.yml to a unique value per server |
+| `%fpp_spawn_cooldown%` shows `0` | `spawn-cooldown` is `0` (disabled) by default — set a positive integer to enable |
 
 ---
 

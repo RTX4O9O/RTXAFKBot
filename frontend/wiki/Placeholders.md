@@ -5,6 +5,8 @@ FPP registers a full **PlaceholderAPI** expansion (`%fpp_…%`) that is availabl
 **Requirement:** [PlaceholderAPI](https://www.spigotmc.org/resources/placeholderapi.6245/) must be installed.  
 No configuration is needed — the expansion registers automatically when PAPI is detected on startup.
 
+> **Version:** 1.5.4+ · **Total placeholders:** 26+ · **Auto-register:** Yes
+
 ---
 
 ## Server-Wide Placeholders
@@ -17,17 +19,31 @@ These are player-independent and return the same value regardless of who request
 | `%fpp_max%` | Number / `∞` | Global max-bots cap (`limits.max-bots`; `∞` when 0) |
 | `%fpp_real%` | Number | Real (non-bot) online player count |
 | **`%fpp_total%`** | **Number** | **Real players + bots combined** |
+| `%fpp_online%` | Number | Alias for `%fpp_total%` |
 | `%fpp_frozen%` | Number | Number of currently frozen bots |
 | `%fpp_names%` | String | Comma-separated list of active bot display names |
 | `%fpp_chat%` | `on` / `off` | Whether fake-chat is enabled |
 | `%fpp_swap%` | `on` / `off` | Whether bot-swap/rotation is enabled |
-| `%fpp_skin%` | `auto` / `custom` / `off` | Current skin mode |
+| `%fpp_skin%` | `auto` / `custom` / `off` | Current skin mode (`skin.mode` in config) |
 | `%fpp_body%` | `on` / `off` | Whether physical bot bodies are spawned |
 | `%fpp_pushable%` | `on` / `off` | Whether bot bodies are pushable |
 | `%fpp_damageable%` | `on` / `off` | Whether bot bodies can take damage |
 | `%fpp_tab%` | `on` / `off` | Whether bots appear in the tab list |
 | `%fpp_max_health%` | Number | Configured bot max-health (`combat.max-health`) |
+| `%fpp_persistence%` | `on` / `off` | Whether bots are saved and restored on restart |
 | `%fpp_version%` | String | FPP plugin version |
+
+---
+
+## Network / Proxy Placeholders
+
+Useful when running FPP in NETWORK mode across a Velocity or BungeeCord proxy.
+
+| Placeholder | Returns | Description |
+|-------------|---------|-------------|
+| `%fpp_network%` | `on` / `off` | `on` when `database.mode: NETWORK`; `off` in LOCAL mode |
+| `%fpp_server_id%` | String | Value of `database.server-id` for this server |
+| `%fpp_spawn_cooldown%` | Number | Configured spawn cooldown in seconds (`0` = disabled) |
 
 ---
 
@@ -48,7 +64,8 @@ Dynamic variants of the three count placeholders. Replace `<world>` with the act
 %fpp_total_end%         → 3   (everyone in The End)
 ```
 
-> **Note:** Bot world detection uses the live Mannequin position first, then falls back to `spawnLocation` for bodyless bots.
+> **Note:** Bot world detection uses the live NMS ServerPlayer body position.  
+> Bodyless bots fall back to their last recorded spawn location.
 
 ---
 
@@ -108,15 +125,20 @@ fake-chat:
   chat-format: "&7{bot_name}: {message} &8[%fpp_count% bots online]"
 ```
 
-> **Note:** Player-relative placeholders (`%fpp_user_count%` etc.) used inside `tab-list-format` or `chat-format` are resolved with a **null** (server-wide) player context, so they return "0" / the global default.  
+> **Note:** Player-relative placeholders (`%fpp_user_count%` etc.) used inside `tab-list-format` or `chat-format` are resolved with a **null** (server-wide) player context, so they return "0" / the global default.
+
 ## Quick Examples
 
 ```
-%fpp_total%        → 27   (5 real players + 22 bots)
-%fpp_count%        → 22
-%fpp_real%         → 5
-%fpp_user_count%   → 3    (this player owns 3 bots)
-%fpp_user_max%     → 5    (this player can own up to 5)
-%fpp_names%        → "Notch, Dream, Technoblade"
+%fpp_total%             → 27   (5 real players + 22 bots)
+%fpp_count%             → 22
+%fpp_real%              → 5
+%fpp_skin%              → auto
+%fpp_network%           → on   (NETWORK mode active)
+%fpp_server_id%         → survival
+%fpp_spawn_cooldown%    → 30   (30 second cooldown)
+%fpp_user_count%        → 3    (this player owns 3 bots)
+%fpp_user_max%          → 5    (this player can own up to 5)
+%fpp_names%             → "Notch, Dream, Technoblade"
 ```
 

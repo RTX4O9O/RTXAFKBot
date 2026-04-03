@@ -30,17 +30,22 @@ import java.util.stream.Collectors;
  *   <tr><td>{@code %fpp_max%}</td><td>Global max-bots cap (∞ if 0)</td></tr>
  *   <tr><td>{@code %fpp_real%}</td><td>Real (non-bot) players online</td></tr>
  *   <tr><td>{@code %fpp_total%}</td><td>Real players + bots combined</td></tr>
+ *   <tr><td>{@code %fpp_online%}</td><td>Alias for %fpp_total%</td></tr>
  *   <tr><td>{@code %fpp_frozen%}</td><td>Number of frozen bots</td></tr>
  *   <tr><td>{@code %fpp_names%}</td><td>Comma-separated bot display names</td></tr>
  *   <tr><td>{@code %fpp_chat%}</td><td>{@code on}/{@code off} — fake-chat</td></tr>
  *   <tr><td>{@code %fpp_swap%}</td><td>{@code on}/{@code off} — bot swap</td></tr>
- *   <tr><td>{@code %fpp_skin%}</td><td>Skin mode</td></tr>
+ *   <tr><td>{@code %fpp_skin%}</td><td>{@code auto}/{@code custom}/{@code off} — active skin mode</td></tr>
  *   <tr><td>{@code %fpp_body%}</td><td>{@code on}/{@code off} — physical body</td></tr>
  *   <tr><td>{@code %fpp_pushable%}</td><td>{@code on}/{@code off} — body pushable</td></tr>
  *   <tr><td>{@code %fpp_damageable%}</td><td>{@code on}/{@code off} — body damageable</td></tr>
  *   <tr><td>{@code %fpp_tab%}</td><td>{@code on}/{@code off} — tab-list visibility</td></tr>
  *   <tr><td>{@code %fpp_max_health%}</td><td>Bot max-health setting</td></tr>
  *   <tr><td>{@code %fpp_version%}</td><td>Plugin version</td></tr>
+ *   <tr><td>{@code %fpp_network%}</td><td>{@code on}/{@code off} — NETWORK database mode active</td></tr>
+ *   <tr><td>{@code %fpp_server_id%}</td><td>This server's {@code database.server-id} value</td></tr>
+ *   <tr><td>{@code %fpp_persistence%}</td><td>{@code on}/{@code off} — bot persistence on restart</td></tr>
+ *   <tr><td>{@code %fpp_spawn_cooldown%}</td><td>Configured spawn cooldown in seconds (0 = off)</td></tr>
  * </table>
  *
  * <h3>Player-relative (requires online player context)</h3>
@@ -48,6 +53,13 @@ import java.util.stream.Collectors;
  *   <tr><td>{@code %fpp_user_count%}</td><td>Bots owned by this player</td></tr>
  *   <tr><td>{@code %fpp_user_max%}</td><td>Personal bot limit for this player</td></tr>
  *   <tr><td>{@code %fpp_user_names%}</td><td>Comma-separated names of this player's bots</td></tr>
+ * </table>
+ *
+ * <h3>Per-world dynamic</h3>
+ * <table>
+ *   <tr><td>{@code %fpp_count_<world>%}</td><td>Bots in the named world</td></tr>
+ *   <tr><td>{@code %fpp_real_<world>%}</td><td>Real players in the named world</td></tr>
+ *   <tr><td>{@code %fpp_total_<world>%}</td><td>Real + bots in the named world</td></tr>
  * </table>
  */
 public final class FppPlaceholderExpansion extends PlaceholderExpansion {
@@ -91,13 +103,20 @@ public final class FppPlaceholderExpansion extends PlaceholderExpansion {
                                     .collect(Collectors.joining(", "));
             case "chat"       -> Config.fakeChatEnabled()  ? "on" : "off";
             case "swap"       -> Config.swapEnabled()      ? "on" : "off";
-            case "skin"       -> "disabled";
+            // Returns actual skin mode: "auto", "custom", or "off"
+            case "skin"       -> Config.skinMode();
             case "body"       -> Config.spawnBody()        ? "on" : "off";
             case "pushable"   -> Config.bodyPushable()     ? "on" : "off";
             case "damageable" -> Config.bodyDamageable()   ? "on" : "off";
             case "tab"        -> Config.tabListEnabled()   ? "on" : "off";
             case "max_health" -> String.valueOf(Config.maxHealth());
             case "version"    -> plugin.getPluginMeta().getVersion();
+
+            // ── Network / proxy state ─────────────────────────────────────────
+            case "network"        -> Config.isNetworkMode()      ? "on" : "off";
+            case "server_id"      -> Config.serverId();
+            case "persistence"    -> Config.persistOnRestart()   ? "on" : "off";
+            case "spawn_cooldown" -> String.valueOf(Config.spawnCooldown());
 
             // ── Player-relative ────────────────────────────────────────────────
             case "user_count" -> {

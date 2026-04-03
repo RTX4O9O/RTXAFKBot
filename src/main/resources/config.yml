@@ -1,11 +1,11 @@
 # ─────────────────────────────────────────────────────────────────────────────
-#  ꜰᴀᴋᴇ ᴘʟᴀʏᴇʀ ᴘʟᴜɢɪɴ  ·  config.yml  ·  v1.5.0
+#  ꜰᴀᴋᴇ ᴘʟᴀʏᴇʀ ᴘʟᴜɢɪɴ  ·  config.yml  ·  v1.5.4
 #  Run /fpp reload to apply changes without restarting the server.
 #  Colors use MiniMessage: <#0079FF>text</#0079FF>  <gray>text</gray>
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Internal — managed by the migration system. Do NOT edit.
-config-version: 33
+config-version: 36
 # Internal migration version — updated automatically. Do not edit.
 
 language: en         # Language file to use (language/<lang>.yml)
@@ -90,70 +90,19 @@ luckperms:
 #  SKIN
 #
 #  mode: auto   — Mojang skin matching the bot's name. Best for online-mode.
+#                 Bots with generated names appear as default Steve / Alex.
 #  mode: custom — Full control: per-bot overrides, pool, and skins/ folder.
 #  mode: off    — No skin. All bots use default Steve / Alex appearance.
 # ─────────────────────────────────────────────────────────────────────────────
 skin:
   mode: auto
-
-  # Bots always get SOME skin — never spawn as Steve. When the primary lookup
-  # fails (generated name, user bot, rate-limit), this fallback chain runs:
-  #   skins/ folder → pool → fallback-pool (pre-loaded OR on-demand random) → fallback-name
-  # The fallback-pool ensures skin diversity even during server startup before
-  # async preloads complete — a random name is picked on-demand if needed.
-  guaranteed-skin: true
-  fallback-name: Notch    # Real Minecraft account used as LAST-resort skin (only when fallback-pool is empty)
-
-  # Random fallback pool — used when bot name has no Mojang skin (generated names, user bots)
-  # Provides skin diversity instead of all unknown bots using the same fallback-name skin
-  # These are official Minecraft system accounts with vanilla skins. The plugin will:
-  #  1. Pre-load all these skins at startup (async, takes ~2-5 seconds)
-  #  2. If bots spawn before preload completes, randomly pick one and fetch on-demand
-  # This guarantees skin variety even during rapid bot spawning at server start.
-  # List includes: Mojang developers (Notch, jeb_) + MHF_* map marker system accounts
-  fallback-pool:
-    - Notch              # Minecraft creator
-    - jeb_               # Lead developer (rainbow sheep easter egg)
-    - Dinnerbone         # Developer (upside-down easter egg)
-    - Grumm              # Developer (upside-down easter egg)
-    - MHF_Steve          # Default male player skin
-    - MHF_Alex           # Default female player skin
-    - MHF_Herobrine      # Herobrine skin
-    - MHF_Zombie         # Zombie mob skin
-    - MHF_PigZombie      # Zombie Pigman skin
-    - MHF_Skeleton       # Skeleton mob skin
-    - MHF_Creeper        # Creeper mob skin
-    - MHF_Spider         # Spider mob skin
-    - MHF_Enderman       # Enderman mob skin
-    - MHF_Blaze          # Blaze mob skin
-    - MHF_Slime          # Slime mob skin
-    - MHF_Villager       # Villager skin
-    - MHF_Golem          # Iron Golem skin
-    - MHF_Pig            # Pig mob skin
-    - MHF_Sheep          # Sheep mob skin
-    - MHF_Cow            # Cow mob skin
-    - MHF_Chicken        # Chicken mob skin
-    - MHF_Squid          # Squid mob skin
-    - MHF_MushroomCow    # Mooshroom skin
-    - MHF_Ocelot         # Ocelot/Cat skin
-    - MHF_Cactus         # Cactus block skin
-    - MHF_Cake           # Cake block skin
-    - MHF_Chest          # Chest block skin
+  guaranteed-skin: false   # false = bots with no Mojang account use default Steve / Alex
+  clear-cache-on-reload: true
 
   # ── custom mode only ──────────────────────────────────────────────────────
-  overrides: {}           # Per-bot override: bot-name: minecraft-username
-  # overrides:
-  #   Herobrine: Notch
-  #   CoolBot: Technoblade
-
+  overrides: {}           # Per-bot skin override: bot-name: minecraft-username
   pool: []                # Random skin pool — list of Minecraft usernames
-  # pool:
-  #   - Notch
-  #   - Dream
-  #   - Technoblade
-
   use-skin-folder: true   # Scan plugins/FakePlayerPlugin/skins/ for PNG files
-  clear-cache-on-reload: true
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  BOT BODY
@@ -230,16 +179,25 @@ head-ai:
   turn-speed: 0.3   # Rotation smoothing (0.0 = frozen, 1.0 = instant snap)
 
 # ─────────────────────────────────────────────────────────────────────────────
+#  SWIM AI
+#  Bots automatically swim upward when submerged in water or lava, mimicking
+#  a real player holding the spacebar / jump key.  Disable to let bots sink.
+# ─────────────────────────────────────────────────────────────────────────────
+swim-ai:
+  enabled: true   # Set false to let bots sink/drown instead of swimming up
+
+# ─────────────────────────────────────────────────────────────────────────────
 #  COLLISION & PUSH  ·  Advanced — defaults work well for most servers.
 #  Controls how hard players/hits push bots, and how bots separate from each other.
 # ─────────────────────────────────────────────────────────────────────────────
 collision:
-  walk-radius: 0.85        # Radius in which walking into a bot pushes it
-  walk-strength: 0.22      # Push force when walking into a bot
-  hit-strength: 0.45       # Knockback force when hitting a bot
-  bot-radius: 0.90         # Radius for bot-vs-bot separation
-  bot-strength: 0.14       # Separation force between two bots
-  max-horizontal-speed: 0.30  # Maximum push speed cap (all sources)
+  walk-radius: 0.85           # Radius in which walking into a bot pushes it
+  walk-strength: 0.22         # Push force when walking into a bot
+  hit-strength: 0.45          # Knockback force when hitting a bot (regular hit)
+  hit-max-horizontal-speed: 0.80  # Max horizontal speed for hit/explosion knockback
+  bot-radius: 0.90            # Radius for bot-vs-bot separation
+  bot-strength: 0.14          # Separation force between two bots
+  max-horizontal-speed: 0.30  # Maximum push speed cap for walk/separation sources
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  BOT SWAP / ROTATION

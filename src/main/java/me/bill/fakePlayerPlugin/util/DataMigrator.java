@@ -8,6 +8,7 @@ import java.io.*;
 import java.sql.*;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -277,6 +278,145 @@ public final class DataMigrator {
             return '"' + value.replace("\"", "\"\"") + '"';
         }
         return value;
+    }
+
+    // ── Database maintenance helpers ──────────────────────────────────────────
+
+    /**
+     * Removes stale rows from {@code fpp_active_bots} — entries whose UUID
+     * appears <em>only</em> in closed sessions (every matching session row has
+     * {@code removed_at} set). These accumulate after server crashes or when the
+     * plugin is forcefully stopped before the normal {@code onDisable} cleanup runs.
+     *
+     * <p>Safe to run while the server is live: only deletes rows that the plugin
+     * itself would have deleted on a clean shutdown.
+     *
+     * @param plugin  Plugin instance (used for backup and logging context).
+     * @param manager Active {@link DatabaseManager}.
+     * @return Rows deleted, or {@code -1} on failure.
+     */
+    public static int cleanupStaleActiveBots(FakePlayerPlugin plugin, DatabaseManager manager) {
+        Connection conn = manager.getConnection();
+        if (conn == null) {
+            FppLogger.warn("DataMigrator.cleanupStaleActiveBots: database not available.");
+            return -1;
+        }
+        try {
+            // Find active_bot UUIDs where at least one session row exists AND
+            // every matching session row is already closed (removed_at IS NOT NULL).
+            String findSql =
+                    "SELECT a.bot_uuid FROM fpp_active_bots a " +
+                    "WHERE EXISTS (SELECT 1 FROM fpp_bot_sessions s WHERE s.bot_uuid = a.bot_uuid) " +
+                    "AND NOT EXISTS (SELECT 1 FROM fpp_bot_sessions s2 " +
+                    "               WHERE s2.bot_uuid = a.bot_uuid AND s2.removed_at IS NULL)";
+
+            List<String> stale = new ArrayList<>();
+            try (Statement st = conn.createStatement();
+                 ResultSet rs = st.executeQuery(findSql)) {
+                while (rs.next()) stale.add(rs.getString(1));
+            }
+
+            if (stale.isEmpty()) {
+                FppLogger.info("DataMigrator: no stale fpp_active_bots rows found.");
+                return 0;
+            }
+
+            FppLogger.info("DataMigrator: creating backup before cleanup…");
+            BackupManager.createFullBackup(plugin, "pre-db-cleanup");
+
+            int deleted = 0;
+            try (PreparedStatement ps = conn.prepareStatement(
+                    "DELETE FROM fpp_active_bots WHERE bot_uuid=?")) {
+                for (String uuid : stale) {
+                    ps.setString(1, uuid);
+                    deleted += ps.executeUpdate();
+                }
+            }
+            FppLogger.success("DataMigrator: removed " + deleted + " stale fpp_active_bots row(s).");
+            return deleted;
+
+        } catch (SQLException e) {
+            FppLogger.error("DataMigrator.cleanupStaleActiveBots: " + e.getMessage());
+            return -1;
+        }
+    }
+
+    /**
+     * Closes any open session rows ({@code removed_at IS NULL}) that do <em>not</em>
+     * have a corresponding entry in {@code fpp_active_bots}. These "orphaned" sessions
+     * are left by a server crash or forceful shutdown before the plugin could mark them
+     * as removed.
+     *
+     * <p>Closed with reason {@code "ORPHAN_REPAIR"} so they can be identified in audit
+     * queries later.
+     *
+     * @param plugin  Plugin instance.
+     * @param manager Active {@link DatabaseManager}.
+     * @return Sessions repaired, or {@code -1} on failure.
+     */
+    public static int repairOrphanedSessions(FakePlayerPlugin plugin, DatabaseManager manager) {
+        Connection conn = manager.getConnection();
+        if (conn == null) {
+            FppLogger.warn("DataMigrator.repairOrphanedSessions: database not available.");
+            return -1;
+        }
+        try {
+            // Find open sessions whose UUID is NOT in fpp_active_bots
+            String findSql =
+                    "SELECT id FROM fpp_bot_sessions " +
+                    "WHERE removed_at IS NULL " +
+                    "AND bot_uuid NOT IN (SELECT bot_uuid FROM fpp_active_bots)";
+
+            List<Long> orphaned = new ArrayList<>();
+            try (Statement st = conn.createStatement();
+                 ResultSet rs = st.executeQuery(findSql)) {
+                while (rs.next()) orphaned.add(rs.getLong(1));
+            }
+
+            if (orphaned.isEmpty()) {
+                FppLogger.info("DataMigrator: no orphaned open sessions found.");
+                return 0;
+            }
+
+            FppLogger.info("DataMigrator: repairing " + orphaned.size() + " orphaned session(s)…");
+            BackupManager.createFullBackup(plugin, "pre-session-repair");
+
+            long now = System.currentTimeMillis();
+            int repaired = 0;
+            try (PreparedStatement ps = conn.prepareStatement(
+                    "UPDATE fpp_bot_sessions SET removed_at=?, remove_reason='ORPHAN_REPAIR' WHERE id=?")) {
+                for (long id : orphaned) {
+                    ps.setLong(1, now);
+                    ps.setLong(2, id);
+                    repaired += ps.executeUpdate();
+                }
+            }
+            FppLogger.success("DataMigrator: closed " + repaired + " orphaned session(s) as ORPHAN_REPAIR.");
+            return repaired;
+
+        } catch (SQLException e) {
+            FppLogger.error("DataMigrator.repairOrphanedSessions: " + e.getMessage());
+            return -1;
+        }
+    }
+
+    /**
+     * Returns the schema version currently stored in {@code fpp_meta}.
+     * Returns {@code 1} if the table is missing or the value cannot be read.
+     *
+     * @param manager Active {@link DatabaseManager}.
+     */
+    public static int getStoredSchemaVersion(DatabaseManager manager) {
+        try {
+            Connection conn = manager.getConnection();
+            if (conn == null) return 1;
+            try (PreparedStatement ps = conn.prepareStatement(
+                    "SELECT value FROM fpp_meta WHERE key_name='schema_version'");
+                 ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) return Integer.parseInt(rs.getString(1));
+            }
+        } catch (Exception ignored) {}
+        return 1;
     }
 }
 

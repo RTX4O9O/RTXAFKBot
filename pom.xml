@@ -6,7 +6,7 @@
 
     <groupId>me.bill</groupId>
     <artifactId>fpp</artifactId>
-    <version>1.5.0</version>
+    <version>1.5.4</version>
     <packaging>jar</packaging>
 
     <name>fpp</name>
@@ -16,6 +16,8 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <!-- Server plugins folder — override with -Ddeploy.dir=... or edit here -->
         <deploy.dir>${user.home}/Desktop/dmc/plugins</deploy.dir>
+        <!-- Set to true to skip ProGuard obfuscation and deploy non-obfuscated jar -->
+        <skip.proguard>false</skip.proguard>
     </properties>
 
     <build>
@@ -68,6 +70,7 @@
                             <goal>exec</goal>
                         </goals>
                         <configuration>
+                            <skip>${skip.proguard}</skip>
                             <executable>java</executable>
                             <arguments>
                                 <argument>-jar</argument>
@@ -97,12 +100,19 @@
                         <configuration>
                             <target>
                                 <mkdir dir="${deploy.dir}" />
+                                <!-- Primary: deploy obfuscated jar (produced by ProGuard) -->
                                 <copy
                                     file="${project.build.directory}/${project.build.finalName}-obfuscated.jar"
                                     tofile="${deploy.dir}/fpp.jar"
                                     overwrite="true"
                                     failonerror="false" />
-                                <echo message="[FPP] Deployed obfuscated JAR to: ${deploy.dir}/fpp.jar" />
+                                <!-- Fallback: deploy non-obfuscated jar when ProGuard is skipped/missing -->
+                                <copy
+                                    file="${project.build.directory}/${project.build.finalName}.jar"
+                                    tofile="${deploy.dir}/fpp.jar"
+                                    overwrite="false"
+                                    failonerror="false" />
+                                <echo message="[FPP] Deployed JAR to: ${deploy.dir}/fpp.jar" />
                             </target>
                         </configuration>
                     </execution>
@@ -166,6 +176,27 @@
             <groupId>io.papermc.paper</groupId>
             <artifactId>paper-api</artifactId>
             <version>1.21.11-R0.1-SNAPSHOT</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- Netty — bundled with Paper, needed at compile time for network classes -->
+        <dependency>
+            <groupId>io.netty</groupId>
+            <artifactId>netty-all</artifactId>
+            <version>4.1.97.Final</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- True Mojang-mapped server JAR — needed for FakeServerGamePacketListenerImpl
+             which extends ServerGamePacketListenerImpl with proper Mojang class+method names.
+             This JAR is already installed in the local Maven repo.
+             NOTE: paper-mojmap was removed because it has Spigot-obfuscated methods that
+             shadow Entity/ServerCommonPacketListenerImpl from this JAR on the classpath. -->
+        <dependency>
+            <groupId>io.papermc.paper</groupId>
+            <artifactId>paper-server</artifactId>
+            <version>1.21.11-R0.1-SNAPSHOT</version>
+            <classifier>mojang-mapped</classifier>
             <scope>provided</scope>
         </dependency>
 

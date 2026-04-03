@@ -120,13 +120,6 @@ update-beta:       "<dark_gray><st>━━━━━━━━━</st> <bold><#FF95
 update-up-to-date: "{prefix}<#66CC66>Plugin is up to date</#66CC66> <dark_gray>(<#0079FF>v{current}</#0079FF><dark_gray>)"
 update-failed:     "{prefix}<gray>ᴄᴏᴜʟᴅ ɴᴏᴛ ᴄʜᴇᴄᴋ ꜰᴏʀ ᴜᴘᴅᴀᴛᴇꜱ."
 
-# In-game compatibility warning shown to admins when the server/runtime is restricted
-# compatibility-header       — title line prepended to the per-issue list
-# compatibility-not-paper    — server is not PaperMC     | {version} detected server version
-# compatibility-version-old  — MC version too old         | {version} detected, {required} minimum
-compatibility-header:       "{prefix}<red>⚠ <bold>Compatibility Issues Detected</bold> — some features are disabled:"
-compatibility-not-paper:    "{prefix}<red>  • Not running PaperMC <gray>(detected: <white>{version}</white><gray>) — switch to Paper."
-compatibility-version-old:  "{prefix}<red>  • Server version <white>{version}</white> is below required <white>{required}</white> — please update."
 
 # ── Freeze ────────────────────────────────────────────────────────────────────
 # {name}  — bot display name  |  {count} — number of bots (all)

@@ -42,9 +42,7 @@ public class BotCollisionListener implements Listener {
     private final FakePlayerManager manager;
 
     private static final double VANILLA_ATTACK_UPWARD = 0.40D;
-    private static final double PLAYER_ATTACK_MULTIPLIER = 1.60D;
     private static final double PLAYER_SPRINT_BONUS = 0.28D;
-    private static final double PLAYER_REINFORCE_SCALE = 0.80D;
 
     public BotCollisionListener(FakePlayerPlugin plugin, FakePlayerManager manager) {
         this.plugin = plugin;
@@ -63,14 +61,17 @@ public class BotCollisionListener implements Listener {
         Entity attacker = resolveKnockbackSource(event.getDamager());
         if (attacker == null) return;
 
-        // Keep player-caused knockback even when damage is cancelled by PvP rules
-        // or no-damage ticks; for non-player sources respect normal cancellation
-        // when bots are damageable.
         boolean fromPlayer = attacker instanceof Player;
-        if (event.isCancelled() && Config.bodyDamageable() && !fromPlayer) return;
+
+        // For mob attacks, don't respect cancellation - apply knockback regardless
+        // For player attacks, respect cancellation only if body is damageable
+        if (event.isCancelled()) {
+            if (fromPlayer && Config.bodyDamageable()) return;
+            // Mob attacks: continue to apply knockback even if cancelled
+        }
 
         double hitStrength = Config.collisionHitStrength();
-        double maxHoriz    = Config.collisionMaxHoriz();
+        double hitMaxHoriz = Config.collisionHitMaxHoriz();
 
         Location aLoc = attacker.getLocation();
         Location bLoc = target.getLocation();
@@ -78,19 +79,23 @@ public class BotCollisionListener implements Listener {
         double dz = bLoc.getZ() - aLoc.getZ();
         double dist = Math.sqrt(dx * dx + dz * dz);
 
-        double upward = fromPlayer ? 0.48D : VANILLA_ATTACK_UPWARD;
-        Vector kb = computeHorizontalKnockback(attacker, target, dx, dz, dist, upward);
+        Vector kb = computeHorizontalKnockback(attacker, target, dx, dz, dist, VANILLA_ATTACK_UPWARD);
         if (fromPlayer && attacker instanceof Player p && p.isSprinting()) {
-            kb = scaleHorizontal(kb, (hitStrength * PLAYER_ATTACK_MULTIPLIER) + PLAYER_SPRINT_BONUS);
-        } else if (fromPlayer) {
-            kb = scaleHorizontal(kb, hitStrength * PLAYER_ATTACK_MULTIPLIER);
+            kb = scaleHorizontal(kb, hitStrength + PLAYER_SPRINT_BONUS);
         } else {
             kb = scaleHorizontal(kb, hitStrength);
         }
 
-        // Player hits use the same direct simulated impulse path as mobs so fake bots
-        // always react immediately, even when Paper's player knockback event is missing.
-        applyImpulseBurst(target, kb, maxHoriz, fromPlayer);
+        // REPLACE velocity entirely instead of adding to NMS knockback (which already fired)
+        double kbX = kb.getX();
+        double kbZ = kb.getZ();
+        double speed = Math.sqrt(kbX * kbX + kbZ * kbZ);
+        if (speed > hitMaxHoriz) {
+            double scale = hitMaxHoriz / speed;
+            kbX *= scale;
+            kbZ *= scale;
+        }
+        target.setVelocity(new Vector(kbX, kb.getY(), kbZ));
     }
 
     // ── 1b. Explosion fallback knockback ───────────────────────────────────
@@ -112,14 +117,23 @@ public class BotCollisionListener implements Listener {
 
         if (event.isCancelled() && Config.bodyDamageable()) return;
 
-        double maxHoriz    = Config.collisionMaxHoriz();
+        double hitMaxHoriz = Config.collisionHitMaxHoriz();
         double hitStrength = Config.collisionHitStrength();
 
         // For block explosions we have no reliable source entity position.
         // Apply a conservative outward shove from current facing + upward lift.
         Vector facing = target.getLocation().getDirection();
         Vector kb = new Vector(facing.getX(), 0.45, facing.getZ()).normalize().multiply(hitStrength * 0.7);
-        applyImpulse(target, kb.getX(), kb.getY(), kb.getZ(), maxHoriz, 1.0);
+        
+        double kbX = kb.getX();
+        double kbZ = kb.getZ();
+        double speed = Math.sqrt(kbX * kbX + kbZ * kbZ);
+        if (speed > hitMaxHoriz) {
+            double scale = hitMaxHoriz / speed;
+            kbX *= scale;
+            kbZ *= scale;
+        }
+        target.setVelocity(new Vector(kbX, kb.getY(), kbZ));
     }
 
     // ── 2. Walk-into push ─────────────────────────────────────────────────────
@@ -211,16 +225,6 @@ public class BotCollisionListener implements Listener {
         applyImpulse(body, ix, 0.0, iz, maxHoriz, 0.9);
     }
 
-    private void applyImpulseBurst(Player target, Vector kb, double maxHoriz, boolean reinforceNextTick) {
-        applyImpulse(target, kb.getX(), kb.getY(), kb.getZ(), maxHoriz, 0.9);
-        if (!reinforceNextTick) return;
-        plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
-            if (!target.isValid() || !isFakeBody(target)) return;
-            // Small fallback pulse for cancelled-PvP scenarios where another plugin
-            // rewrites velocity after damage processing.
-            applyImpulse(target, kb.getX() * PLAYER_REINFORCE_SCALE, kb.getY() * 0.15, kb.getZ() * PLAYER_REINFORCE_SCALE, maxHoriz, 0.9);
-        }, 1L);
-    }
 
     private static Vector computeHorizontalKnockback(Entity attacker, Player target,
                                                      double dx, double dz, double dist,

@@ -1,36 +1,23 @@
 package me.bill.fakePlayerPlugin.util;
 
 import net.kyori.adventure.text.Component;
-import org.bukkit.Bukkit;
 
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Centralised compatibility checker for FakePlayerPlugin.
+ * Compatibility utilities for FakePlayerPlugin.
  *
- * <h3>Checks performed at startup (in order)</h3>
- * <ol>
- *   <li><b>PaperMC detection</b> — the plugin requires Paper or a Paper fork.</li>
- *   <li><b>Minecraft version</b> — must be &ge; {@value #MIN_MC_VERSION}.</li>
- *   <li><b>Physical body support</b> — checks that the server version supports
- *       physical bot body rendering; required for the NMS ServerPlayer-based system.</li>
- * </ol>
+ * <p>The old version-gating system (Paper detection, minimum MC version check)
+ * has been removed. The NMS fake-player system now supports all server versions
+ * without restricting features. {@link #check()} always returns a non-restricted
+ * result.
  *
- * <p>Each failing check is logged individually on the console with a specific
- * impact summary, and contributes a matching lang key so the in-game warning
- * shown to admins is precise rather than generic.
- *
- * <p>The overall {@link Result#restricted} flag drives
- * {@link me.bill.fakePlayerPlugin.FakePlayerPlugin#isCompatibilityRestricted()}.
+ * <p>The static helpers {@link #extractMcVersion()} and {@link #isVersionAtLeast}
+ * are retained as general-purpose utilities.
  */
 public final class CompatibilityChecker {
-
-    /** Minimum supported Minecraft version. Bump this when a new MC version is required. */
-    public static final String MIN_MC_VERSION = "1.21.9";
 
     private CompatibilityChecker() {}
 
@@ -38,24 +25,18 @@ public final class CompatibilityChecker {
 
     /**
      * Immutable result of a single compatibility pass.
-     * Access individual check outcomes via the boolean fields, or iterate
-     * {@link #failureLangKeys} for all failures in order.
      */
     public static final class Result {
 
-        /** {@code true} when at least one check failed and features are restricted. */
+        /** Always {@code false} — no checks fail in the current implementation. */
         public final boolean      restricted;
-        /** {@code true} when running on PaperMC or a Paper fork. */
+        /** Always {@code true}. */
         public final boolean      isPaper;
-        /** {@code true} when the running Minecraft version meets {@link #MIN_MC_VERSION}. */
+        /** Always {@code true}. */
         public final boolean      isVersionSupported;
         /** Detected Minecraft version, e.g. {@code "1.21.11"}. {@code "unknown"} if undetectable. */
         public final String       detectedVersion;
-        /**
-         * Ordered list of lang keys for each failing check.
-         * Each key supports {@code {version}} and {@code {required}} placeholders.
-         * Empty when all checks pass.
-         */
+        /** Always empty — no checks fail. */
         public final List<String> failureLangKeys;
 
         Result(boolean restricted, boolean isPaper, boolean isVersionSupported,
@@ -64,7 +45,7 @@ public final class CompatibilityChecker {
             this.isPaper            = isPaper;
             this.isVersionSupported = isVersionSupported;
             this.detectedVersion    = detectedVersion;
-            this.failureLangKeys    = Collections.unmodifiableList(failureLangKeys);
+            this.failureLangKeys    = List.copyOf(failureLangKeys);
         }
 
         @Override
@@ -78,80 +59,29 @@ public final class CompatibilityChecker {
     // ── Public API ────────────────────────────────────────────────────────────
 
     /**
-     * Runs all compatibility checks, logs detailed console output for each
-     * failure, and returns an immutable {@link Result}.
+     * Always returns a non-restricted result.
      *
-     * <p>Safe to call at any point after the Bukkit server is initialised.
-     * Never throws — all exceptions are caught internally.
+     * <p>The old Paper-detection and minimum-version gate has been removed.
+     * The NMS fake-player system now supports all server versions without
+     * restricting any features.
      */
     public static Result check() {
-        boolean      isPaper            = false;
-        boolean      isVersionSupported;
-        String       detectedVersion    = "unknown";
-        List<String> failureKeys        = new ArrayList<>();
-
-        // ── 1. PaperMC ────────────────────────────────────────────────────────
+        String detectedVersion = "unknown";
         try {
-            isPaper = detectPaper();
-        } catch (Throwable t) {
-            FppLogger.debug("CompatibilityChecker: paper detection threw: " + t.getMessage());
-        }
-        if (!isPaper) {
-            FppLogger.warn("━━ Compatibility Issue #1: Non-Paper Server ━━");
-            FppLogger.warn("  This plugin targets PaperMC. Detected: " + safeBukkitVersion());
-            FppLogger.warn("  Impact: physical bodies, chunk loading and head AI are disabled.");
-            FppLogger.warn("  Fix: switch to Paper — https://papermc.io/downloads/paper");
-            failureKeys.add("compatibility-not-paper");
-        }
-
-        // ── 2. Minecraft version ──────────────────────────────────────────────
-        try {
-            detectedVersion    = extractMcVersion();
-            isVersionSupported = isVersionAtLeast(detectedVersion, MIN_MC_VERSION);
-        } catch (Throwable t) {
-            FppLogger.debug("CompatibilityChecker: version check threw: " + t.getMessage());
-            isVersionSupported = false;
-        }
-        if (!isVersionSupported) {
-            FppLogger.warn("━━ Compatibility Issue #2: Outdated Minecraft Version ━━");
-            FppLogger.warn("  Detected: " + detectedVersion
-                    + " — minimum required: " + MIN_MC_VERSION);
-            FppLogger.warn("  Impact: physical bodies, chunk loading and head AI are disabled.");
-            FppLogger.warn("  Fix: update your Paper server to " + MIN_MC_VERSION + " or newer.");
-            failureKeys.add("compatibility-version-old");
-        }
-
-
-        boolean restricted = !failureKeys.isEmpty();
-        if (restricted) {
-            FppLogger.warn("Restricted compatibility mode active — "
-                    + failureKeys.size() + " issue(s). Bot tab-list entries still work normally.");
-        } else {
-            FppLogger.debug("Compatibility check passed (MC " + detectedVersion + ").");
-        }
-
-        return new Result(restricted, isPaper, isVersionSupported,
-                detectedVersion, failureKeys);
+            detectedVersion = extractMcVersion();
+        } catch (Throwable ignored) {}
+        FppLogger.debug("Compatibility check skipped — all features enabled (MC " + detectedVersion + ").");
+        return new Result(false, true, true, detectedVersion, List.of());
     }
 
     /**
-     * Builds a player-facing {@link Component} that lists every failing check.
-     * Each line uses the matching lang key so the message is translatable and
-     * server-owner-customisable.
+     * Always returns {@code null} since {@code result.restricted} is always {@code false}.
      *
-     * @return combined warning {@link Component}, or {@code null} if no failures.
+     * @return {@code null}
      */
+    @SuppressWarnings("unused") // Kept for API compatibility
     public static Component buildWarningComponent(Result result) {
-        if (!result.restricted) return null;
-
-        Component msg = me.bill.fakePlayerPlugin.lang.Lang.get("compatibility-header");
-        for (String key : result.failureLangKeys) {
-            msg = msg.append(Component.newline())
-                     .append(me.bill.fakePlayerPlugin.lang.Lang.get(key,
-                             "version",  result.detectedVersion,
-                             "required", MIN_MC_VERSION));
-        }
-        return msg;
+        return null;
     }
 
     // ── Version utilities ─────────────────────────────────────────────────────
@@ -162,7 +92,7 @@ public final class CompatibilityChecker {
      */
     public static String extractMcVersion() {
         try {
-            String bv = Bukkit.getBukkitVersion();
+            String bv = org.bukkit.Bukkit.getBukkitVersion();
             return bv.contains("-") ? bv.split("-", 2)[0] : bv;
         } catch (Throwable ignored) {}
         return "0.0.0";
@@ -182,22 +112,10 @@ public final class CompatibilityChecker {
             int ri = i < r.length ? r[i] : 0;
             if (vi != ri) return vi > ri;
         }
-        return true; // equal counts as supported
+        return true;
     }
 
     // ── Internals ─────────────────────────────────────────────────────────────
-
-    private static boolean detectPaper() {
-        String ver  = Bukkit.getVersion().toLowerCase();
-        String bver = Bukkit.getBukkitVersion().toLowerCase();
-        String name = Bukkit.getServer().getName().toLowerCase();
-        return ver.contains("paper") || bver.contains("paper") || name.contains("paper");
-    }
-
-    private static boolean classExists(String className) {
-        try   { Class.forName(className); return true; }
-        catch (ClassNotFoundException | LinkageError ignored) { return false; }
-    }
 
     private static int[] parseVersionParts(String v) {
         if (v == null || v.isBlank()) return new int[0];
@@ -209,10 +127,4 @@ public final class CompatibilityChecker {
         }
         return parts;
     }
-
-    private static String safeBukkitVersion() {
-        try { return Bukkit.getVersion(); } catch (Throwable ignored) { return "unknown"; }
-    }
 }
-
-

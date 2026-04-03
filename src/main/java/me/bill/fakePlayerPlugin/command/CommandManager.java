@@ -171,6 +171,17 @@ public class CommandManager implements CommandExecutor, TabCompleter {
                         .clickEvent(ClickEvent.openUrl("https://builtbybit.com/resources/fake-player-plugin.98704/"))
                         .hoverEvent(HoverEvent.showText(Component.text("Click to open BuiltByBit").color(GRAY)))));
 
+        // Discord support link
+        sender.sendMessage(Component.empty()
+                .append(Component.text("  ").color(DARK_GRAY))
+                .append(Component.text("ꜱᴜᴘᴘᴏʀᴛ  ").color(GRAY))
+                .append(Component.text("→ ").color(DARK_GRAY))
+                .append(Component.text("Discord")
+                        .color(ACCENT)
+                        .decorate(TextDecoration.UNDERLINED)
+                        .clickEvent(ClickEvent.openUrl("https://discord.gg/RfjEJDG2TM"))
+                        .hoverEvent(HoverEvent.showText(Component.text("Click to join the support Discord").color(GRAY)))));
+
         sender.sendMessage(Component.empty());
 
         // Help hint — clickable shortcut

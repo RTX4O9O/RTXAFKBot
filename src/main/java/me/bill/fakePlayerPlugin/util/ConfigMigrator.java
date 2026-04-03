@@ -42,7 +42,7 @@ public final class ConfigMigrator {
      * The config-version value written by this build.
      * <b>Increment this whenever config.yml structure changes.</b>
      */
-    public static final int CURRENT_VERSION = 33;
+    public static final int CURRENT_VERSION = 36;
 
     /**
      * Mirrors the {@code debug} flag read directly from the raw YAML during migration.
@@ -125,6 +125,9 @@ public final class ConfigMigrator {
         if (stored < 31) anyChange |= v30to31(cfg);
         if (stored < 32) anyChange |= v31to32(cfg);
         if (stored < 33) anyChange |= v32to33(cfg);
+        if (stored < 34) anyChange |= v33to34(cfg);
+        if (stored < 35) anyChange |= v34to35(cfg);
+        if (stored < 36) anyChange |= v35to36(cfg);
 
         // ── Fill any remaining missing keys from jar defaults ──────────────────
         fillDefaults(plugin, cfg);
@@ -833,6 +836,88 @@ public final class ConfigMigrator {
         if (changed) {
             log("v32→v33", "added granular logging.debug.* toggles (all default false)");
         }
+        return changed;
+    }
+
+    /** v33 → v34: Added collision.hit-max-horizontal-speed (separate cap for hit/explosion knockback). */
+    private static boolean v33to34(YamlConfiguration cfg) {
+        if (cfg.contains("collision.hit-max-horizontal-speed")) return false;
+        cfg.set("collision.hit-max-horizontal-speed", 0.80);
+        log("v33→v34", "added collision.hit-max-horizontal-speed (default 0.80)");
+        return true;
+    }
+
+    /** v34 → v35: Added swim-ai section — bots swim up in water/lava like a real player holding spacebar. */
+    private static boolean v34to35(YamlConfiguration cfg) {
+        if (cfg.contains("swim-ai")) return false;
+        cfg.set("swim-ai.enabled", true);
+        log("v34→v35", "added swim-ai.enabled = true");
+        return true;
+    }
+
+    /**
+     * v35 → v36: Comprehensive orphaned-key cleanup pass.
+     * <ul>
+     *   <li>Removes any surviving old LuckPerms keys that should have been cleaned
+     *       by v31→v32 but may remain on certain upgrade paths:
+     *       {@code weight-offset}, {@code weight-ordering-enabled}, {@code use-prefix},
+     *       {@code packet-prefix-char}, {@code bot-group}.</li>
+     *   <li>Removes the deprecated {@code skin.custom} sub-section left over from
+     *       pre-v4 installations (should have been removed by v3→v4).</li>
+     *   <li>Removes the orphaned top-level {@code server} section that should have
+     *       been migrated to {@code database.server-id} by v30→v31.</li>
+     * </ul>
+     */
+    private static boolean v35to36(YamlConfiguration cfg) {
+        boolean changed = false;
+
+        // ── Orphaned LuckPerms keys ────────────────────────────────────────────
+        for (String deadKey : new String[]{
+                "luckperms.weight-offset",
+                "luckperms.weight-ordering-enabled",
+                "luckperms.use-prefix",
+                "luckperms.packet-prefix-char",
+                "luckperms.bot-group"}) {
+            if (cfg.contains(deadKey)) {
+                cfg.set(deadKey, null);
+                log("v35→v36", "removed orphaned key: " + deadKey);
+                changed = true;
+            }
+        }
+
+        // ── Leftover skin.custom section (pre-v4 installations) ───────────────
+        if (cfg.contains("skin.custom")) {
+            cfg.set("skin.custom", null);
+            log("v35→v36", "removed leftover skin.custom section");
+            changed = true;
+        }
+
+        // ── Removed skin fallback-pool and fallback-name (simplified in v1.5.4) ──
+        // skin.guaranteed-skin default changed to false — no Mojang API fallback pool needed.
+        if (cfg.contains("skin.fallback-pool")) {
+            cfg.set("skin.fallback-pool", null);
+            log("v35→v36", "removed skin.fallback-pool (fallback is now Steve/Alex by default)");
+            changed = true;
+        }
+        if (cfg.contains("skin.fallback-name")) {
+            cfg.set("skin.fallback-name", null);
+            log("v35→v36", "removed skin.fallback-name (fallback is now Steve/Alex by default)");
+            changed = true;
+        }
+        // Reset guaranteed-skin to false if it was explicitly true (old default was true)
+        if (cfg.contains("skin.guaranteed-skin") && cfg.getBoolean("skin.guaranteed-skin", false)) {
+            cfg.set("skin.guaranteed-skin", false);
+            log("v35→v36", "reset skin.guaranteed-skin to false (new default: Steve/Alex fallback)");
+            changed = true;
+        }
+
+        // ── Orphaned top-level server: section (should have moved to database.server-id in v30→v31) ──
+        if (cfg.contains("server") && cfg.contains("database.server-id")) {
+            cfg.set("server", null);
+            log("v35→v36", "removed leftover server: section (already in database.server-id)");
+            changed = true;
+        }
+
         return changed;
     }
 

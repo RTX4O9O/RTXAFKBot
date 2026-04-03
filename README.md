@@ -29,7 +29,7 @@ FPP adds fake players to your server that look and behave like real ones:
 - **LuckPerms** — per-bot group assignment, weighted tab-list ordering, prefix/suffix in chat and nametags
 - **Proxy/network support** — Velocity & BungeeCord cross-server chat, alerts, and shared database
 - **Config sync** — push/pull configuration files across your proxy network
-- **PlaceholderAPI** — 18+ placeholders including per-world bot counts
+- **PlaceholderAPI** — 26+ placeholders including per-world bot counts, network state, and spawn cooldown
 - Fully **hot-reloadable** — no restarts needed
 
 ---
@@ -42,9 +42,9 @@ FPP adds fake players to your server that look and behave like real ones:
 | Java | 21+ |
 | [PacketEvents](https://modrinth.com/plugin/packetevents) | 2.x |
 | [LuckPerms](https://luckperms.net) | Optional — auto-detected |
-| [PlaceholderAPI](https://www.spigotmc.org/resources/placeholderapi.6245/) | Optional — auto-detected (18+ placeholders) |
+| [PlaceholderAPI](https://www.spigotmc.org/resources/placeholderapi.6245/) | Optional — auto-detected (26+ placeholders) |
 
-> **PlaceholderAPI Integration:** FPP provides 18+ placeholders including per-world bot counts, player-relative stats, and system status. See [PLACEHOLDERAPI.md](PLACEHOLDERAPI.md) for the complete reference.
+> **PlaceholderAPI Integration:** FPP provides 26+ placeholders including per-world bot counts, player-relative stats, network state, and system status. See [PLACEHOLDERAPI.md](PLACEHOLDERAPI.md) for the complete reference.
 
 > **Compatibility:** Semi-support for older 1.21 releases (1.21.0 to 1.21.8). On those servers some features may be disabled and FPP will run in a restricted compatibility mode — check the server console for warnings.
 
@@ -159,7 +159,7 @@ Located at `plugins/FakePlayerPlugin/config.yml`. Run `/fpp reload` after any ch
 | `spawn-cooldown` | Seconds between `/fpp spawn` uses per player (`0` = off) |
 | `bot-name` | Display name format for admin/user bots; `tab-list-format` with `{prefix}` / `{bot_name}` / `{suffix}` |
 | `luckperms` | `default-group` — LP group assigned to every new bot at spawn |
-| `skin` | Skin mode (`auto` / `custom` / `off`), guaranteed skin, fallback chain and pool |
+| `skin` | Skin mode (`auto` / `custom` / `off`), `guaranteed-skin` toggle, pool, `skins/` folder |
 | `body` | Physical entity (`enabled`), `pushable`, `damageable` |
 | `persistence` | Whether bots rejoin on server restart |
 | `join-delay` / `leave-delay` | Random delay range (ticks) for natural join/leave timing |
@@ -187,13 +187,9 @@ Three modes — set with `skin.mode`:
 | `custom` | Full control — per-bot overrides, a `skins/` PNG folder, and a random pool |
 | `off` | No skin — bots use the default Steve/Alex appearance |
 
-**Guaranteed Skin** (`skin.guaranteed-skin: true`, on by default) ensures every bot always gets a real skin. Fallback chain:
+**Skin fallback** (`skin.guaranteed-skin`, default `false`) — when `false`, bots whose name has no matching Mojang account use the default Steve/Alex appearance. Set to `true` to attempt a skin fetch even for generated names.
 
-> Bot name → `skins/` folder → pool → fallback-pool (27 vanilla Mojang accounts, pre-warmed async) → `skin.fallback-name`
-
-The **fallback-pool** provides skin diversity during rapid startup spawning — bots pick a random pool entry on-demand if async pre-warming hasn't finished.
-
-Set `skin.fallback-name` to any valid Minecraft username (default: `Notch`).
+In `custom` mode the resolution pipeline is: per-bot override → `skins/<name>.png` → random PNG from `skins/` folder → random entry from `pool` → Mojang API for the bot's own name.
 
 ---
 
@@ -273,7 +269,7 @@ When [PlaceholderAPI](https://www.spigotmc.org/resources/placeholderapi.6245/) i
 
 > Full Documentation: [PLACEHOLDERAPI.md](PLACEHOLDERAPI.md)
 
-FPP provides **18+ placeholders** organized into four categories:
+FPP provides **26+ placeholders** organized into five categories:
 
 ### Server-Wide
 
@@ -300,6 +296,15 @@ FPP provides **18+ placeholders** organized into four categories:
 | `%fpp_tab%` | `on` / `off` | `tab-list.enabled` |
 | `%fpp_skin%` | `auto` / `custom` / `off` | `skin.mode` |
 | `%fpp_max_health%` | number | `combat.max-health` |
+| `%fpp_persistence%` | `on` / `off` | `persistence.enabled` |
+
+### Network / Proxy
+
+| Placeholder | Value |
+|-------------|-------|
+| `%fpp_network%` | `on` when `database.mode: NETWORK`, otherwise `off` |
+| `%fpp_server_id%` | Value of `database.server-id` |
+| `%fpp_spawn_cooldown%` | Configured cooldown in seconds (`0` = off) |
 
 ### Per-World
 
@@ -340,6 +345,35 @@ Placeholders: `{prefix}` (LP prefix), `{bot_name}`, `{suffix}` (LP suffix), `{me
 ---
 
 ## Changelog
+
+### v1.5.4 *(2026-04-03)*
+
+**PlaceholderAPI Expansion**
+- 26+ placeholders across 5 categories (up from 18+)
+- Fixed `%fpp_skin%` incorrectly returning `"disabled"` instead of actual mode
+- Added `%fpp_persistence%` placeholder (shows `on`/`off` for persistence.enabled)
+- New Network/Proxy category: `%fpp_network%`, `%fpp_server_id%`, `%fpp_spawn_cooldown%`
+
+**Skin System Simplified**
+- Removed `skin.fallback-pool` and `fallback-name` (eliminates API rate-limiting)
+- Changed `guaranteed-skin` default from `true` → `false`
+- Bots with non-Mojang names now use Steve/Alex skins by default
+- Config section reduced from ~60 lines to ~18 lines
+
+**Config Migration v35→v36**
+- Auto-cleanup of orphaned LuckPerms keys (`weight-offset`, `use-prefix`, etc.)
+- Removes old `skin.custom` section and `server:` section
+- Automatic backup created before migration runs
+
+**New Features**
+- `/fpp` info screen includes Discord support link
+- Full support for Leaf server (Paper fork)
+
+**Technical**
+- Config version bumped to 36
+- Automatic migration on first startup
+- Fully backward compatible
+
 
 ### v1.5.0 *(2026-03-31)*
 - **Proxy/network mode** — full Velocity & BungeeCord support with NETWORK database mode; cross-server chat, alerts, bot join/leave broadcasts, and remote bot tab-list sync via `fpp:main` plugin messaging channel
@@ -433,4 +467,4 @@ Thank you for using Fake Player Plugin. Without you, it wouldn't be where it is 
 
 ---
 
-*Built for Paper 1.21.x · Java 21 · FPP v1.5.0 · [Modrinth](https://modrinth.com/plugin/fake-player-plugin-(fpp)) · [SpigotMC](https://www.spigotmc.org/resources/fake-player-plugin-fpp.133572/) · [PaperMC](https://hangar.papermc.io/Pepe-tf/FakePlayerPlugin) · [BuiltByBit](https://builtbybit.com/resources/fake-player-plugin.98704/) · [Wiki](https://fakeplayerplugin.xyz)*
+*Built for Paper 1.21.x · Java 21 · FPP v1.5.4 · [Modrinth](https://modrinth.com/plugin/fake-player-plugin-(fpp)) · [SpigotMC](https://www.spigotmc.org/resources/fake-player-plugin-fpp.133572/) · [PaperMC](https://hangar.papermc.io/Pepe-tf/FakePlayerPlugin) · [BuiltByBit](https://builtbybit.com/resources/fake-player-plugin.98704/) · [Wiki](https://fakeplayerplugin.xyz)*

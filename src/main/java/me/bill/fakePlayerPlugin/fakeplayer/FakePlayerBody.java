@@ -2,6 +2,7 @@ package me.bill.fakePlayerPlugin.fakeplayer;
 
 import me.bill.fakePlayerPlugin.config.Config;
 import me.bill.fakePlayerPlugin.util.FppLogger;
+import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
 import org.bukkit.persistence.PersistentDataType;
@@ -17,7 +18,7 @@ import org.bukkit.plugin.Plugin;
  *
  * <p>The entity is backed by a fake {@code EmbeddedChannel} connection that
  * discards all outbound packets without touching a real socket.  The channel
- * is wrapped in a discard-proxy (see {@link DiscardProxyChannel}) that safely ignores all writes and flushes
+ * is wrapped in a discard-proxy that safely ignores all writes and flushes
  * to prevent the {@code ChannelOutboundBuffer.addFlush()} NPE that Netty 4.2.x
  * would otherwise throw during every server tick.
  */
@@ -41,8 +42,12 @@ public final class FakePlayerBody {
     public static Player spawn(FakePlayer fp, Location loc) {
         if (loc == null || loc.getWorld() == null) return null;
         try {
+            // Pass the resolved skin (may be null if skin mode is off) so
+            // NmsPlayerSpawner can inject it into the GameProfile before
+            // placeNewPlayer() — the initial PlayerInfo ADD packet will then
+            // carry the correct texture data to all clients.
             Player player = NmsPlayerSpawner.spawnFakePlayer(
-                    fp.getUuid(), fp.getName(),
+                    fp.getUuid(), fp.getName(), fp.getResolvedSkin(),
                     loc.getWorld(), loc.getX(), loc.getY(), loc.getZ());
 
             if (player == null) {
@@ -67,6 +72,10 @@ public final class FakePlayerBody {
             player.setInvulnerable(!Config.bodyDamageable());
             player.setCollidable(true);
 
+            // Explicitly disable flying abilities to prevent fly animation
+            player.setAllowFlight(false);
+            player.setFlying(false);
+
             // Seed a small downward impulse only when spawning in air so the physics tick
             // immediately starts gravity from tick 1. Skip this in fluids so bots don't get
             // an artificial "sink" nudge when spawning into water/lava.
@@ -77,7 +86,13 @@ public final class FakePlayerBody {
             }
 
             Config.debug("FakePlayerBody: spawned " + fp.getName()
-                    + " (gravity=true, damageable=" + Config.bodyDamageable() + ")");
+                    + " (gravity=true, damageable=" + Config.bodyDamageable() + ", flying=false)");
+
+            // Apply skin via Paper's setPlayerProfile() — mirrors the approach used by
+            // other NMS fake-player implementations.  This updates the profile on the
+            // live entity so any clients that process the join packet AFTER our custom
+            // tab-list ADD will also receive the correct texture data.
+            applyPaperSkin(player, fp.getResolvedSkin());
 
             return player;
 
@@ -109,21 +124,110 @@ public final class FakePlayerBody {
     // ── Spawn pipeline helpers ────────────────────────────────────────────────
 
     /**
-     * Completes immediately — skins are disabled, so spawning no longer waits on
-     * any async skin lookup or profile mutation step.
+     * Prepares the skin for {@code fp} then fires {@code onReady} so the bot body
+     * spawns immediately — the bot is <b>never</b> blocked waiting for a skin API call.
+     *
+     * <h3>Spawn flow</h3>
+     * <ol>
+     *   <li><b>Cache hit (instant)</b> — skin is already in the session cache (pre-warmed
+     *       at startup or used before).  The skin is attached to {@code fp} so
+     *       {@code NmsPlayerSpawner} can inject it into the {@code GameProfile} before
+     *       the entity enters the world.  {@code onReady} fires on this tick.</li>
+     *   <li><b>Cache miss</b> — bot spawns immediately with the default Steve / Alex skin.
+     *       mineskin.eu is queried asynchronously; once it responds the skin is pushed
+     *       to the live entity after a short 3-tick delay (~150 ms) via
+     *       {@code setPlayerProfile()}.</li>
+     *   <li><b>API failure / rate-limit</b> — the resolve callback delivers {@code null}.
+     *       No skin is applied; the bot keeps the default Steve / Alex appearance.</li>
+     * </ol>
+     *
+     * @param onReady       called immediately so the bot body can be spawned
+     * @param onSkinApplied called after the async skin is pushed to the live entity;
+     *                      {@code null} if no follow-up is needed
      */
-    public static void resolveAndFinish(Plugin plugin, FakePlayer fp, Location loc, Runnable onReady) {
-        fp.setResolvedSkin(null);
+    public static void resolveAndFinish(Plugin plugin, FakePlayer fp, Location loc,
+                                        Runnable onReady, @org.jetbrains.annotations.Nullable Runnable onSkinApplied) {
+        String mode = me.bill.fakePlayerPlugin.config.Config.skinMode();
+
+        if ("off".equals(mode) || "disabled".equals(mode)) {
+            onReady.run();
+            return;
+        }
+
+        // Fast path: inject cached skin into GameProfile before the body spawns so
+        // the initial PlayerInfo ADD packet already carries the correct texture.
+        SkinProfile cached = SkinRepository.get().getSessionCached(fp.getName());
+        if (cached != null) {
+            fp.setResolvedSkin(cached);
+        }
+
+        // Always spawn immediately — never block on a skin API call.
         onReady.run();
+
+        // Resolve skin asynchronously (instant for cache hits; async for misses).
+        // Callback is always delivered on the main thread by SkinRepository.deliver().
+        // null = API failure / name not found → bot keeps Steve/Alex, no action needed.
+        SkinRepository.get().resolve(fp.getName(), skin -> {
+            if (skin == null || !skin.isValid()) return;
+            fp.setResolvedSkin(skin);
+            // 3-tick delay (~150 ms) so the NMS entity is fully settled in the world
+            // before setPlayerProfile() is called on it.
+            Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                Player body = fp.getPlayer();
+                if (body == null || !body.isOnline()) return;
+                applyPaperSkin(body, skin);
+                if (onSkinApplied != null) onSkinApplied.run();
+            }, 3L);
+        });
     }
 
     /**
-     * No-op in NMS mode.
-     * Kept so call-sites in FakePlayerManager compile without changes.
+     * Overload kept for call-sites that don't need a post-skin callback.
+     */
+    public static void resolveAndFinish(Plugin plugin, FakePlayer fp, Location loc, Runnable onReady) {
+        resolveAndFinish(plugin, fp, loc, onReady, null);
+    }
+
+    /**
+     * Applies a resolved skin to a live bot body via Paper's {@code setPlayerProfile()} API.
+     * This mirrors the approach used by other NMS fake-player plugins and ensures the skin
+     * is pushed to clients even when it was not available at the moment of initial spawn.
+     * Safe to call with a {@code null} skin (no-op).
      */
     public static void applyResolvedSkin(Plugin plugin, FakePlayer fp,
                                          org.bukkit.entity.Entity body) {
-        // Skins are disabled.
+        if (!(body instanceof Player player)) return;
+        applyPaperSkin(player, fp.getResolvedSkin());
+    }
+
+    /**
+     * Sets the skin texture on a live bot entity using Paper's {@link org.bukkit.entity.Player#setPlayerProfile}
+     * API — the same technique used by other NMS fake-player implementations.
+     * Copies the base64 texture value + RSA signature from a {@link SkinProfile} into a
+     * {@code ProfileProperty("textures", …)} and applies it to the entity's live profile.
+     *
+     * @param bot  the NMS bot player
+     * @param skin resolved skin to apply, or {@code null} to do nothing
+     */
+    private static void applyPaperSkin(Player bot, SkinProfile skin) {
+        if (skin == null || !skin.isValid()) return;
+        try {
+            var profile = bot.getPlayerProfile();
+            profile.removeProperty("textures");
+            profile.setProperty(new com.destroystokyo.paper.profile.ProfileProperty(
+                    "textures",
+                    skin.getValue(),
+                    skin.getSignature() != null ? skin.getSignature() : ""));
+            bot.setPlayerProfile(profile);
+            Config.debugSkin("FakePlayerBody: paper skin applied to " + bot.getName()
+                    + " (" + skin.getSource() + ")");
+            // Re-apply skin-overlay metadata after Paper's profile refresh, which
+            // may internally re-send entity data with default values.
+            NmsPlayerSpawner.forceAllSkinParts(bot);
+        } catch (Exception e) {
+            FppLogger.debug("FakePlayerBody: paper skin apply failed for " + bot.getName()
+                    + ": " + e.getMessage());
+        }
     }
 
     // ── Legacy nametag methods (no-ops for NMS players) ─────────────────────

@@ -3,7 +3,7 @@
 All placeholders use the identifier `fpp` and require [PlaceholderAPI](https://www.spigotmc.org/resources/placeholderapi.6245/) to be installed.  
 FPP auto-registers the expansion on startup when PlaceholderAPI is detected — **no `/papi ecloud` download needed**.
 
-> **Version:** 1.5.0+ · **Placeholders:** 18+ · **Auto-register:** Yes
+> **Version:** 1.5.4+ · **Placeholders:** 26+ · **Auto-register:** Yes
 
 ---
 
@@ -12,7 +12,8 @@ FPP auto-registers the expansion on startup when PlaceholderAPI is detected — 
 | Category | Count | Description |
 |----------|-------|-------------|
 | [Server-Wide](#server-wide-placeholders) | 8 | Bot counts, names, version — same value for all players |
-| [Config State](#config-state-placeholders) | 8 | Live config.yml values — update immediately after `/fpp reload` |
+| [Config State](#config-state-placeholders) | 9 | Live config.yml values — update immediately after `/fpp reload` |
+| [Network / Proxy](#network--proxy-placeholders) | 3 | NETWORK mode state and server identity |
 | [Per-World](#per-world-placeholders) | 3 dynamic | Bot/player counts scoped to a specific world |
 | [Player-Relative](#player-relative-placeholders) | 3 | Values specific to the requesting player |
 
@@ -24,14 +25,14 @@ These return the same value regardless of which player requests them.
 
 | Placeholder | Return type | Description |
 |-------------|-------------|-------------|
-| `%fpp_count%` | `integer` | Number of fake player bots currently active (all worlds) |
+| `%fpp_count%` | `integer` | Number of fake player bots currently active (all worlds). In NETWORK mode includes remote bots from other proxy servers |
 | `%fpp_max%` | `integer` / `∞` | Global bot cap (`limits.max-bots`). Returns `∞` when the cap is `0` (unlimited) |
 | `%fpp_real%` | `integer` | Number of **real** (non-bot) players currently online |
 | `%fpp_total%` | `integer` | Real players + fake bots combined — useful for "server population" displays |
 | `%fpp_online%` | `integer` | Alias for `%fpp_total%` — real players + bots combined (use whichever reads more naturally) |
 | `%fpp_frozen%` | `integer` | Number of bots currently frozen via `/fpp freeze` |
 | `%fpp_names%` | `string` | Comma-separated list of all active bot display names, e.g. `Steve, Alex, Notch` |
-| `%fpp_version%` | `string` | Running plugin version, e.g. `1.5.0` |
+| `%fpp_version%` | `string` | Running plugin version, e.g. `1.5.4` |
 
 ### `%fpp_real%` vs `%fpp_total%` vs `%fpp_online%`
 
@@ -64,6 +65,7 @@ These reflect the current `config.yml` values and update immediately after `/fpp
 | `%fpp_tab%` | `on` / `off` | `tab-list.enabled` | Are bots visible in the tab list? |
 | `%fpp_skin%` | `auto` / `custom` / `off` | `skin.mode` | Which skin mode is active? |
 | `%fpp_max_health%` | `number` | `combat.max-health` | Bot max HP (default: `20.0`) |
+| `%fpp_persistence%` | `on` / `off` | `persistence.enabled` | Are bots saved and restored on server restart? |
 
 **Usage example — status board:**
 ```
@@ -72,6 +74,25 @@ These reflect the current `config.yml` values and update immediately after `/fpp
 &7Bodies:  &f%fpp_body%  &8(&7push: &f%fpp_pushable%&8)
 &7Tab:     &f%fpp_tab%
 &7Skin:    &f%fpp_skin%
+&7Persist: &f%fpp_persistence%
+```
+
+---
+
+## Network / Proxy Placeholders
+
+Useful when running FPP in NETWORK mode across a Velocity or BungeeCord proxy network.  
+These placeholders reflect server-specific network configuration values.
+
+| Placeholder | Values / type | Config key | Description |
+|-------------|---------------|------------|-------------|
+| `%fpp_network%` | `on` / `off` | `database.mode` | `on` when `database.enabled: true` and `database.mode: NETWORK`; `off` otherwise |
+| `%fpp_server_id%` | `string` | `database.server-id` | The unique server identifier configured for this backend |
+| `%fpp_spawn_cooldown%` | `integer` | `spawn-cooldown` | Configured spawn cooldown in seconds (`0` = off) |
+
+**Usage example — network status bar:**
+```
+&7Network: &f%fpp_network%  &8│  &7Server: &f%fpp_server_id%  &8│  &7Cooldown: &f%fpp_spawn_cooldown%s
 ```
 
 ---
@@ -185,7 +206,7 @@ Welcome! There are %fpp_real% players and %fpp_count% bots online.
   &7Total:   &f%fpp_total_world_the_end%
 ```
 
-### Server Status Panel (EssentialsX motd / another plugin)
+### Server Status Panel
 
 ```
 &6&lServer Status
@@ -193,6 +214,14 @@ Welcome! There are %fpp_real% players and %fpp_count% bots online.
 &7 Real players: &a%fpp_real%
 &7 Total:        &e%fpp_total%
 &7 Fake chat:    %fpp_chat%  &7Swap: %fpp_swap%
+&7 Network mode: %fpp_network%  &7Server: %fpp_server_id%
+```
+
+### Network / Proxy Status Board
+
+```
+&7Network: %fpp_network%  &8│  &7Server: %fpp_server_id%
+&7Cooldown: %fpp_spawn_cooldown%s  &8│  &7Persist: %fpp_persistence%
 ```
 
 ### Conditional Display (via plugin that supports conditions)
@@ -232,15 +261,16 @@ lines:
   - '&7Bots: &b%fpp_count%'
   - '&7Players: &a%fpp_real%'
   - '&7Total: &e%fpp_total%'
+  - '&7Network: &f%fpp_network%'
 ```
 
-### LuckPerms + FPP Rank Display in Scoreboard
+### LuckPerms + FPP in Scoreboard
 
 When bots are assigned LP groups via `/fpp rank`, you can combine LP placeholders with FPP ones:
 
 ```
 &7Bots: &f%fpp_count%
-&7Admin bots: &c%fpp_count_world%
+&7Skin mode: &f%fpp_skin%
 ```
 
 ### EssentialsX Chat Format
@@ -260,7 +290,8 @@ format: '<{DISPLAYNAME}>&r {MESSAGE}'
 | Placeholder type | Update trigger |
 |-----------------|----------------|
 | Count (`%fpp_count%`, `%fpp_frozen%`) | Immediately when a bot is spawned or despawned |
-| Config state (`%fpp_chat%`, etc.) | Immediately after `/fpp reload` |
+| Config state (`%fpp_chat%`, `%fpp_persistence%`, etc.) | Immediately after `/fpp reload` |
+| Network state (`%fpp_network%`, `%fpp_server_id%`) | On startup and `/fpp reload` |
 | Per-world counts | Immediately when a bot moves worlds or is spawned/despawned |
 | Player-relative | Every time the placeholder is requested (live) |
 | `%fpp_names%` | Immediately when any bot is spawned, despawned, or renamed |
@@ -290,3 +321,8 @@ FPP's internal bot registry uses a thread-safe data structure — no race condit
 | `%fpp_names%` shows raw UUIDs | Bot display names were not yet resolved at the time of the request — try again after a tick or two |
 | `%fpp_user_names%` is empty despite having bots | The requesting player's UUID doesn't match the spawner UUID — bots spawned by console won't appear here |
 | `%fpp_pushable%` or `%fpp_damageable%` shows wrong value | Run `/fpp reload` to re-sync config state placeholders after editing config.yml |
+| `%fpp_network%` always `off` | Only `on` when `database.enabled: true` **and** `database.mode: NETWORK` |
+| `%fpp_server_id%` shows `default` | Set `database.server-id` in config.yml to a unique value per server |
+| `%fpp_spawn_cooldown%` shows `0` | `spawn-cooldown: 0` means disabled — set a positive integer to enable |
+| `%fpp_persistence%` shows `off` unexpectedly | Check `persistence.enabled` in config.yml and run `/fpp reload` |
+| `%fpp_skin%` shows unexpected value | Only `auto`, `custom`, or `off` are valid — check `skin.mode` in config.yml |

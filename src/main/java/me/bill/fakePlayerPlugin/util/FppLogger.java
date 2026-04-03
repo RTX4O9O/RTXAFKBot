@@ -241,7 +241,6 @@ public final class FppLogger {
      * @param chunkLoading     whether chunk loading is on
      * @param maxBots          global bot limit (0 = unlimited)
      * @param metricsActive    whether FastStats metrics are running
-     * @param compatRestricted whether the server failed a compatibility check
      * @param configVersion    formatted config version string, e.g. {@code "v19 ✔"}
      * @param backupCount      number of config backups on disk (0 = none)
      * @param startupMs        plugin enable time in milliseconds
@@ -261,7 +260,6 @@ public final class FppLogger {
             boolean chunkLoading,
             int     maxBots,
             boolean metricsActive,
-            boolean compatRestricted,
             String  configVersion,
             int     backupCount,
             long    startupMs) {
@@ -270,8 +268,6 @@ public final class FppLogger {
         rule();
 
         section("Runtime");
-        stateRow(compatRestricted ? RowState.WARN : RowState.OK,
-                "Compatibility", compatRestricted ? "restricted" : "ok");
         stateRow(resolveDbState(dbState), "Database", dbState);
         kv("Config version", configVersion);
         kv("Backups", backupCount);

@@ -37,55 +37,20 @@ resolves the skin from Mojang automatically — exactly like a real player joini
 
 #### Guaranteed Skin (auto mode)
 
-When `guaranteed-skin: true`, the plugin ensures every bot gets a valid skin
-even when the bot name doesn't exist on Mojang (generated names, user bots, etc.).
+When `skin.guaranteed-skin: true`, the plugin will attempt to fetch a skin even for bots whose name doesn't match a Mojang account (generated names, user bots, etc.).
 
-**Fallback chain:**
+**Default (since v1.5.4):** `guaranteed-skin: false` — bots with no matching Mojang account will display the default Steve or Alex skin. This avoids unnecessary Mojang API calls and is the recommended setting for most servers.
 
-```
-1. skins/ folder → pick random PNG file
-2. skin.custom.pool → pick random entry (if any)
-3. skin.fallback-pool → pick random from 20 pre-loaded popular skins
-   ├─ Pre-loaded at startup (async, takes ~2-5 seconds)
-   └─ If bots spawn before preload completes, fetch on-demand randomly
-4. skin.fallback-name → single last-resort skin (default: Notch)
-```
-
-The `fallback-pool` **ensures skin diversity** even during rapid bot spawning
-at server startup. If the prewarm hasn't completed yet, the plugin will:
-- Randomly pick a name from the config list
-- Fetch it on-demand (fast, ~50-200ms)
-- Cache it for future bots
-
-This prevents the "all bots spawn as Notch" issue when many bots spawn quickly.
+Set `guaranteed-skin: true` only if you want every bot to have a custom-fetched skin regardless of whether their name is a real Minecraft account.
 
 **Config example:**
 
 ```yaml
 skin:
   mode: auto
-  guaranteed-skin: true
-  fallback-name: Notch
-  fallback-pool:
-    - Notch              # Minecraft creator
-    - jeb_               # Lead developer
-    - Dinnerbone         # Developer (upside-down)
-    - Grumm              # Developer (upside-down)
-    - MHF_Steve          # Default male player skin
-    - MHF_Alex           # Default female player skin
-    - MHF_Herobrine      # Herobrine skin
-    - MHF_Zombie         # Zombie mob skin
-    - MHF_Creeper        # Creeper mob skin
-    # ... 18 more MHF_* system accounts (default config includes 27 total)
+  guaranteed-skin: false   # false = Steve/Alex fallback for non-Mojang names (default)
 ```
 
-The default pool includes:
-- **Mojang developers** (Notch, jeb_, Dinnerbone, Grumm)
-- **MHF_* system accounts** — Official Minecraft map marker accounts with mob/player skins
-
-> **Performance note:** The prewarm fetches all 27 skins asynchronously at
-> startup. This adds ~2-5 seconds to skin availability but doesn't block
-> server startup. Bots spawned during this window still get diverse skins
 ### `custom` *(Full control — works online & offline)*
 
 FPP runs a **5-step resolution pipeline** to find the best skin for each bot:
@@ -172,49 +137,28 @@ skin:
   # Skin mode: auto | custom | off
   mode: auto
 
-  # Guarantee every bot gets a skin (never spawn as Steve)
-  # When enabled, falls back to folder/pool/fallback-pool/fallback-name
-  # if the bot's name doesn't exist on Mojang
-  guaranteed-skin: true
-
-  # Last-resort fallback skin (single Mojang account)
-  # Only used when all other fallback sources are empty/unavailable
-  fallback-name: Notch
-
-  # Random fallback pool (27 official Minecraft accounts by default)
-  # Provides skin diversity for bots with non-existent names
-  # Pre-loaded at startup (async); on-demand random fetch if needed during spawn
-  # Includes Mojang developers + MHF_* map marker system accounts
-  fallback-pool:
-    - Notch
-    - jeb_
-    - Dinnerbone
-    - Grumm
-    - MHF_Steve
-    - MHF_Alex
-    - MHF_Herobrine
-    - MHF_Zombie
-    - MHF_Creeper
-    - MHF_Skeleton
-    # ... add more real Minecraft usernames or MHF_* system accounts
+  # When false (default since v1.5.4): bots with no Mojang account use Steve/Alex.
+  # When true: attempt a skin fetch even for generated/non-Mojang bot names.
+  guaranteed-skin: false
 
   # Clear resolved skin cache on /fpp reload
   clear-cache-on-reload: true
 
   # ── Custom mode ──────────────────────────────────────────────────────────
-  custom:
-    # Random pool — Minecraft names or Mojang CDN URLs
-    pool:
-    #  - Notch
-    #  - Technoblade
-    #  - https://textures.minecraft.net/texture/<hash>
+  # Per-bot skin override: bot-name: minecraft-username
+  overrides: {}
+  #  Herobrine: Notch
+  #  CoolBot: https://textures.minecraft.net/texture/<hash>
 
-    # Exact-name overrides: botname → player-name or URL
-    by-name: {}
-    #  Herobrine: Notch
-    #  CoolBot: https://textures.minecraft.net/texture/<hash>
+  # Random skin pool — list of Minecraft usernames
+  pool: []
+  #  - Notch
+  #  - Technoblade
+  #  - https://textures.minecraft.net/texture/<hash>
 
   # ── Skin folder ──────────────────────────────────────────────────────────
+  # Scan plugins/FakePlayerPlugin/skins/ for PNG files
+  use-skin-folder: true
   # Place .png files in: plugins/FakePlayerPlugin/skins/
   # <botname>.png → exact match for that bot
   # anything.png  → random pool fallback

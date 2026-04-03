@@ -20,7 +20,6 @@ import me.bill.fakePlayerPlugin.listener.ServerListListener;
 import me.bill.fakePlayerPlugin.messaging.VelocityChannel;
 import me.bill.fakePlayerPlugin.util.BackupManager;
 import me.bill.fakePlayerPlugin.util.BotTabTeam;
-import me.bill.fakePlayerPlugin.util.CompatibilityChecker;
 import me.bill.fakePlayerPlugin.util.ConfigMigrator;
 import me.bill.fakePlayerPlugin.util.ConfigValidator;
 import me.bill.fakePlayerPlugin.util.FppLogger;
@@ -29,9 +28,7 @@ import me.bill.fakePlayerPlugin.util.TabListManager;
 import me.bill.fakePlayerPlugin.util.UpdateChecker;
 import org.bukkit.Bukkit;
 import org.bukkit.plugin.java.JavaPlugin;
-import org.bukkit.entity.Player;
 import net.kyori.adventure.text.Component;
-import me.bill.fakePlayerPlugin.permission.Perm;
 
 public final class FakePlayerPlugin extends JavaPlugin {
 
@@ -51,11 +48,6 @@ public final class FakePlayerPlugin extends JavaPlugin {
     private VelocityChannel   velocityChannel;
     private me.bill.fakePlayerPlugin.fakeplayer.RemoteBotCache remoteBotCache;
     private me.bill.fakePlayerPlugin.sync.ConfigSyncManager configSyncManager;
-    /** When true the plugin detected an unsupported server/runtime and restrains some features */
-    private boolean compatibilityRestricted = false;
-
-    /** Single concise compatibility warning message (Adventure Component) to send to ops/admins when configured. */
-    private Component compatibilityWarningMessage = null;
 
     /** Update notification Component stored when an update is detected so it can be
      * delivered to admins who log in after startup. */
@@ -91,11 +83,12 @@ public final class FakePlayerPlugin extends JavaPlugin {
         // Ensure plugin data directories exist regardless of config settings
         ensureDataDirectories();
 
-        // ── Server compatibility check ────────────────────────────────────────
-        // Logs detailed console warnings for each issue; returns an immutable result.
-        CompatibilityChecker.Result compatResult = CompatibilityChecker.check();
-        compatibilityRestricted      = compatResult.restricted;
-        compatibilityWarningMessage  = CompatibilityChecker.buildWarningComponent(compatResult);
+        // ── Skin repository ───────────────────────────────────────────────────
+        // Must be initialised before any bot spawns (including persistence restore)
+        // so that SkinRepository.deliver() can dispatch skin callbacks to the
+        // main thread instead of running them on the FPP-SkinFetcher async thread.
+        me.bill.fakePlayerPlugin.fakeplayer.SkinRepository.get().init(this);
+        Config.debugStartup("SkinRepository initialised.");
 
         // ── Database ──────────────────────────────────────────────────────────
         boolean dbOk = false;
@@ -155,14 +148,8 @@ public final class FakePlayerPlugin extends JavaPlugin {
         fakePlayerManager = new FakePlayerManager(this);
         if (databaseManager != null) fakePlayerManager.setDatabaseManager(databaseManager);
 
-        if (!compatibilityRestricted) {
-            chunkLoader = new ChunkLoader(this, fakePlayerManager);
-            fakePlayerManager.setChunkLoader(chunkLoader);
-        } else {
-            Config.debugStartup("Skipping ChunkLoader initialisation due to compatibility restrictions.");
-            chunkLoader = null;
-            // fakePlayerManager.setChunkLoader(null); // no-op, leave unset
-        }
+        chunkLoader = new ChunkLoader(this, fakePlayerManager);
+        fakePlayerManager.setChunkLoader(chunkLoader);
 
         botPersistence = new BotPersistence(this);
         fakePlayerManager.setBotPersistence(botPersistence);
@@ -199,13 +186,8 @@ public final class FakePlayerPlugin extends JavaPlugin {
         // ── Listeners ─────────────────────────────────────────────────────────
         getServer().getPluginManager().registerEvents(new PlayerJoinListener(this, fakePlayerManager), this);
         getServer().getPluginManager().registerEvents(new PlayerWorldChangeListener(this, fakePlayerManager), this);
-
-        if (!compatibilityRestricted) {
-            getServer().getPluginManager().registerEvents(new FakePlayerEntityListener(this, fakePlayerManager, chunkLoader), this);
-            getServer().getPluginManager().registerEvents(new BotCollisionListener(this, fakePlayerManager), this);
-        } else {
-            Config.debugStartup("Skipping NMS-dependent listeners due to compatibility restrictions.");
-        }
+        getServer().getPluginManager().registerEvents(new FakePlayerEntityListener(this, fakePlayerManager, chunkLoader), this);
+        getServer().getPluginManager().registerEvents(new BotCollisionListener(this, fakePlayerManager), this);
 
         getServer().getPluginManager().registerEvents(new ServerListListener(fakePlayerManager), this);
         getServer().getPluginManager().registerEvents(new FakePlayerKickListener(fakePlayerManager), this);
@@ -300,8 +282,8 @@ public final class FakePlayerPlugin extends JavaPlugin {
 
         String skinLabel = "disabled";
 
-        boolean effectiveSpawnBody    = Config.spawnBody() && !compatibilityRestricted;
-        boolean effectiveChunkLoading = Config.chunkLoadingEnabled() && !compatibilityRestricted;
+        boolean effectiveSpawnBody    = Config.spawnBody();
+        boolean effectiveChunkLoading = Config.chunkLoadingEnabled();
 
         // Compute banner metadata before printing
         long   startupMs    = System.currentTimeMillis() - enabledAt;
@@ -325,7 +307,6 @@ public final class FakePlayerPlugin extends JavaPlugin {
                 effectiveChunkLoading,
                 Config.maxBots(),
                 fppMetrics.isActive(),
-                compatibilityRestricted,
                 configVersion,
                 backupCount,
                 startupMs
@@ -335,19 +316,7 @@ public final class FakePlayerPlugin extends JavaPlugin {
         // ── Bot persistence restore ───────────────────────────────────────────
         botPersistence.purgeOrphanedBodiesAndRestore(fakePlayerManager);
 
-
         Config.debugStartup("onEnable complete.");
-
-        // Deliver a single compatibility warning to currently-online ops/admins if configured
-        try {
-            if (Config.warningsNotifyAdmins() && compatibilityWarningMessage != null) {
-                for (Player p : Bukkit.getOnlinePlayers()) {
-                    if (Perm.hasOrOp(p, Perm.ALL)) {
-                        p.sendMessage(compatibilityWarningMessage);
-                    }
-                }
-            }
-        } catch (Throwable ignored) {}
     }
 
     @Override
@@ -410,11 +379,6 @@ public final class FakePlayerPlugin extends JavaPlugin {
     /** Returns the ConfigSyncManager, or {@code null} if not in NETWORK mode or database unavailable. */
     public me.bill.fakePlayerPlugin.sync.ConfigSyncManager getConfigSyncManager() { return configSyncManager; }
 
-    /** Returns true when the plugin detected an unsupported server/runtime. */
-    public boolean isCompatibilityRestricted() { return compatibilityRestricted; }
-
-    /** Returns the (possibly null) compatibility warning message collected during startup. */
-    public Component getCompatibilityWarning() { return compatibilityWarningMessage; }
 
     /** Returns the currently-stored update notification message, or null. */
     public Component getUpdateNotification() { return updateNotificationMessage; }

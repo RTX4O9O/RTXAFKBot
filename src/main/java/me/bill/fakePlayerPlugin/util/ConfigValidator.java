@@ -130,6 +130,10 @@ public final class ConfigValidator {
             FppLogger.warn("[Config] collision.hit-strength must be >= 0.");
             issues++;
         }
+        if (Config.collisionHitMaxHoriz() <= 0) {
+            FppLogger.warn("[Config] collision.hit-max-horizontal-speed must be > 0.");
+            issues++;
+        }
         if (Config.collisionWalkRadius() <= 0) {
             FppLogger.warn("[Config] collision.walk-radius must be > 0.");
             issues++;

@@ -179,12 +179,13 @@ public final class Config {
 
     /**
      * When {@code true}, bots always receive a skin — even if their name has no
-     * Mojang account (generated names, user bots, etc.). The system falls back
-     * through: folder skins → pool skins → {@link #skinFallbackName()} skin.
+     * Mojang account (generated names, user bots, etc.).
+     * When {@code false} (default), bots with no matching Mojang account display
+     * the default Steve / Alex Minecraft skin.
      * Config path: {@code skin.guaranteed-skin}.
      */
     public static boolean skinGuaranteed() {
-        return cfg.getBoolean("skin.guaranteed-skin", true);
+        return cfg.getBoolean("skin.guaranteed-skin", false);
     }
 
     /**
@@ -194,13 +195,12 @@ public final class Config {
      * Config path: {@code skin.fallback-name}.
      */
     public static String skinFallbackName() {
-        return cfg.getString("skin.fallback-name", "Notch");
+        return cfg.getString("skin.fallback-name", "");
     }
 
     /**
      * Pool of Minecraft player names whose skins will be randomly assigned
      * when a bot's name has no Mojang account (auto mode fallback).
-     * Provides skin diversity instead of all unknown-name bots using the same fallback-name.
      * Config path: {@code skin.fallback-pool}
      */
     public static List<String> skinFallbackPool() {
@@ -379,14 +379,24 @@ public final class Config {
     /** Head rotation interpolation speed (0.0–1.0). */
     public static float headAiTurnSpeed()  { return (float) cfg.getDouble("head-ai.turn-speed", 0.3); }
 
+    // ── Swim AI  (swim-ai.*) ──────────────────────────────────────────────────
+
+    /**
+     * Whether the swim-AI system is active.
+     * When {@code true}, bots automatically swim upward whenever they are in water
+     * or lava, mimicking a player holding the jump/spacebar key.
+     */
+    public static boolean swimAiEnabled() { return cfg.getBoolean("swim-ai.enabled", true); }
+
     // ── Collision / Push  (collision.*) ──────────────────────────────────────
 
-    public static double collisionWalkRadius()   { return cfg.getDouble("collision.walk-radius", 0.62); }
-    public static double collisionWalkStrength() { return cfg.getDouble("collision.walk-strength", 0.08); }
-    public static double collisionMaxHoriz()     { return cfg.getDouble("collision.max-horizontal-speed", 0.40); }
-    public static double collisionHitStrength()  { return cfg.getDouble("collision.hit-strength", 1.00); }
-    public static double collisionBotRadius()    { return cfg.getDouble("collision.bot-radius", 0.62); }
-    public static double collisionBotStrength()  { return cfg.getDouble("collision.bot-strength", 0.05); }
+    public static double collisionWalkRadius()    { return cfg.getDouble("collision.walk-radius", 0.85); }
+    public static double collisionWalkStrength()  { return cfg.getDouble("collision.walk-strength", 0.22); }
+    public static double collisionMaxHoriz()      { return cfg.getDouble("collision.max-horizontal-speed", 0.30); }
+    public static double collisionHitStrength()   { return cfg.getDouble("collision.hit-strength", 0.45); }
+    public static double collisionHitMaxHoriz()   { return cfg.getDouble("collision.hit-max-horizontal-speed", 0.80); }
+    public static double collisionBotRadius()     { return cfg.getDouble("collision.bot-radius", 0.90); }
+    public static double collisionBotStrength()   { return cfg.getDouble("collision.bot-strength", 0.14); }
 
     // ── Bot Swap  (swap.*) ────────────────────────────────────────────────────
 

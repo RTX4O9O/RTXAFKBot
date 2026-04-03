@@ -304,6 +304,51 @@ public class MigrateCommand implements FppCommand {
                 });
             }
 
+            case "schema" -> {
+                if (db == null) { msg(sender, RED + "Database is offline."); return; }
+                int stored  = DataMigrator.getStoredSchemaVersion(db);
+                int current = DatabaseManager.getCurrentSchemaVersion();
+                boolean ok  = stored >= current;
+                msg(sender, COLOR + "ᴅʙ ꜱᴄʜᴇᴍᴀ ɪɴꜰᴏ" + C_CLOSE);
+                msg(sender, GRAY + "  Schema version : " + stored + " / " + current
+                        + (ok ? "  " + GREEN + "✔ current"
+                               : "  " + RED + "✘ outdated — restart the server to apply DB migrations"));
+                msg(sender, GRAY + "  Backend        : " + db.getStats().backend());
+                msg(sender, GRAY + "  Sessions table : " + db.countSessions() + " row(s)");
+                msg(sender, GRAY + "  Active bots    : " + db.countActiveBotRows() + " row(s)");
+            }
+
+            case "cleanup" -> {
+                if (db == null) { msg(sender, RED + "Database is offline."); return; }
+                msg(sender, GRAY + "Scanning for stale fpp_active_bots rows…");
+                plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
+                    int removed = DataMigrator.cleanupStaleActiveBots(plugin, db);
+                    if (removed > 0) {
+                        sync(sender, GREEN + "✔ Cleanup complete — " + removed + " stale row(s) removed.");
+                    } else if (removed == 0) {
+                        sync(sender, GREEN + "✔ No stale rows found — fpp_active_bots is clean.");
+                    } else {
+                        sync(sender, RED + "✘ Cleanup failed. Check console for details.");
+                    }
+                });
+            }
+
+            case "repair" -> {
+                if (db == null) { msg(sender, RED + "Database is offline."); return; }
+                msg(sender, GRAY + "Scanning for orphaned open sessions…");
+                plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
+                    int repaired = DataMigrator.repairOrphanedSessions(plugin, db);
+                    if (repaired > 0) {
+                        sync(sender, GREEN + "✔ Repair complete — " + repaired
+                                + " orphaned session(s) closed as ORPHAN_REPAIR.");
+                    } else if (repaired == 0) {
+                        sync(sender, GREEN + "✔ No orphaned sessions found — database is consistent.");
+                    } else {
+                        sync(sender, RED + "✘ Repair failed. Check console for details.");
+                    }
+                });
+            }
+
             default -> sendHelp(sender);
         }
     }
@@ -317,7 +362,7 @@ public class MigrateCommand implements FppCommand {
                 List.of("backup", "backups", "status", "config",
                         "lang", "names", "messages", "db"), args[0]);
         if (args.length == 2 && args[0].equalsIgnoreCase("db"))
-            return filter(List.of("merge", "export", "tomysql"), args[1]);
+            return filter(List.of("schema", "merge", "export", "tomysql", "cleanup", "repair"), args[1]);
         if (args.length == 3 && args[0].equalsIgnoreCase("db") && args[1].equalsIgnoreCase("merge"))
             return filter(List.of("fpp.db", "fpp_old.db", "fpp_backup.db"), args[2]);
         return List.of();
@@ -334,9 +379,12 @@ public class MigrateCommand implements FppCommand {
         row(sender, "/fpp migrate lang",              "Sync missing keys in language/en.yml");
         row(sender, "/fpp migrate names",             "Sync missing keys in bot-names.yml");
         row(sender, "/fpp migrate messages",          "Sync missing keys in bot-messages.yml");
+        row(sender, "/fpp migrate db schema",         "Show DB schema version and table stats");
         row(sender, "/fpp migrate db merge [file]",   "Merge old fpp.db into current DB");
         row(sender, "/fpp migrate db export",         "Export sessions to CSV");
         row(sender, "/fpp migrate db tomysql",        "Migrate SQLite → MySQL");
+        row(sender, "/fpp migrate db cleanup",        "Remove stale fpp_active_bots rows");
+        row(sender, "/fpp migrate db repair",         "Close orphaned open sessions");
     }
 
     private void row(CommandSender sender, String cmd, String desc) {

@@ -49,6 +49,14 @@ public final class PacketHelper {
     private static Object   gameTypeSurvival;
     private static Object   entityTypePlayer;
 
+    // ── sendPositionSync cache ─────────────────────────────────────────────────
+    /** Cached constructor for the position-sync teleport packet — resolved once on first call. */
+    private static volatile Constructor<?> cachedPosSyncCtor        = null;
+    /** {@code true} when {@link #cachedPosSyncCtor} takes a single NMS Entity argument. */
+    private static volatile boolean        posSyncUsesEntityArg     = false;
+    /** Set to {@code true} once the constructor lookup has been attempted (success or failure). */
+    private static volatile boolean        posSyncCtorLookupDone    = false;
+
     private static Constructor<?> gameProfileCtor;
     private static Method         componentLiteral;
     private static Method         craftPlayerGetHandle;
@@ -687,38 +695,88 @@ public final class PacketHelper {
     }
 
     /**
-     * Sends entity teleport packet to sync NMS bot position without actually teleporting.
-     * This preserves velocity while making position updates visible to the receiving player.
+     * Sends an entity position-sync (teleport) packet to {@code receiver} for {@code bot}.
+     *
+     * <p>The constructor is resolved <em>once</em> and cached; subsequent calls per tick pay
+     * zero reflection-scanning overhead.  Two strategies are tried in order:
+     * <ol>
+     *   <li><b>7-param coordinate ctor</b> — {@code (int entityId, double x, double y, double z,
+     *       float yaw, float pitch, boolean onGround)} — used by
+     *       {@code ClientboundEntityPositionSyncPacket} (1.21.2+) and by older builds of
+     *       {@code ClientboundTeleportEntityPacket}.</li>
+     *   <li><b>1-param Entity ctor</b> — {@code (Entity entity)} — used by very old NMS builds.</li>
+     * </ol>
+     * Class-name candidates tried in preference order:
+     * <ol>
+     *   <li>{@code ClientboundEntityPositionSyncPacket} (1.21.2+, Leaf/Paper 1.21.11)</li>
+     *   <li>{@code ClientboundTeleportEntityPacket} (pre-1.21.2 fallback)</li>
+     * </ol>
      */
     public static void sendPositionSync(Player receiver, Player bot) {
         if (!ensureReady()) return;
         try {
-            // Load ClientboundTeleportEntityPacket class
-            ClassLoader nmsLoader = findNmsClassLoader();
-            Class<?> teleportPacketClass = nmsLoader.loadClass("net.minecraft.network.protocol.game.ClientboundTeleportEntityPacket");
-            
-            // Get bot's NMS entity
-            Object nmsBot = craftPlayerGetHandle.invoke(bot);
-            
-            // Find constructor: ClientboundTeleportEntityPacket(Entity)
-            Constructor<?> ctor = null;
-            for (Constructor<?> c : teleportPacketClass.getDeclaredConstructors()) {
-                if (c.getParameterCount() == 1) {
-                    c.setAccessible(true);
-                    ctor = c;
-                    break;
+            Object receiverNms = craftPlayerGetHandle.invoke(receiver);
+
+            // ── One-time constructor lookup (cached after first call) ────────────
+            if (!posSyncCtorLookupDone) {
+                synchronized (PacketHelper.class) {
+                    if (!posSyncCtorLookupDone) {
+                        ClassLoader cl = receiverNms.getClass().getClassLoader();
+                        String[] candidates = {
+                            "net.minecraft.network.protocol.game.ClientboundEntityPositionSyncPacket",
+                            "net.minecraft.network.protocol.game.ClientboundTeleportEntityPacket"
+                        };
+                        outer:
+                        for (String className : candidates) {
+                            try {
+                                Class<?> pktClass = cl.loadClass(className);
+                                // Prefer 7-param coordinate constructor
+                                for (Constructor<?> c : pktClass.getDeclaredConstructors()) {
+                                    c.setAccessible(true);
+                                    Class<?>[] pt = c.getParameterTypes();
+                                    if (pt.length == 7 && pt[0] == int.class && pt[1] == double.class) {
+                                        cachedPosSyncCtor    = c;
+                                        posSyncUsesEntityArg = false;
+                                        Config.debugPackets("sendPositionSync: using 7-param ctor from " + className);
+                                        break outer;
+                                    }
+                                }
+                                // Fallback: 1-param Entity constructor (older NMS)
+                                for (Constructor<?> c : pktClass.getDeclaredConstructors()) {
+                                    c.setAccessible(true);
+                                    if (c.getParameterCount() == 1) {
+                                        cachedPosSyncCtor    = c;
+                                        posSyncUsesEntityArg = true;
+                                        Config.debugPackets("sendPositionSync: using 1-param (Entity) ctor from " + className);
+                                        break outer;
+                                    }
+                                }
+                            } catch (ClassNotFoundException ignored) {}
+                        }
+                        posSyncCtorLookupDone = true;
+                        if (cachedPosSyncCtor == null) {
+                            Config.debugPackets("sendPositionSync: no suitable position-sync packet constructor found — position sync disabled.");
+                        }
+                    }
                 }
             }
-            
-            if (ctor == null) {
-                Config.debugPackets("Could not find TeleportEntityPacket constructor");
-                return;
+
+            if (cachedPosSyncCtor == null) return;
+
+            // ── Build and send packet ─────────────────────────────────────────────
+            Object packet;
+            if (posSyncUsesEntityArg) {
+                Object nmsBot = craftPlayerGetHandle.invoke(bot);
+                packet = cachedPosSyncCtor.newInstance(nmsBot);
+            } else {
+                Location loc = bot.getLocation();
+                packet = cachedPosSyncCtor.newInstance(
+                        bot.getEntityId(),
+                        loc.getX(), loc.getY(), loc.getZ(),
+                        loc.getYaw(), loc.getPitch(), true);
             }
-            
-            Object packet = ctor.newInstance(nmsBot);
-            Object nms = craftPlayerGetHandle.invoke(receiver);
-            sendPacket(nms, packet);
-            
+            sendPacket(receiverNms, packet);
+
         } catch (Exception e) {
             Config.debugPackets("sendPositionSync failed: " + e.getMessage());
         }
@@ -754,12 +812,28 @@ public final class PacketHelper {
         if (conn == null) throw new IllegalStateException("ServerPlayer.connection is null");
 
         if (cachedSendMethod == null) {
-            for (Method m : conn.getClass().getMethods()) {
-                if (m.getName().equals("send") && m.getParameterCount() == 1) {
-                    m.setAccessible(true);
-                    cachedSendMethod = m;
-                    break;
+            // Walk up the class hierarchy SKIPPING our own FakeServerGamePacketListenerImpl
+            // so the cached method is resolved from the NMS base class.
+            // This is critical: if the first sendPacket call goes through a bot (whose
+            // connection is FakeServerGamePacketListenerImpl), getMethods() would return
+            // the override declared in FakeServerGamePacketListenerImpl.  Caching that
+            // method and later invoking it on a real ServerGamePacketListenerImpl fails
+            // with "object is not an instance of FakeServerGamePacketListenerImpl".
+            // By skipping our own package we always land on the NMS base send(), which
+            // FakeServerGamePacketListenerImpl IS-A of, so invoke() works for both.
+            Class<?> cur = conn.getClass();
+            outer:
+            while (cur != null && cur != Object.class) {
+                if (!cur.getName().startsWith("me.bill.")) {
+                    for (Method m : cur.getDeclaredMethods()) {
+                        if (m.getName().equals("send") && m.getParameterCount() == 1) {
+                            m.setAccessible(true);
+                            cachedSendMethod = m;
+                            break outer;
+                        }
+                    }
                 }
+                cur = cur.getSuperclass();
             }
             if (cachedSendMethod == null)
                 throw new IllegalStateException("connection.send(Packet) not found");
@@ -868,13 +942,15 @@ public final class PacketHelper {
     }
 
     private static Object[] mapEntryArgs(Class<?>[] types, UUID uuid, Object profile, Object displayName) {
-        Object[] args    = new Object[types.length];
-        int      boolIdx = 0;
+        Object[] args = new Object[types.length];
         for (int i = 0; i < types.length; i++) {
             args[i] = switch (types[i].getSimpleName()) {
                 case "UUID"        -> uuid;
                 case "GameProfile" -> profile;
-                case "boolean"     -> (boolIdx++ == 0);
+                // All boolean flags should be true:
+                //   listed    = true  (bot appears in tab list)
+                //   showHat   = true  (outer head/hat skin layer visible — added in MC 1.21.4+)
+                case "boolean"     -> true;
                 case "int"         -> 0;
                 case "GameType"    -> gameTypeSurvival;
                 case "Component"   -> displayName;

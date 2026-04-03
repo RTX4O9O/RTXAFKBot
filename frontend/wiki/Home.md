@@ -1,7 +1,7 @@
 # 🎮 Fake Player Plugin — Wiki
 
 > **The Ultimate Bot Spoofing Plugin for Paper 1.21+**  
-> **Version:** 1.4.28 · **Platform:** Paper 1.21+ · **Author:** Bill_Hub
+> **Version:** 1.5.4 · **Platform:** Paper 1.21+ · **Author:** Bill_Hub
 
 ---
 
@@ -18,7 +18,7 @@
 - 🔄 **Dynamic swapping** — Replace offline players seamlessly  
 - ⚙️ **Highly configurable** — Hundreds of customization options
 - 🔐 **Permission system** — Full control over who can do what
-- 📊 **PlaceholderAPI** — 18+ placeholders for other plugins
+- 📊 **PlaceholderAPI** — 26+ placeholders for other plugins
 - 🎯 **LuckPerms integration** — Prefix/suffix support with gradients
 
 ---
@@ -110,7 +110,7 @@
 - **Whitelist Support** — Protect VIP players
 
 ### ⚙️ **Configuration**
-- **28 Config Versions** — Automatic migration system
+- **36 Config Versions** — Automatic migration system
 - **Hot Reload** — Change settings without restart
 - **Backup System** — Automatic config backups
 - **Validation** — Prevents invalid configurations
@@ -144,7 +144,7 @@ fpp.*                    # Full access (admin)
 
 ## 📊 PlaceholderAPI Integration
 
-FPP provides **18 placeholders** for use with other plugins:
+FPP provides **26+ placeholders** for use with other plugins:
 
 **Server-Wide:**
 - `%fpp_count%` — Number of bots

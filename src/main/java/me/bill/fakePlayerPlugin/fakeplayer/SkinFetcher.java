@@ -18,13 +18,17 @@ import java.util.concurrent.*;
 import java.util.function.BiConsumer;
 
 /**
- * Fetches Mojang skin textures for a given player name or URL asynchronously.
+ * Fetches skin textures for a given player name or URL asynchronously via
+ * <b>mineskin.eu</b> ({@code https://mineskin.eu/profile/<name>}).
+ *
+ * <p>A single HTTP call returns a signed Mojang-compatible texture payload —
+ * no UUID lookup, no Mojang session-server call.
  *
  * <h3>Capabilities</h3>
  * <ul>
  *   <li>{@link #fetchAsync(String, BiConsumer)} — resolve skin by Minecraft player name.</li>
  *   <li>{@link #fetchByUrl(String, BiConsumer)} — build a skin profile from a raw
- *       Mojang CDN URL (e.g. {@code https://textures.minecraft.net/texture/…}).</li>
+ *       texture URL (e.g. {@code https://textures.minecraft.net/texture/…}).</li>
  * </ul>
  *
  * <h3>Reliability features</h3>
@@ -33,8 +37,7 @@ import java.util.function.BiConsumer;
  *       instantly from cache.</li>
  *   <li><b>Callback deduplication</b> — simultaneous requests for the same name
  *       share one HTTP call.</li>
- *   <li><b>Rate-limited queue</b> — 800 ms between requests, safely inside Mojang's
- *       rate limits for shared server IPs.</li>
+ *   <li><b>Rate-limited queue</b> — 300 ms between requests.</li>
  * </ul>
  */
 public final class SkinFetcher {
@@ -57,22 +60,22 @@ public final class SkinFetcher {
                 return t;
             });
 
-    /** Gap between consecutive Mojang API requests (ms). Mojang's limit is ~1 req/s — 800 ms is safely within it. */
-    private static final long REQUEST_GAP_MS = 800;
+    /** Gap between consecutive skin API requests (ms). */
+    private static final long REQUEST_GAP_MS = 300;
     private static final String USER_AGENT = "FakePlayerPlugin/1.5.0";
     private static long nextSlotMs = 0;
 
-    /** Thrown internally when Mojang returns HTTP 429 (rate limited). Never cached. */
+    /** Thrown internally when the skin API returns HTTP 429 (rate limited). Never cached. */
     private static final class RateLimitException extends RuntimeException {
-        RateLimitException() { super("Mojang API rate limited (429)"); }
+        RateLimitException(String source) { super(source + " rate limited (429)"); }
     }
 
     // ── Public API ────────────────────────────────────────────────────────────
 
     /**
-     * Fetches skin data for {@code playerName} and calls
+     * Fetches skin data for {@code playerName} via mineskin.eu and calls
      * {@code callback(value, signature)} on the FPP-SkinFetcher thread.
-     * Both args are {@code null} if no skin exists (name not on Mojang).
+     * Both args are {@code null} if the name has no skin (not a real account).
      * Safe to call from any thread.
      */
     public static synchronized void fetchAsync(String playerName,
@@ -223,25 +226,23 @@ public final class SkinFetcher {
         String value = null, signature = null;
         boolean shouldCache = true;
         try {
-            String uuid = fetchUuid(playerName);
-            if (uuid != null) {
-                String[] tex = fetchTextures(uuid);
-                if (tex != null) { value = tex[0]; signature = tex[1]; }
+            String response = get("https://mineskin.eu/profile/" + playerName);
+            JsonObject json = parseJsonObject(response);
+            String[] tex = extractTexturePayload(json);
+            if (tex != null) {
+                value = tex[0];
+                signature = tex[1];
+                FppLogger.debug("SkinFetcher: fetched skin from mineskin.eu for '" + playerName + "'.");
+            } else {
+                FppLogger.debug("SkinFetcher: no skin found for '" + playerName + "' on mineskin.eu.");
             }
-            if (value != null)
-                FppLogger.debug("SkinFetcher: fetched skin for '" + playerName + "'.");
-            else
-                FppLogger.debug("SkinFetcher: no Mojang skin for '" + playerName + "' (name may not be a real account).");
         } catch (RateLimitException e) {
-            // Don't cache rate-limited results — the next fetchAsync call will retry.
             shouldCache = false;
-            FppLogger.warn("SkinFetcher: Mojang rate-limited for '" + playerName + "'. Not caching — will retry on next request.");
+            FppLogger.warn("SkinFetcher: mineskin.eu rate-limited for '" + playerName + "'. Will retry on next request.");
         } catch (Exception e) {
-            FppLogger.warn("SkinFetcher error for '" + playerName + "': " + e.getMessage());
+            FppLogger.warn("SkinFetcher: mineskin.eu error for '" + playerName + "': " + e.getMessage());
         }
 
-        // Only cache definitive results (found or "name doesn't exist").
-        // Rate-limited responses are NOT cached so a future call will retry.
         if (shouldCache) {
             cache.put(cacheKey, new String[]{value, signature});
         }
@@ -257,18 +258,7 @@ public final class SkinFetcher {
         }
     }
 
-    // ── Mojang API ────────────────────────────────────────────────────────────
-
-    private static String fetchUuid(String name) throws Exception {
-        JsonObject json = parseJsonObject(get("https://api.mojang.com/users/profiles/minecraft/" + name));
-        return getString(json, "id");
-    }
-
-    private static String[] fetchTextures(String rawUuid) throws Exception {
-        JsonObject json = parseJsonObject(get("https://sessionserver.mojang.com/session/minecraft/profile/"
-                + rawUuid + "?unsigned=false"));
-        return extractTexturePayload(json);
-    }
+    // ── HTTP helpers ──────────────────────────────────────────────────────────
 
     private static String get(String urlStr) throws Exception {
         HttpURLConnection conn =
@@ -280,7 +270,10 @@ public final class SkinFetcher {
         int code = conn.getResponseCode();
         if (code == 429) {
             conn.disconnect();
-            throw new RateLimitException(); // caller must NOT cache this result
+            // Extract hostname to identify which API was rate-limited in the log
+            String host;
+            try { host = URI.create(urlStr).getHost(); } catch (Exception ignored) { host = urlStr; }
+            throw new RateLimitException(host); // caller must NOT cache this result
         }
         if (code == 204 || code == 404) return null;
         try (BufferedReader br = new BufferedReader(

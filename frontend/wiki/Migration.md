@@ -1,6 +1,6 @@
 # ᴍɪɢʀᴀᴛɪᴏɴ & ʙᴀᴄᴋᴜᴘꜱ
 
-> **Version:** 1.1.4 · **Platform:** Paper 1.21+
+> **Version:** 1.5.4 · **Platform:** Paper 1.21+
 
 This page covers the **automatic config migration system**, **manual backup tools**, and **database migration utilities** built into FPP since v1.1.4. These features ensure you never lose your config or bot session data when updating the plugin.
 
@@ -269,6 +269,10 @@ If something goes wrong after an update, you can restore from a backup:
 | 8 | 1.0.13 | Added `collision` section |
 | 9 | 1.0.15 | Added `swap` and `fake-chat` sections |
 | **10** | **1.1.4** | Added `limits`, `bot-name`, `persistence`, `death`, `database` sections; normalised join/leave-delay keys |
+| 33 | 1.5.0 | Added proxy/network mode, config-sync, BotTabTeam, spawn cooldown, per-subsystem debug logging |
+| 34 | 1.5.0 | Added swim-ai section |
+| 35 | 1.5.0 | Added swim-ai.enabled key |
+| **36** | **1.5.4** | Removed orphaned LuckPerms keys; removed `skin.fallback-pool`, `skin.fallback-name`; `skin.guaranteed-skin` reset to `false` |
 
 ## Troubleshooting
 

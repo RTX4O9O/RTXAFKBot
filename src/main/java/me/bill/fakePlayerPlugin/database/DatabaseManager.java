@@ -40,6 +40,9 @@ public class DatabaseManager {
     // ── Schema version ────────────────────────────────────────────────────────
     private static final int SCHEMA_VERSION = 6;
 
+    /** Returns the latest DB schema version this build requires. */
+    public static int getCurrentSchemaVersion() { return SCHEMA_VERSION; }
+
     // ── DDL — session history ─────────────────────────────────────────────────
     private static final String CREATE_SESSIONS_SQLITE =
             "CREATE TABLE IF NOT EXISTS fpp_bot_sessions (" +

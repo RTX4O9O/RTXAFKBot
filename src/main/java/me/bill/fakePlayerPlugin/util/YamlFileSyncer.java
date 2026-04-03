@@ -109,6 +109,14 @@ public final class YamlFileSyncer {
             FppLogger.warn("YamlFileSyncer: failed to read files for " + fileName
                     + ": " + e.getMessage());
             return new SyncResult(fileName, List.of());
+        } catch (RuntimeException e) {
+            // YAMLException (RuntimeException) is thrown when the disk file contains
+            // unknown Bukkit-serialized types (e.g. !!MVSpawnLocation from Multiverse).
+            // Log a warning and skip the sync rather than crashing the plugin.
+            FppLogger.warn("YamlFileSyncer: could not parse disk file '" + fileName
+                    + "' — it may be corrupted or contain unknown serializable types"
+                    + " (e.g. from another plugin). Skipping sync. Cause: " + e.getMessage());
+            return new SyncResult(fileName, List.of());
         }
 
         // ── Find missing leaf keys ────────────────────────────────────────────
@@ -162,6 +170,10 @@ public final class YamlFileSyncer {
                     new InputStreamReader(jarStream, StandardCharsets.UTF_8));
             diskCfg = YamlConfiguration.loadConfiguration(diskFile);
         } catch (IOException e) {
+            return 0;
+        } catch (RuntimeException e) {
+            FppLogger.warn("YamlFileSyncer: could not parse disk file for countMissingKeys"
+                    + " — skipping. Cause: " + e.getMessage());
             return 0;
         }
 
