@@ -65,23 +65,44 @@ function initNavigation() {
 
     if (menuToggle) {
         menuToggle.addEventListener('click', () => {
-            sidebar.classList.toggle('active');
+            if (sidebar.classList.contains('active')) {
+                closeMobileMenu();
+            } else {
+                openMobileMenu();
+            }
         });
     }
 
-    // Close menu when clicking outside
+    // Close menu when clicking outside (fallback — backdrop also handles this)
     document.addEventListener('click', (e) => {
         if (sidebar.classList.contains('active') &&
             !sidebar.contains(e.target) &&
-            !menuToggle.contains(e.target)) {
-            sidebar.classList.remove('active');
+            menuToggle && !menuToggle.contains(e.target)) {
+            closeMobileMenu();
         }
     });
+}
+
+function openMobileMenu() {
+    const sidebar = document.getElementById('sidebar');
+    sidebar.classList.add('active');
+    // Create backdrop if it doesn't exist yet
+    let backdrop = document.getElementById('sidebarBackdrop');
+    if (!backdrop) {
+        backdrop = document.createElement('div');
+        backdrop.id = 'sidebarBackdrop';
+        backdrop.className = 'sidebar-backdrop';
+        document.body.appendChild(backdrop);
+        backdrop.addEventListener('click', closeMobileMenu);
+    }
+    backdrop.classList.add('active');
 }
 
 function closeMobileMenu() {
     const sidebar = document.getElementById('sidebar');
     sidebar.classList.remove('active');
+    const backdrop = document.getElementById('sidebarBackdrop');
+    if (backdrop) backdrop.classList.remove('active');
 }
 
 function setActivePage(page) {
@@ -326,6 +347,15 @@ function renderMarkdown(markdown) {
 
     // Render
     content.innerHTML = html;
+
+    // Wrap every table in a scroll container for mobile
+    content.querySelectorAll('table').forEach(table => {
+        if (table.parentElement && table.parentElement.classList.contains('table-wrap')) return;
+        const wrap = document.createElement('div');
+        wrap.className = 'table-wrap';
+        table.parentNode.insertBefore(wrap, table);
+        wrap.appendChild(table);
+    });
 
     // Append page navigation
     const pageNavHTML = `

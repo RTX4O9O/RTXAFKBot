@@ -149,7 +149,10 @@ body {
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
+    white-space: nowrap;
 }
+
+.logo-text-short { display: none; }
 
 .header-actions {
     display: flex;
@@ -856,18 +859,54 @@ body {
     margin-top: 3rem;
 }
 
+/* ==================== TABLE SCROLL WRAPPER ==================== */
+
+/* JS wraps every rendered table in this div for clean horizontal scroll */
+.table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    border-radius: var(--radius);
+    border: 1px solid var(--border-color);
+    margin: 2rem 0;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-color) transparent;
+}
+
+[data-theme="dark"] .table-wrap {
+    border-color: rgba(123, 142, 240, 0.2);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+/* When inside wrapper, table handles its own internal layout */
+.table-wrap .wiki-content table,
+.table-wrap table {
+    margin: 0 !important;
+    border: none !important;
+    border-radius: 0 !important;
+    min-width: 480px;
+    width: 100%;
+}
+
 /* Responsive table wrapper */
 @media (max-width: 768px) {
+    /* Fallback for tables not yet wrapped by JS */
     .wiki-content table {
         display: block;
         overflow-x: auto;
-        white-space: nowrap;
         -webkit-overflow-scrolling: touch;
+        /* NOTE: white-space:nowrap intentionally removed — it caused runaway table width */
     }
 
     .wiki-content th,
     .wiki-content td {
-        padding: 0.75rem 1rem;
+        padding: 0.75rem 0.875rem;
+        /* Allow text to wrap within cells */
+        white-space: normal;
+    }
+
+    /* Ensure wrapper itself scrolls properly inside the wiki layout */
+    .table-wrap {
+        max-width: 100%;
     }
 }
 
@@ -1452,6 +1491,22 @@ body {
     }
 }
 
+/* Sidebar backdrop (mobile) */
+.sidebar-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    top: var(--header-height);
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(2px);
+    z-index: 998;
+    animation: fadeIn 0.2s ease-out forwards;
+}
+
+.sidebar-backdrop.active { display: block; }
+
+@keyframes fadeIn { to { opacity: 1; } }
+
 @media (max-width: 768px) {
     .mobile-only {
         display: flex;
@@ -1472,6 +1527,14 @@ body {
         grid-template-columns: 1fr;
     }
 
+    /* Fix nested scroll — let the page scroll naturally on mobile */
+    .wiki-content-wrapper {
+        height: auto;
+        min-height: 70vh;
+        overflow-y: visible;
+        overflow-x: hidden;
+    }
+
     .wiki-sidebar {
         position: fixed;
         top: var(--header-height);
@@ -1487,7 +1550,7 @@ body {
     }
 
     .wiki-content {
-        padding: 2rem 1.5rem 4rem;
+        padding: 2rem 1.25rem 4rem;
         margin: 0 auto;
     }
 
@@ -1514,6 +1577,10 @@ body {
 }
 
 @media (max-width: 480px) {
+    /* Show short logo text on very small screens */
+    .logo-text-full { display: none; }
+    .logo-text-short { display: inline; }
+
     .wiki-content {
         padding: 1.5rem 1rem 3rem;
         margin: 0 auto;
@@ -1527,9 +1594,19 @@ body {
         font-size: 1.5rem;
     }
 
+    .wiki-content h3 {
+        font-size: 1.25rem;
+    }
+
     .wiki-content pre {
         padding: 1rem;
         font-size: 0.8125rem;
+    }
+
+    /* Better list readability on tiny screens */
+    .wiki-content ul,
+    .wiki-content ol {
+        padding-left: 1.25rem;
     }
 
     .modal {

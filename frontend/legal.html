@@ -86,7 +86,8 @@
         .logo { display: flex; align-items: center; gap: 0.75rem; text-decoration: none; }
         .logo-icon { width: 2rem; height: 2rem; border-radius: 6px; box-shadow: 0 2px 8px var(--shadow); transition: transform var(--transition); }
         .logo-icon:hover { transform: scale(1.05); }
-        .logo-text { font-size: 1.25rem; font-weight: 700; background: var(--gradient-primary); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+        .logo-text { font-size: 1.25rem; font-weight: 700; background: var(--gradient-primary); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; white-space: nowrap; }
+        .logo-text-short { display: none; }
         .header-nav { display: flex; align-items: center; gap: 0.25rem; }
         .nav-link { padding: 0.5rem 0.875rem; color: var(--text-secondary); text-decoration: none; font-size: 0.9375rem; font-weight: 500; border-radius: var(--radius-sm); transition: all var(--transition); }
         .nav-link:hover { color: var(--text-primary); background: var(--bg-secondary); }
@@ -206,6 +207,23 @@
         .legal-content th { background: var(--bg-secondary); padding: 0.75rem 1rem; text-align: left; font-size: 0.8125rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-tertiary); border-bottom: 1px solid var(--border-color); }
         .legal-content td { padding: 0.75rem 1rem; border-bottom: 1px solid var(--border-light); color: var(--text-secondary); }
 
+        /* Responsive table wrapper */
+        .table-wrap {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            border-radius: var(--radius);
+            border: 1px solid var(--border-color);
+            margin: 1rem 0;
+            scrollbar-width: thin;
+            scrollbar-color: var(--border-color) transparent;
+        }
+        [data-theme="dark"] .table-wrap { border-color: rgba(123,142,240,0.2); box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
+        .table-wrap table { margin: 0 !important; border: none !important; border-radius: 0 !important; min-width: 420px; width: 100%; }
+        @media (max-width: 768px) {
+            .table-wrap { max-width: 100%; }
+            .legal-content th, .legal-content td { padding: 0.6rem 0.75rem; white-space: normal; }
+        }
+
         /* ==================== FOOTER ==================== */
         .site-footer { background: var(--bg-secondary); border-top: 1px solid var(--border-color); padding: 3rem 1.5rem 2rem; }
         .footer-inner { max-width: 1100px; margin: 0 auto; }
@@ -225,17 +243,51 @@
         .dot-green { background: var(--success-color); }
         .dot-purple { background: var(--primary-color); }
 
+        /* ==================== MOBILE NAV PANEL ==================== */
+        .mobile-nav {
+            display: none;
+            position: fixed;
+            top: var(--header-height);
+            left: 0; right: 0;
+            background: var(--bg-primary);
+            border-bottom: 1px solid var(--border-color);
+            box-shadow: 0 8px 24px var(--shadow-lg);
+            z-index: 999;
+            padding: 0.75rem 1.5rem 1rem;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+        [data-theme="dark"] .mobile-nav { border-bottom: 1px solid var(--border-color); }
+        .mobile-nav.open { display: flex; }
+        .mobile-nav .nav-link { display: block; padding: 0.65rem 0.875rem; font-size: 1rem; border-radius: var(--radius-sm); }
+        .mobile-nav-divider { height: 1px; background: var(--border-color); margin: 0.4rem 0; }
+        .mobile-nav-download {
+            display: flex; align-items: center; gap: 0.5rem;
+            padding: 0.65rem 0.875rem;
+            background: var(--gradient-primary);
+            color: #fff !important; text-decoration: none;
+            border-radius: var(--radius-sm); font-weight: 600; font-size: 1rem;
+            margin-top: 0.25rem; transition: opacity var(--transition);
+        }
+        .mobile-nav-download:hover { opacity: 0.9; }
+
         /* ==================== RESPONSIVE ==================== */
         @media (max-width: 768px) {
             .header-nav { display: none; }
             .mobile-menu-btn { display: flex; }
+            .logo-text-full { display: none; }
+            .logo-text-short { display: inline; }
             .legal-content { padding: 1.5rem 1.25rem; }
+            .legal-tabs { flex-wrap: wrap; gap: 0.35rem; }
             .footer-top { grid-template-columns: repeat(2, 1fr); }
             .footer-brand { grid-column: 1 / -1; }
         }
         @media (max-width: 480px) {
             .footer-top { grid-template-columns: 1fr; }
             .footer-bottom { flex-direction: column; align-items: flex-start; }
+            .legal-tabs { flex-direction: column; border-bottom: none; }
+            .legal-tab { border: 1px solid var(--border-color); border-radius: var(--radius-sm); bottom: 0; }
+            .legal-tab.active { border-color: var(--primary-color); }
         }
     </style>
 </head>
@@ -246,7 +298,8 @@
     <div class="header-content">
         <a href="/" class="logo">
             <img src="/Icon/FPP.png" alt="FPP Logo" class="logo-icon">
-            <span class="logo-text">Fake Player Plugin</span>
+            <span class="logo-text logo-text-full">Fake Player Plugin</span>
+            <span class="logo-text logo-text-short">FPP</span>
         </a>
         <nav class="header-nav">
             <a href="/" class="nav-link">Home</a>
@@ -274,7 +327,19 @@
     </div>
 </header>
 
-<!-- MAIN -->
+<!-- MOBILE NAV PANEL -->
+<nav class="mobile-nav" id="mobileNav" aria-label="Mobile navigation">
+    <a href="/" class="nav-link">Home</a>
+    <a href="/wiki" class="nav-link">Wiki</a>
+    <a href="/legal/privacy-policy" class="nav-link">Privacy Policy</a>
+    <a href="/legal/terms-of-service" class="nav-link">Terms of Service</a>
+    <a href="https://discord.gg/QSN7f67nkJ" target="_blank" rel="noopener" class="nav-link">Discord</a>
+    <div class="mobile-nav-divider"></div>
+    <a href="https://modrinth.com/plugin/fake-player-plugin-(fpp)" target="_blank" rel="noopener" class="mobile-nav-download">
+        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Download Free
+    </a>
+</nav>
 <main class="page-wrapper">
     <!-- Breadcrumb -->
     <div class="breadcrumb">
@@ -361,6 +426,36 @@
 <script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.8/dist/purify.min.js"></script>
 <script>
+    // ── Mobile menu toggle ──────────────────────────────────────────────────
+    (function () {
+        const menuBtn = document.getElementById('menuToggle');
+        const mobileNav = document.getElementById('mobileNav');
+        if (!menuBtn || !mobileNav) return;
+
+        function closeMenu() {
+            mobileNav.classList.remove('open');
+            menuBtn.setAttribute('aria-expanded', 'false');
+        }
+
+        menuBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const isOpen = mobileNav.classList.toggle('open');
+            menuBtn.setAttribute('aria-expanded', String(isOpen));
+        });
+
+        mobileNav.querySelectorAll('a').forEach(link => {
+            link.addEventListener('click', closeMenu);
+        });
+
+        document.addEventListener('click', (e) => {
+            if (!mobileNav.contains(e.target) && e.target !== menuBtn) closeMenu();
+        });
+
+        window.addEventListener('resize', () => {
+            if (window.innerWidth > 768) closeMenu();
+        });
+    })();
+
     // ── Theme (shared key with index + wiki) ──────────────────────────────────
     (function () {
         const saved = localStorage.getItem('wiki-theme') || 'dark';
@@ -420,6 +515,15 @@
             marked.setOptions({ breaks: true, gfm: true, mangle: false, headerIds: true });
             const html = DOMPurify.sanitize(marked.parse(md), { ADD_ATTR: ['target', 'rel'] });
             container.innerHTML = html;
+
+            // Wrap tables for responsive horizontal scroll
+            container.querySelectorAll('table').forEach(table => {
+                if (table.parentElement && table.parentElement.classList.contains('table-wrap')) return;
+                const wrap = document.createElement('div');
+                wrap.className = 'table-wrap';
+                table.parentNode.insertBefore(wrap, table);
+                wrap.appendChild(table);
+            });
 
             container.querySelectorAll('a[href^="http"]').forEach(a => {
                 a.setAttribute('target', '_blank');
