@@ -47,6 +47,7 @@
 |------|-------------|
 | [🚀 Getting Started](Getting-Started.md) | Complete setup guide and first steps |
 | [❓ FAQ & Troubleshooting](FAQ.md) | Common questions and solutions |
+| [📋 Changelog](Changelog.md) | Full version history and release notes |
 
 ### ⚙️ Core Features  
 | Page | Description |
@@ -230,7 +231,7 @@ FPP provides **29+ placeholders** for use with other plugins:
 
 ### 📢 **Stay Updated**  
 - **Modrinth:** [Download Updates](https://modrinth.com/plugin/fake-player-plugin-(fpp))
-- **Changelog:** Check GitHub releases for latest features
+- **Changelog:** [View full version history](Changelog.md)
 - **Discord:** Get notified of new versions
 
 ### 🤝 **Contributing**
