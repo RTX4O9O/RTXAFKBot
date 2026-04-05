@@ -5,7 +5,7 @@ FPP registers a full **PlaceholderAPI** expansion (`%fpp_…%`) that is availabl
 **Requirement:** [PlaceholderAPI](https://www.spigotmc.org/resources/placeholderapi.6245/) must be installed.  
 No configuration is needed — the expansion registers automatically when PAPI is detected on startup.
 
-> **Version:** 1.5.8+ · **Total placeholders:** 29+ · **Auto-register:** Yes
+> **Version:** 1.5.10+ · **Total placeholders:** 29+ · **Auto-register:** Yes
 
 ---
 

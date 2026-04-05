@@ -2,6 +2,7 @@ package me.bill.fakePlayerPlugin.listener;
 
 import me.bill.fakePlayerPlugin.FakePlayerPlugin;
 import me.bill.fakePlayerPlugin.config.Config;
+import me.bill.fakePlayerPlugin.fakeplayer.BotType;
 import me.bill.fakePlayerPlugin.fakeplayer.FakePlayer;
 import me.bill.fakePlayerPlugin.fakeplayer.FakePlayerBody;
 import me.bill.fakePlayerPlugin.fakeplayer.FakePlayerManager;
@@ -95,7 +96,10 @@ public class BotCollisionListener implements Listener {
             kbX *= scale;
             kbZ *= scale;
         }
-        target.setVelocity(new Vector(kbX, kb.getY(), kbZ));
+
+        // PVP bots receive 60 % less knockback — they should feel solid but still react.
+        double pvpFactor = isPvpBot(target) ? 0.15 : 1.0;
+        target.setVelocity(new Vector(kbX * pvpFactor, kb.getY() * pvpFactor, kbZ * pvpFactor));
     }
 
     // ── 1b. Explosion fallback knockback ───────────────────────────────────
@@ -133,7 +137,10 @@ public class BotCollisionListener implements Listener {
             kbX *= scale;
             kbZ *= scale;
         }
-        target.setVelocity(new Vector(kbX, kb.getY(), kbZ));
+
+        // PVP bots receive 75 % less explosion knockback.
+        double pvpFactor = isPvpBot(target) ? 0.25 : 1.0;
+        target.setVelocity(new Vector(kbX * pvpFactor, kb.getY() * pvpFactor, kbZ * pvpFactor));
     }
 
     // ── 2. Walk-into push ─────────────────────────────────────────────────────
@@ -171,6 +178,8 @@ public class BotCollisionListener implements Listener {
             double dist     = Math.sqrt(distSq);
             double overlap  = 1.0 - (dist / walkRadius);
             double strength = walkStrength * overlap;
+            // PVP bots: 75 % less walk-push so they are harder to shove out of position.
+            if (fp.getBotType() == BotType.PVP) strength *= 0.25;
 
             applyImpulse(body, (dx / dist) * strength, (dz / dist) * strength, maxHoriz);
         }
@@ -213,8 +222,12 @@ public class BotCollisionListener implements Listener {
                 double overlap  = 1.0 - (dist / botRadius);
                 double strength = botStrength * overlap * 0.5;
 
-                applyImpulse(bodyB,  nx * strength,  nz * strength, maxHoriz);
-                applyImpulse(bodyA, -nx * strength, -nz * strength, maxHoriz);
+                // PVP bots: 75 % less separation impulse applied to/from them.
+                double factorA = bots.get(i).getBotType() == BotType.PVP ? 0.25 : 1.0;
+                double factorB = bots.get(j).getBotType() == BotType.PVP ? 0.25 : 1.0;
+
+                applyImpulse(bodyB,  nx * strength * factorB,  nz * strength * factorB, maxHoriz);
+                applyImpulse(bodyA, -nx * strength * factorA, -nz * strength * factorA, maxHoriz);
             }
         }
     }
@@ -278,6 +291,15 @@ public class BotCollisionListener implements Listener {
                 .get(FakePlayerManager.FAKE_PLAYER_KEY,
                         org.bukkit.persistence.PersistentDataType.STRING);
         return val != null && val.startsWith(FakePlayerBody.VISUAL_PDC_VALUE);
+    }
+
+    /**
+     * Returns {@code true} when {@code entity} is a PVP-type fake-player body.
+     * Used to apply the 50 % knockback reduction for PVP bots.
+     */
+    private boolean isPvpBot(Entity entity) {
+        FakePlayer fp = manager.getByEntity(entity);
+        return fp != null && fp.getBotType() == BotType.PVP;
     }
 
     private static Entity resolveKnockbackSource(Entity damager) {

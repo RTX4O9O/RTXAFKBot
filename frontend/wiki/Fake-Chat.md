@@ -53,9 +53,37 @@ fake-chat:
     min: 5
     max: 10
 
+  # Simulate a typing pause (0–2.5 s) before each message
+  typing-delay: true
+
+  # Chance a bot sends a quick follow-up message a few seconds later
+  burst-chance: 0.12
+  burst-delay:
+    min: 2
+    max: 5
+
+  # When a real player says a bot's name in chat, that bot may reply
+  reply-to-mentions: true
+  mention-reply-chance: 0.65
+  reply-delay:
+    min: 2
+    max: 8
+
+  # Minimum gap (seconds) between any two bots chatting (0 = disabled)
+  stagger-interval: 3
+
+  # Give each bot a random chat-frequency tier (quiet/normal/active/very-active)
+  activity-variation: true
+
+  # How many of a bot's own recent messages to remember and avoid repeating
+  history-size: 5
+
   # Chat line format. Supports MiniMessage tags and legacy & codes.
-  # Placeholders: {bot_name}  {message}
+  # Placeholders: {prefix}  {bot_name}  {suffix}  {message}
   chat-format: "&7{bot_name}: {message}"
+
+  # Format for bodyless or proxy-remote bot broadcasts
+  remote-format: "<yellow>{name}<dark_gray>: <white>{message}"
 ```
 
 | Setting | Description |
@@ -65,15 +93,27 @@ fake-chat:
 | `chance` | Roll probability per interval tick (`0.75` = 75% chance) |
 | `interval.min` | Minimum seconds between a single bot's messages |
 | `interval.max` | Maximum seconds between a single bot's messages |
+| `typing-delay` | Simulate a 0–2.5 s typing pause before each message |
+| `burst-chance` | Probability a bot sends a quick follow-up message |
+| `burst-delay` | Seconds before the follow-up fires (min/max) |
+| `reply-to-mentions` | Bots may reply when a player says their name in chat |
+| `mention-reply-chance` | Probability a named bot actually replies |
+| `reply-delay` | Seconds before the mention reply fires (min/max) |
+| `stagger-interval` | Minimum gap (s) between any two bots chatting. 0 = disabled |
+| `activity-variation` | Random per-bot chat frequency tier (quiet/normal/active/very-active) |
+| `history-size` | Recent messages to remember and avoid repeating |
 | `chat-format` | Format of every chat line. Supports MiniMessage and `&` codes. Placeholders: `{prefix}`, `{bot_name}`, `{suffix}`, `{message}`. |
+| `remote-format` | MiniMessage format for bodyless / proxy-remote bot broadcasts. Placeholders: `{name}`, `{message}`. |
+
+> **Hot Reload:** Changes to `interval`, `chance`, and `stagger-interval` take effect immediately when you run `/fpp reload` — all bot chat loops are restarted with the new values. (Fixed in v1.5.10)
 
 ### `chat-format` placeholders
 
 | Placeholder | Value |
 |-------------|-------|
-| `{prefix}` | LuckPerms group prefix for this bot (empty when `luckperms.use-prefix: false`) |
+| `{prefix}` | LuckPerms group prefix for this bot (empty when LuckPerms is not installed or no prefix is set) |
 | `{bot_name}` | Bot display name |
-| `{suffix}` | LuckPerms group suffix for this bot (empty when `luckperms.use-prefix: false`) |
+| `{suffix}` | LuckPerms group suffix for this bot (empty when LuckPerms is not installed or no suffix is set) |
 | `{message}` | Message text drawn from `bot-messages.yml` |
 
 ### `chat-format` examples
@@ -86,6 +126,58 @@ fake-chat:
 | `"<{bot_name}> {message}"` | IRC-style `<BotName> hello` |
 | `"<gray>[Bot]</gray> {bot_name}: {message}"` | Gray `[Bot]` label |
 | `"<gradient:#ff0000:#0000ff>{bot_name}</gradient>: {message}"` | Gradient-colored name |
+
+---
+
+## Event Triggers
+
+Bots can react to server events by sending messages from pools defined in `bot-messages.yml`.
+
+```yaml
+fake-chat:
+  event-triggers:
+    enabled: true
+
+    on-player-join:
+      enabled: true
+      chance: 0.40
+      delay: { min: 2, max: 6 }
+
+    on-death:
+      enabled: true
+      players-only: false
+      chance: 0.30
+      delay: { min: 1, max: 4 }
+
+    on-player-leave:
+      enabled: true
+      chance: 0.30
+      delay: { min: 1, max: 4 }
+```
+
+| Setting | Description |
+|---------|-------------|
+| `event-triggers.enabled` | Master switch — disabling also turns off all sub-triggers below |
+| `on-player-join` | A bot greets real players when they join. Uses `join-reactions` pool in `bot-messages.yml`. |
+| `on-death` | A bot reacts when an entity dies. `players-only: true` ignores mob/animal deaths. Uses `death-reactions` pool. |
+| `on-player-leave` | A bot says goodbye when a real player leaves. Uses `leave-reactions` pool. |
+
+---
+
+## Keyword Reactions
+
+Bots reply when a real player's message contains a configured keyword.
+
+```yaml
+fake-chat:
+  keyword-reactions:
+    enabled: false
+    keywords:
+      trade: "trade-reactions"   # pool key in bot-messages.yml
+      help:  "help-reactions"
+```
+
+When `enabled: true`, a random bot replies to the player's message using the configured pool from `bot-messages.yml`.
 
 ---
 

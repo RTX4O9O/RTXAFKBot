@@ -75,18 +75,6 @@ public final class ConfigValidator {
             issues++;
         }
 
-        // ── Swap ─────────────────────────────────────────────────────────────
-        if (Config.swapEnabled()) {
-            if (Config.swapSessionMin() > Config.swapSessionMax()) {
-                FppLogger.warn("[Config] swap.session-min > swap.session-max — "
-                        + "bots may swap instantly.");
-                issues++;
-            }
-            if (Config.swapRejoinDelayMin() > Config.swapRejoinDelayMax()) {
-                FppLogger.warn("[Config] swap.rejoin-delay-min > swap.rejoin-delay-max.");
-                issues++;
-            }
-        }
 
         // ── Limits ────────────────────────────────────────────────────────────
         if (Config.maxBots() < 0) {

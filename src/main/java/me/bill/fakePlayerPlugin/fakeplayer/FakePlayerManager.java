@@ -49,19 +49,28 @@ public class FakePlayerManager {
     private ChunkLoader     chunkLoader;
     private DatabaseManager db;
     private BotPersistence  persistence;
-    private BotSwapAI       swapAI;
     private BotTabTeam      botTabTeam;
+    /** PVP bot AI — movement + attack loop for all {@link BotType#PVP} bots. */
+    private final BotPvpAI  pvpAI;
+    /** Swap AI — session rotation system for all {@link BotType#AFK} bots. */
+    private BotSwapAI       botSwapAI;
 
     public void setChunkLoader(ChunkLoader cl) { this.chunkLoader = cl; }
     public void setDatabaseManager(DatabaseManager db) { this.db = db; }
     public void setBotPersistence(BotPersistence p) { this.persistence = p; }
-    public void setSwapAI(BotSwapAI s) { this.swapAI = s; }
     public void setBotTabTeam(BotTabTeam t) { this.botTabTeam = t; }
+    public void setBotSwapAI(BotSwapAI ai) { this.botSwapAI = ai; }
+
+    /** Returns the {@link BotChatAI} instance, or {@code null} if not yet initialised. */
+    public BotChatAI getBotChatAI() { return plugin.getBotChatAI(); }
+    /** Returns the {@link BotSwapAI} instance, or {@code null} if not yet initialised. */
+    public BotSwapAI getBotSwapAI() { return botSwapAI; }
 
 
     public FakePlayerManager(FakePlayerPlugin plugin) {
         this.plugin = plugin;
         FAKE_PLAYER_KEY = new NamespacedKey(plugin, "fake_player_name");
+        this.pvpAI      = new BotPvpAI(this);
 
         // Flush each bot's current position to the DB on the configured interval
         long flushTicks = Math.max(20L, Config.dbLocationFlushInterval() * 20L);
@@ -124,12 +133,17 @@ public class FakePlayerManager {
                     if (Config.swimAiEnabled()) {
                         NmsPlayerSpawner.setJumping(bot, bot.isInWater() || bot.isInLava());
                     }
+
+                    // PVP AI: set movement velocity toward target BEFORE tickPhysics
+                    // so the physics integration step consumes it this tick.
+                    if (fp.getBotType() == BotType.PVP) {
+                        pvpAI.tickBot(fp, bot, online);
+                    }
+
                     NmsPlayerSpawner.tickPhysics(bot);
 
-                    // Head AI: smoothly rotate the bot's head toward the nearest visible
-                    // real player within the configured look-range.
-                    // Visibility is checked via hasLineOfSight so bots never stare through walls.
-                    if (Config.headAiEnabled()) {
+                    // Head AI: skip for PVP bots — pvpAI already handles rotation.
+                    if (Config.headAiEnabled() && fp.getBotType() != BotType.PVP) {
                         double rangeSq = Config.headAiLookRange() * Config.headAiLookRange();
                         float  speed   = Config.headAiTurnSpeed();
 
@@ -264,7 +278,7 @@ public class FakePlayerManager {
      * @return number of bots queued (-1 if at limit)
      */
     public int spawn(Location location, int count, Player spawner) {
-        return spawn(location, count, spawner, null, false);
+        return spawn(location, count, spawner, null, false, BotType.AFK);
     }
 
     /**
@@ -276,7 +290,7 @@ public class FakePlayerManager {
      * @return number of bots queued, 0 if name taken, -1 if at limit, -2 if name invalid
      */
     public int spawn(Location location, int count, Player spawner, String customName) {
-        return spawn(location, count, spawner, customName, false);
+        return spawn(location, count, spawner, customName, false, BotType.AFK);
     }
 
     /**
@@ -287,6 +301,17 @@ public class FakePlayerManager {
      * @return number of bots queued, or {@code -1} if the global cap was hit
      */
     public int spawnUserBot(Location location, int count, Player spawner, boolean bypassMax) {
+        return spawnUserBot(location, count, spawner, bypassMax, BotType.AFK);
+    }
+
+    /**
+     * User-tier spawn with explicit bot type.
+     * PVP bots receive a {@code pvp_} prefix on their display name.
+     *
+     * @param botType {@link BotType#AFK} for default or {@link BotType#PVP} for PvP
+     * @return number of bots queued, or {@code -1} if the global cap was hit
+     */
+    public int spawnUserBot(Location location, int count, Player spawner, boolean bypassMax, BotType botType) {
         int maxBots = Config.maxBots();
         if (!bypassMax && maxBots > 0) {
             int available = maxBots - activePlayers.size();
@@ -306,6 +331,7 @@ public class FakePlayerManager {
             UUID uuid = UUID.randomUUID();
             PlayerProfile profile = Bukkit.createProfile(uuid, ubn.internalName());
             FakePlayer fp = new FakePlayer(uuid, ubn.internalName(), profile);
+            fp.setBotType(botType);
             // For user bots the internal name (ubot_*) has no Mojang skin —
             // pick a random name from the pool to use for skin lookup instead.
             fp.setSkinName(pickRandomSkinName());
@@ -314,6 +340,8 @@ public class FakePlayerManager {
                     .replace("{spawner}", spawnerName)
                     .replace("{num}", String.valueOf(alreadyOwned + i + 1))
                     .replace("{bot_name}", ubn.internalName());
+            // PVP bots get a recognisable pvp_ prefix on their display name
+            if (botType == BotType.PVP) rawUserName = "pvp_" + rawUserName;
             fp.setRawDisplayName(rawUserName);
             String userDisplay = finalizeDisplayName(rawUserName, ubn.internalName());
             fp.setDisplayName(userDisplay);
@@ -345,11 +373,24 @@ public class FakePlayerManager {
 
     /**
      * Full spawn overload with max-bots bypass support.
+     * Delegates to the BotType overload with {@link BotType#AFK}.
      *
      * @param bypassMax when {@code true} the configured {@code max-bots} cap is ignored
      * @return number of bots queued, 0 if name taken, -1 if at limit, -2 if name invalid
      */
     public int spawn(Location location, int count, Player spawner, String customName, boolean bypassMax) {
+        return spawn(location, count, spawner, customName, bypassMax, BotType.AFK);
+    }
+
+    /**
+     * Full spawn overload with bot-type support.
+     * PVP bots receive a {@code pvp_} prefix on both the MC username and display name.
+     *
+     * @param botType   {@link BotType#AFK} for default or {@link BotType#PVP} for PvP
+     * @param bypassMax when {@code true} the configured {@code max-bots} cap is ignored
+     * @return number of bots queued, 0 if name taken, -1 if at limit, -2 if name invalid
+     */
+    public int spawn(Location location, int count, Player spawner, String customName, boolean bypassMax, BotType botType) {
         int maxBots = Config.maxBots();
         if (!bypassMax && maxBots > 0) {
             int available = maxBots - activePlayers.size();
@@ -362,23 +403,39 @@ public class FakePlayerManager {
 
         // ── Custom name validation ────────────────────────────────────────────
         if (customName != null) {
+            // For PVP bots the effective MC name will be pvp_<customName>
+            String effectiveName = (botType == BotType.PVP) ? "pvp_" + customName : customName;
             // Minecraft player name: 1-16 chars, letters/digits/underscore only
-            if (customName.isEmpty() || customName.length() > 16
-                    || !customName.matches("[a-zA-Z0-9_]+")) return -2;
-            if (usedNames.contains(customName)) return 0; // already active
+            if (effectiveName.isEmpty() || effectiveName.length() > 16
+                    || !effectiveName.matches("[a-zA-Z0-9_]+")) return -2;
+            if (usedNames.contains(effectiveName)) return 0; // already active
             count = 1; // custom name always spawns exactly one bot
         }
 
         // ── Step 1: pre-generate names & FakePlayer objects ──────────────────
         List<FakePlayer> batch = new ArrayList<>();
         for (int i = 0; i < count; i++) {
-            String name = (customName != null) ? customName : generateName();
+            String baseName; // raw name from pool (no pvp_ prefix)
+            String name;     // actual MC username
+
+            if (customName != null) {
+                baseName = customName;
+                name = (botType == BotType.PVP) ? "pvp_" + customName : customName;
+            } else if (botType == BotType.PVP) {
+                name = generatePvpName();
+                baseName = (name != null && name.startsWith("pvp_")) ? name.substring(4) : name;
+            } else {
+                name = generateName();
+                baseName = name;
+            }
+
             if (name == null) break;
             UUID uuid = UUID.randomUUID();
             PlayerProfile profile = Bukkit.createProfile(uuid, name);
             FakePlayer fp = new FakePlayer(uuid, name, profile);
-            // For admin bots the internal name IS the skin name (e.g. "Notch", "Dream")
-            fp.setSkinName(name);
+            fp.setBotType(botType);
+            // Skin lookup: for PVP bots use the base name (without pvp_ prefix) so Mojang resolves it
+            fp.setSkinName(baseName != null ? baseName : name);
             // Build display name from format — LP prefix/suffix injected later by refreshLpDisplayName.
             String rawAdminName = Config.adminBotNameFormat().replace("{bot_name}", name);
             fp.setRawDisplayName(rawAdminName);
@@ -415,12 +472,24 @@ public class FakePlayerManager {
 
     /**
      * Spawn with bodyless flag — used by console to spawn bots without physical bodies.
+     * Delegates to the BotType overload with {@link BotType#AFK}.
      *
      * @param spawnBodyless when {@code true}, bot has no physical body (tab-list only)
      * @return number of bots queued, 0 if name taken, -1 if at limit, -2 if name invalid
      */
     public int spawnBodyless(Location location, int count, Player spawner, String customName, boolean bypassMax, boolean spawnBodyless) {
-        int result = spawn(location, count, spawner, customName, bypassMax);
+        return spawnBodyless(location, count, spawner, customName, bypassMax, spawnBodyless, BotType.AFK);
+    }
+
+    /**
+     * Spawn with bodyless flag and explicit bot type.
+     *
+     * @param spawnBodyless when {@code true}, bot has no physical body (tab-list only)
+     * @param botType       {@link BotType#AFK} for default or {@link BotType#PVP} for PvP
+     * @return number of bots queued, 0 if name taken, -1 if at limit, -2 if name invalid
+     */
+    public int spawnBodyless(Location location, int count, Player spawner, String customName, boolean bypassMax, boolean spawnBodyless, BotType botType) {
+        int result = spawn(location, count, spawner, customName, bypassMax, botType);
         if (result > 0 && spawnBodyless) {
             // Mark the newly spawned bots as bodyless
             String spawnerName = spawner != null ? spawner.getName() : "CONSOLE";
@@ -550,9 +619,6 @@ public class FakePlayerManager {
                 if (body != null) {
                     fp.setPhysicsEntity(body);
                     entityIdIndex.put(body.getEntityId(), fp);
-                    // Use the real name as the packet profile name so tab-list packets
-                    // and BotTabTeam use the real name — prevents {_ prefix appearing
-                    // in client command suggestions.
                     fp.setPacketProfileName(fp.getName());
                 }
             } else if (fp.isBodyless()) {
@@ -641,11 +707,21 @@ public class FakePlayerManager {
                             .thenRun(() -> Bukkit.getScheduler().runTaskLater(plugin, () -> {
                                 if (!activePlayers.containsKey(botUuid)) return;
                                 refreshLpDisplayName(fp);
+                                // Schedule swap session after LP group is applied
+                                if (botSwapAI != null && fp.getBotType() != BotType.PVP) {
+                                    botSwapAI.schedule(fp);
+                                }
                             }, 2L));
                 }, 5L);
+            } else {
+                // No LP — schedule swap immediately after spawn completes
+                if (botSwapAI != null && fp.getBotType() != BotType.PVP) {
+                    Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                        if (!activePlayers.containsKey(fp.getUuid())) return;
+                        botSwapAI.schedule(fp);
+                    }, 10L);
+                }
             }
-
-            if (swapAI != null) swapAI.schedule(fp);
         }, () -> {
             // onSkinApplied — called on the main thread after an async skin fetch completes
             // and Paper's setPlayerProfile() has been applied to the live entity.
@@ -677,16 +753,31 @@ public class FakePlayerManager {
      */
     public void spawnRestored(String name, UUID uuid, String savedDisplayName,
                               String spawnedBy, UUID spawnedByUuid, Location location) {
+        spawnRestored(name, uuid, savedDisplayName, spawnedBy, spawnedByUuid, location, BotType.AFK);
+    }
+
+    public void spawnRestored(String name, UUID uuid, String savedDisplayName,
+                              String spawnedBy, UUID spawnedByUuid, Location location, BotType botType) {
         // Skip if name already active (e.g. duplicate in save file)
         if (usedNames.contains(name)) return;
 
+        // Auto-detect PVP type from MC name prefix if not explicitly provided
+        if (botType == BotType.AFK && name.startsWith("pvp_")) botType = BotType.PVP;
+
         PlayerProfile profile = Bukkit.createProfile(uuid, name);
         FakePlayer fp = new FakePlayer(uuid, name, profile);
+        fp.setBotType(botType);
 
         // User bots (ubot_*) have no Mojang skin — pick a random pool name for skin resolution.
-        // Admin bots use their own name (e.g. "Notch") for skin lookup.
+        // Admin bots use their own name for skin lookup; PVP admin bots strip the pvp_ prefix.
         boolean isUserBot = name.startsWith("ubot_");
-        fp.setSkinName(isUserBot ? pickRandomSkinName() : name);
+        if (isUserBot) {
+            fp.setSkinName(pickRandomSkinName());
+        } else if (botType == BotType.PVP && name.startsWith("pvp_")) {
+            fp.setSkinName(name.substring(4)); // "pvp_Steve" → skin lookup as "Steve"
+        } else {
+            fp.setSkinName(name);
+        }
 
         // Resolve display name from the current format strings.
         // LP will apply its own prefix/suffix natively once the player entity is online.
@@ -704,12 +795,14 @@ public class FakePlayerManager {
                     .replace("{spawner}", effectiveSpawner)
                     .replace("{num}",     String.valueOf(botIdx))
                     .replace("{bot_name}", name);
-            Config.debug("[Restore] user-bot '" + name + "' spawner='" + effectiveSpawner + "' num=" + botIdx);
+            // Re-apply pvp_ prefix on display name for restored PVP user bots
+            if (botType == BotType.PVP && !rawName.startsWith("pvp_")) rawName = "pvp_" + rawName;
+            Config.debug("[Restore] user-bot '" + name + "' type=" + botType + " spawner='" + effectiveSpawner + "' num=" + botIdx);
             fp.setRawDisplayName(rawName);
             displayName = finalizeDisplayName(rawName, name);
         } else {
             String rawName = Config.adminBotNameFormat().replace("{bot_name}", name);
-            Config.debug("[Restore] admin-bot '" + name + "'");
+            Config.debug("[Restore] admin-bot '" + name + "' type=" + botType);
             fp.setRawDisplayName(rawName);
             displayName = finalizeDisplayName(rawName, name);
         }
@@ -801,9 +894,11 @@ public class FakePlayerManager {
         activePlayers.clear();
         usedNames.clear();
         entityIdIndex.clear();
-
-        // Cancel all swap timers
-        if (swapAI != null) swapAI.cancelAll();
+        // Clear PVP AI state for all bots being removed
+        pvpAI.cancelAll();
+        // Clear head AI rotation state to prevent memory leaks
+        botHeadRotation.clear();
+        botSpawnRotation.clear();
 
         // Calculate max possible delay for scheduling the final orphan sweep
         long maxDelay = 0;
@@ -891,9 +986,14 @@ public class FakePlayerManager {
         // Remove entity-id index entries now so no stale lookups remain
         if (target.getPhysicsEntity() != null)
             entityIdIndex.remove(target.getPhysicsEntity().getEntityId());
+        // Clear PVP AI state for this bot
+        pvpAI.stopBot(target.getUuid());
+        // Cancel swap timer for this bot
+        if (botSwapAI != null) botSwapAI.cancel(target.getUuid());
+        // Clear head AI rotation state to prevent memory leaks
+        botHeadRotation.remove(target.getUuid());
+        botSpawnRotation.remove(target.getUuid());
 
-        // Cancel any pending swap timer so it doesn't rejoin after deletion
-        if (swapAI != null) swapAI.cancel(target.getUuid());
 
         // Defer body removal, tab-list, despawn and leave message together
         int delayMinTicks = Config.leaveDelayMin();
@@ -950,12 +1050,21 @@ public class FakePlayerManager {
     }
 
     /**
-     * Synchronous staggered removal — called from {@code onDisable}.
-     * The Bukkit scheduler is already shut down at this point so we block
-     * the main thread between bots using {@link Thread#sleep}, honouring the
-     * same {@code leave-delay} config values that the normal scheduler-based
-     * removal uses. 1 tick = 50 ms. If both min and max are 0, all bots leave
-     * instantly with no sleep.
+     * Synchronous removal of all bots — called exclusively from {@code onDisable}
+     * when the Bukkit scheduler is already stopped.
+     *
+     * <h3>Shutdown optimisations</h3>
+     * <ul>
+     *   <li><b>No sleep</b> — leave-delay stagger is meaningless during shutdown;
+     *       no real clients are present to observe gradual departures.</li>
+     *   <li><b>No per-bot {@code db.recordRemoval()} enqueues</b> —
+     *       {@code DatabaseManager.recordAllShutdown()} closes all sessions with a
+     *       single bulk SQL UPDATE called immediately after this method returns.
+     *       Skipping the per-bot enqueues keeps the write queue empty so
+     *       {@code db.close()} drains in milliseconds instead of seconds.</li>
+     *   <li><b>{@code fpp_active_bots} rows are left intact</b> — they serve as the
+     *       primary DB restore source on the next startup, avoiding YAML fallback.</li>
+     * </ul>
      */
     public void removeAllSync() {
         if (activePlayers.isEmpty()) return;
@@ -964,89 +1073,29 @@ public class FakePlayerManager {
         activePlayers.clear();
         usedNames.clear();
         entityIdIndex.clear();
+        pvpAI.cancelAll();
+        // Clear head AI rotation state to prevent memory leaks
+        botHeadRotation.clear();
+        botSpawnRotation.clear();
 
         List<Player> snapshot = new ArrayList<>(Bukkit.getOnlinePlayers());
 
-        // leave-delay in config is TICKS; convert to ms: 1 tick = 50 ms
-        int delayMinTicks = Config.leaveDelayMin();
-        int delayMaxTicks = Math.max(delayMinTicks, Config.leaveDelayMax());
-        int spreadTicks   = delayMaxTicks - delayMinTicks;
-
-        for (int i = 0; i < toRemove.size(); i++) {
-            FakePlayer fp = toRemove.get(i);
-
-            // 1. Kill nametag, visual, and physics body
+        for (FakePlayer fp : toRemove) {
+            // 1. Remove NMS entity and release chunk tickets
             FakePlayerBody.removeAll(fp);
             if (chunkLoader != null) chunkLoader.releaseForBot(fp);
 
-            // 2. Tab list remove
+            // 2. Tab-list cleanup for any still-connected players
             if (botTabTeam != null) botTabTeam.removeBot(fp);
             for (Player online : snapshot) PacketHelper.sendTabListRemove(online, fp);
 
-            // 3. NMS player's quit event fires naturally — no custom leave message needed.
-            // (velocity network broadcast not available during shutdown sync)
-
-            // 4. DB record
-            if (db != null) db.recordRemoval(fp.getUuid(), "SHUTDOWN");
-
+            // DB session closure is handled by DatabaseManager.recordAllShutdown()
+            // called by FakePlayerPlugin.onDisable() immediately after this method.
+            // fpp_active_bots rows are left intact for DB-primary restore on next startup.
             Config.debug("Shutdown removed bot: " + fp.getName());
-
-            // 5. Sleep between bots — random delay in the configured range (ticks → ms).
-            //    Skip sleep after the last bot.
-            if (delayMaxTicks > 0 && i < toRemove.size() - 1) {
-                int ticks = delayMinTicks + (spreadTicks > 0
-                        ? ThreadLocalRandom.current().nextInt(spreadTicks + 1)
-                        : 0);
-                if (ticks > 0) sleepMs((long) ticks * 50L); // 1 tick = 50 ms
-            }
         }
-    }
 
-    /** Sleeps the current thread for {@code ms} milliseconds, handling interruption cleanly. */
-    private static void sleepMs(long ms) {
-        try {
-            Thread.sleep(ms);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-    }
-
-    // ── Swap support ─────────────────────────────────────────────────────────
-
-    /**
-     * Called by {@link BotSwapAI} when a bot's session expires.
-     * Removes the bot from the active registry and frees its name so a new
-     * bot can claim it — but does NOT do any visual removal (BotSwapAI handles that).
-     */
-    public void swapRemove(FakePlayer fp) {
-        activePlayers.remove(fp.getUuid());
-        usedNames.remove(fp.getName());
-        botHeadRotation.remove(fp.getUuid());
-        botSpawnRotation.remove(fp.getUuid());
-        if (chunkLoader != null) chunkLoader.releaseForBot(fp);
-        if (botTabTeam  != null) botTabTeam.removeBot(fp);
-        if (db != null) db.recordRemoval(fp.getUuid(), "SWAP");
-        Config.debug("Swap: removed " + fp.getName() + " from registry.");
-    }
-
-    /**
-     * Called by {@link BotSwapAI} to spawn a replacement bot at the given location.
-     * Pass {@code forcedName} to reconnect with the same name, or {@code null}
-     * for a fresh name from the pool.
-     *
-     * @return number of bots spawned (0 = name taken/pool exhausted, -1 = at limit)
-     */
-    public int spawnSwap(Location location, String forcedName) {
-        return spawn(location, 1, null, forcedName);
-    }
-
-    /**
-     * Cancels all pending swap session timers.
-     * Call after disabling swap via config reload or {@code /fpp swap off}
-     * so no in-flight doLeave tasks fire after swap is turned off.
-     */
-    public void cancelAllSwap() {
-        if (swapAI != null) swapAI.cancelAll();
+        FppLogger.info("Shutdown: removed " + toRemove.size() + " bot(s).");
     }
 
     /**
@@ -1087,7 +1136,7 @@ public class FakePlayerManager {
             usedNames.remove(fp.getName());
             botHeadRotation.remove(fp.getUuid());
             botSpawnRotation.remove(fp.getUuid());
-            if (swapAI != null) swapAI.cancel(fp.getUuid());
+            pvpAI.stopBot(fp.getUuid());
             if (db != null) db.recordRemoval(fp.getUuid(), "DIED");
             Config.debug("Removed from registry: " + name);
             return true;
@@ -1291,6 +1340,22 @@ public class FakePlayerManager {
     }
 
     /**
+     * Returns {@code true} if the given bot name is currently in use.
+     * Used by swap system to check name availability on rejoin.
+     */
+    public boolean isNameUsed(String name) {
+        return usedNames.contains(name);
+    }
+
+    /**
+     * Snapshot of all currently active bot UUIDs (unmodifiable).
+     * Used by swap system to identify newly spawned bots.
+     */
+    public Set<UUID> getActiveUUIDs() {
+        return Collections.unmodifiableSet(new HashSet<>(activePlayers.keySet()));
+    }
+
+    /**
      * Returns the active {@link FakePlayer} with the given internal name (case-insensitive),
      * or {@code null} if no matching bot is active. O(n) — use sparingly.
      */
@@ -1343,6 +1408,11 @@ public class FakePlayerManager {
     }
 
     public int getCount() { return activePlayers.size(); }
+    
+    /** Returns the PVP AI instance for defensive mode tracking. */
+    public BotPvpAI getPvpAI() {
+        return pvpAI;
+    }
 
     /**
      * Returns all bots spawned by the given player UUID.
@@ -1377,18 +1447,15 @@ public class FakePlayerManager {
      * Builds the final display name for a bot.
      *
      * <p>Bots are now real NMS ServerPlayer entities — LuckPerms applies their
-     * prefix and suffix natively in chat and the tab list. This method only
-     * applies the {@code bot-name.tab-list-format} template and any PlaceholderAPI
-     * tokens to produce the FPP-side custom name (shown via the name packet).
+     * prefix and suffix natively in chat and the tab list. This method
+     * sanitizes and PAPI-expands the raw name to produce the FPP-side custom
+     * name shown via the name packet.
      *
      * @param rawName base name resolved from admin/user format
      * @param botName internal bot name used for sanitize-log context
      */
     private String finalizeDisplayName(String rawName, String botName) {
-        String display = Config.tabListNameFormat()
-                .replace("{prefix}", "")        // LP prefix added later by refreshLpDisplayName()
-                .replace("{bot_name}", rawName)
-                .replace("{suffix}", "");        // LP suffix added later by refreshLpDisplayName()
+        String display = rawName;
 
         // Expand PlaceholderAPI placeholders (server-wide, null player context)
         if (display.contains("%")) {
@@ -1404,7 +1471,7 @@ public class FakePlayerManager {
 
     /**
      * Re-reads the bot's LuckPerms prefix and suffix from LP's in-memory meta cache
-     * and rebuilds its display name using {@code bot-name.tab-list-format}.
+     * and rebuilds its display name.
      *
      * <p>Call this after a LP group assignment completes so the prefix/suffix appear
      * correctly in the tab list and nametag. Must be called on the main server thread.
@@ -1417,17 +1484,12 @@ public class FakePlayerManager {
         if (!activePlayers.containsKey(fp.getUuid())) return;
         if (!plugin.isLuckPermsAvailable()) return;
 
-        String prefix = me.bill.fakePlayerPlugin.util.LuckPermsHelper.getResolvedPrefix(fp.getUuid());
-        String suffix = me.bill.fakePlayerPlugin.util.LuckPermsHelper.getResolvedSuffix(fp.getUuid());
 
         // Use the raw display content stored at spawn/restore time
         String rawContent = fp.getRawDisplayName();
         if (rawContent == null || rawContent.isBlank()) rawContent = fp.getName();
 
-        String display = Config.tabListNameFormat()
-                .replace("{prefix}", prefix)
-                .replace("{bot_name}", rawContent)
-                .replace("{suffix}", suffix);
+        String display = rawContent;
 
         // PAPI expansion
         if (display.contains("%")) {
@@ -1543,6 +1605,43 @@ public class FakePlayerManager {
             return chosen;
         }
         return fallbackName();
+    }
+
+    /**
+     * Generates a PvP-bot MC username from the name pool, prefixed with {@code pvp_}.
+     * The prefix occupies 4 characters, so pool names longer than 12 chars are
+     * truncated to ensure the result is a valid Minecraft name (≤ 16 chars).
+     * Falls back to {@code pvp_Bot<random>} if the pool is exhausted.
+     */
+    private String generatePvpName() {
+        List<String> pool = Config.namePool();
+        if (!pool.isEmpty()) {
+            String chosen = null;
+            int count = 0;
+            for (String n : pool) {
+                if (n == null || n.isEmpty() || !n.matches("[a-zA-Z0-9_]+")) continue;
+                // Truncate base name to 12 chars so pvp_ prefix fits in 16
+                String base = n.length() > 12 ? n.substring(0, 12) : n;
+                String candidate = "pvp_" + base;
+                if (usedNames.contains(candidate) || Bukkit.getPlayerExact(candidate) != null) continue;
+                count++;
+                if (ThreadLocalRandom.current().nextInt(count) == 0) chosen = candidate;
+            }
+            if (chosen != null) {
+                usedNames.add(chosen);
+                return chosen;
+            }
+        }
+        // Fallback: pvp_Bot<1000-9998>
+        String generated;
+        int attempts = 0;
+        do {
+            generated = "pvp_Bot" + ThreadLocalRandom.current().nextInt(1000, 9999);
+            if (generated.length() > 16) generated = generated.substring(0, 16);
+            if (++attempts > 200) return null;
+        } while (usedNames.contains(generated) || Bukkit.getPlayerExact(generated) != null);
+        usedNames.add(generated);
+        return generated;
     }
 
     private String fallbackName() {

@@ -1,6 +1,6 @@
 # Skin System
 
-FPP v1.1.0 ships a fully reworked skin pipeline with three modes and multiple
+FPP ships a fully reworked skin pipeline with three modes and multiple
 skin sources — from automatic Mojang resolution to custom PNG files on disk.
 
 ---
@@ -22,15 +22,14 @@ Run `/fpp reload` to apply changes without restarting.
 
 ### `auto` *(Recommended — online-mode servers)*
 
-Paper calls `Mannequin.setProfile(botName)` internally and the Minecraft client
-resolves the skin from Mojang automatically — exactly like a real player joining.
+FPP resolves the skin from the Mojang API using the bot's name and injects it directly
+into the bot's game profile — exactly like a real player joining.
 
 | Feature | Detail |
 |---------|--------|
-| HTTP requests | **Zero** — the plugin does nothing |
-| Skin accuracy | Perfect — matches the Minecraft account of that name |
-| Works offline | ❌ Requires `online-mode=true` |
-| Delay | None |
+| Skin accuracy | Matches the Minecraft account of that name |
+| Works offline | ❌ Requires `online-mode=true` for best results |
+| Delay | Async fetch — no tick blocking |
 
 > **Tip:** If a bot name doesn't match any Mojang account the client falls back
 > to the default Steve / Alex skin. This is expected behaviour.
@@ -68,33 +67,29 @@ in-memory for the session and can be cleared with `/fpp reload`.
 
 #### Config pool
 
-Add Minecraft player names or Mojang CDN URLs to the pool:
+Add Minecraft player names to the pool:
 
 ```yaml
 skin:
   mode: custom
-  custom:
-    pool:
-      - Notch
-      - Technoblade
-      - Dream
-      - https://textures.minecraft.net/texture/abc123def456...
+  pool:
+    - Notch
+    - Technoblade
+    - Dream
 ```
 
 Bots without an exact-name match randomly pick from this list.
 
 #### Per-bot name overrides
 
-Force a specific bot name to always use a particular player's skin (or a URL):
+Force a specific bot name to always use a particular player's skin:
 
 ```yaml
 skin:
   mode: custom
-  custom:
-    by-name:
-      Herobrine: Notch          # bot "Herobrine" gets Notch's skin
-      CoolBot: Technoblade      # bot "CoolBot" gets Technoblade's skin
-      RedBot: "https://textures.minecraft.net/texture/abc..."
+  overrides:
+    Herobrine: Notch          # bot "Herobrine" gets Notch's skin
+    CoolBot: Technoblade      # bot "CoolBot" gets Technoblade's skin
 ```
 
 Keys are matched **case-insensitively** against the bot's internal Minecraft name.

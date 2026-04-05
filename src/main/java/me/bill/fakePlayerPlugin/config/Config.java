@@ -67,6 +67,7 @@ public final class Config {
     public static boolean debugConfigSync() { return isDebug() || debugFlag("logging.debug.config-sync"); }
     public static boolean debugSkin()       { return isDebug() || debugFlag("logging.debug.skin"); }
     public static boolean debugDatabase()   { return isDebug() || debugFlag("logging.debug.database"); }
+    public static boolean debugChat()       { return isDebug() || debugFlag("logging.debug.chat"); }
 
     /** Whether the startup update checker is enabled. Maps to {@code update-checker.enabled}. */
     public static boolean updateCheckerEnabled() {
@@ -130,15 +131,6 @@ public final class Config {
         return cfg.getString("bot-name.user-format", "<gray>[bot-{spawner}-{num}]</gray>");
     }
 
-    /**
-     * Full tab-list / nametag display format.
-     * Placeholder: {@code {bot_name}} (resolved from admin/user format),
-     * and any PlaceholderAPI {@code %placeholder%} tokens.
-     * Default: {@code "{bot_name}"}.
-     */
-    public static String tabListNameFormat() {
-        return cfg.getString("bot-name.tab-list-format", "{bot_name}");
-    }
 
     // ── LuckPerms  (luckperms.*) ──────────────────────────────────────────────
     // Bots are now real NMS ServerPlayer entities. LuckPerms handles prefix,
@@ -311,6 +303,35 @@ public final class Config {
     /** Maximum leave-delay in ticks. */
     public static int leaveDelayMax() { return cfg.getInt("leave-delay.max", 40); }
 
+    // ── Swap / Session Rotation  (swap.*) ─────────────────────────────────────
+
+    /** Whether bot session rotation (swap in/out) is enabled. */
+    public static boolean swapEnabled() { return cfg.getBoolean("swap.enabled", false); }
+
+    /** Minimum session duration in seconds before a bot leaves. */
+    public static int swapSessionMin() { return cfg.getInt("swap.session.min", 60); }
+
+    /** Maximum session duration in seconds before a bot leaves. */
+    public static int swapSessionMax() { return cfg.getInt("swap.session.max", 300); }
+
+    /** Minimum absence duration in seconds before a bot rejoins. */
+    public static int swapAbsenceMin() { return cfg.getInt("swap.absence.min", 30); }
+
+    /** Maximum absence duration in seconds before a bot rejoins. */
+    public static int swapAbsenceMax() { return cfg.getInt("swap.absence.max", 120); }
+
+    /** Maximum number of bots allowed to be offline simultaneously (0 = unlimited). */
+    public static int swapMaxSwappedOut() { return cfg.getInt("swap.max-swapped-out", 0); }
+
+    /** Whether bots say farewell messages when leaving. */
+    public static boolean swapFarewellChat() { return cfg.getBoolean("swap.farewell-chat", true); }
+
+    /** Whether bots say greeting messages when rejoining. */
+    public static boolean swapGreetingChat() { return cfg.getBoolean("swap.greeting-chat", true); }
+
+    /** Whether bots attempt to reuse their same name on rejoin. */
+    public static boolean swapSameNameOnRejoin() { return cfg.getBoolean("swap.same-name-on-rejoin", true); }
+
     // ── Messages  (messages.*) ────────────────────────────────────────────────
 
     /** Broadcast a vanilla-style join message when a bot is spawned. */
@@ -388,6 +409,36 @@ public final class Config {
      */
     public static boolean swimAiEnabled() { return cfg.getBoolean("swim-ai.enabled", true); }
 
+    // ── PVP AI  (pvp-ai.*) ────────────────────────────────────────────────────
+
+    /**
+     * Difficulty level for the PVP AI.
+     * Maps to {@code pvp-ai.difficulty} — one of {@code "easy"}, {@code "medium"},
+     * {@code "hard"}, {@code "tier1"}, or {@code "hacker"}.
+     * Controls attack reach, timing precision, and crit/s-tap frequency.
+     */
+    public static String pvpAiDifficulty() {
+        return cfg.getString("pvp-ai.difficulty", "medium").toLowerCase();
+    }
+
+    /**
+     * Whether PVP bots start in defensive mode (retaliate only when attacked first).
+     * {@code false} = aggressive — bot immediately attacks any player within detect-range.
+     * Maps to {@code pvp-ai.defensive-mode}.
+     */
+    public static boolean pvpAiDefensiveMode() {
+        return cfg.getBoolean("pvp-ai.defensive-mode", true);
+    }
+
+    /**
+     * Detection radius in blocks — how far the bot scans for player targets.
+     * Maps to {@code pvp-ai.detect-range}.
+     */
+    public static double pvpAiDetectRange() {
+        return cfg.getDouble("pvp-ai.detect-range", 32.0);
+    }
+
+
     // ── Collision / Push  (collision.*) ──────────────────────────────────────
 
     public static double collisionWalkRadius()    { return cfg.getDouble("collision.walk-radius", 0.85); }
@@ -398,39 +449,155 @@ public final class Config {
     public static double collisionBotRadius()     { return cfg.getDouble("collision.bot-radius", 0.90); }
     public static double collisionBotStrength()   { return cfg.getDouble("collision.bot-strength", 0.14); }
 
-    // ── Bot Swap  (swap.*) ────────────────────────────────────────────────────
-
-    public static boolean swapEnabled()        { return cfg.getBoolean("swap.enabled", false); }
-    public static int swapSessionMin()         { return cfg.getInt("swap.session-min", 120); }
-    public static int swapSessionMax()         { return cfg.getInt("swap.session-max", 600); }
-    public static int swapRejoinDelayMin()     { return cfg.getInt("swap.rejoin-delay-min", 5); }
-    public static int swapRejoinDelayMax()     { return cfg.getInt("swap.rejoin-delay-max", 45); }
-    public static int swapJitter()             { return cfg.getInt("swap.jitter", 30); }
-    public static double swapReconnectChance() { return cfg.getDouble("swap.reconnect-chance", 0.15); }
-    public static int swapAfkKickChance()      { return cfg.getInt("swap.afk-kick-chance", 5); }
-    public static boolean swapFarewellChat()   { return cfg.getBoolean("swap.farewell-chat", true); }
-    public static boolean swapGreetingChat()   { return cfg.getBoolean("swap.greeting-chat", true); }
-    public static boolean swapTimeOfDayBias()  { return cfg.getBoolean("swap.time-of-day-bias", true); }
 
     // ── Fake Chat  (fake-chat.*) ──────────────────────────────────────────────
 
-    public static boolean fakeChatEnabled()       { return cfg.getBoolean("fake-chat.enabled", false); }
-    public static boolean fakeChatRequirePlayer() { return cfg.getBoolean("fake-chat.require-player-online", true); }
-    public static double  fakeChatChance()         { return cfg.getDouble("fake-chat.chance", 0.75); }
-    public static int     fakeChatIntervalMin()    { return cfg.getInt("fake-chat.interval.min", 5); }
-    public static int     fakeChatIntervalMax()    { return cfg.getInt("fake-chat.interval.max", 10); }
+    public static boolean fakeChatEnabled()          { return cfg.getBoolean("fake-chat.enabled", false); }
+    public static boolean fakeChatRequirePlayer()    { return cfg.getBoolean("fake-chat.require-player-online", true); }
+    public static double  fakeChatChance()           { return cfg.getDouble("fake-chat.chance", 0.75); }
+    public static int     fakeChatIntervalMin()      { return cfg.getInt("fake-chat.interval.min", 5); }
+    public static int     fakeChatIntervalMax()      { return cfg.getInt("fake-chat.interval.max", 10); }
 
-    /**
-     * MiniMessage/legacy-color format string for broadcast chat lines.
-     * Supports placeholders {@code {bot_name}} and {@code {message}}.
-     * Default: {@code "<{bot_name}> {message}"} (vanilla-style).
-     */
-    public static String fakeChatFormat() {
-        return cfg.getString("fake-chat.chat-format", "<{bot_name}> {message}");
-    }
+    // ── Realism enhancements ──────────────────────────────────────────────────
+    /** Simulate a typing pause (0–2.5 s) before each message fires. */
+    public static boolean fakeChatTypingDelay()      { return cfg.getBoolean("fake-chat.typing-delay", true); }
+    /** Chance (0–1) a bot sends a short follow-up message after the main one. */
+    public static double  fakeChatBurstChance()      { return cfg.getDouble("fake-chat.burst-chance", 0.12); }
+    /** Min seconds before a burst follow-up fires. */
+    public static int     fakeChatBurstDelayMin()    { return cfg.getInt("fake-chat.burst-delay.min", 2); }
+    /** Max seconds before a burst follow-up fires. */
+    public static int     fakeChatBurstDelayMax()    { return cfg.getInt("fake-chat.burst-delay.max", 5); }
+    /** When a real player mentions a bot's name, that bot may reply. */
+    public static boolean fakeChatReplyToMentions()  { return cfg.getBoolean("fake-chat.reply-to-mentions", true); }
+    /** Probability (0–1) a named bot actually replies to a mention (default 65 %). */
+    public static double  fakeChatMentionReplyChance() { return cfg.getDouble("fake-chat.mention-reply-chance", 0.65); }
+    /** Min seconds before a mention reply fires. */
+    public static int     fakeChatReplyDelayMin()    { return cfg.getInt("fake-chat.reply-delay.min", 2); }
+    /** Max seconds before a mention reply fires. */
+    public static int     fakeChatReplyDelayMax()    { return cfg.getInt("fake-chat.reply-delay.max", 8); }
+    /** Minimum gap (seconds) between any two bots chatting; 0 = disabled. */
+    public static int     fakeChatStaggerInterval()  { return cfg.getInt("fake-chat.stagger-interval", 3); }
+    /** Each bot gets a random chat-frequency multiplier. */
+    public static boolean fakeChatActivityVariation(){ return cfg.getBoolean("fake-chat.activity-variation", true); }
+    /** How many recent messages per bot to remember and avoid repeating. */
+    public static int     fakeChatHistorySize()      { return cfg.getInt("fake-chat.history-size", 5); }
+
 
     /** Messages bots can randomly send — loaded from bot-messages.yml. */
-    public static List<String> fakeChatMessages() { return BotMessageConfig.getMessages(); }
+    public static List<String> fakeChatMessages()   { return BotMessageConfig.getMessages(); }
+    /** Reply messages used when a player mentions a bot's name. */
+    public static List<String> chatReplyMessages()  { return BotMessageConfig.getReplyMessages(); }
+    /** Short burst follow-up messages. */
+    public static List<String> chatBurstMessages()  { return BotMessageConfig.getBurstMessages(); }
+    /** Join-reaction messages (player joins the server). */
+    public static List<String> chatJoinReactionMessages()  { return BotMessageConfig.getJoinReactionMessages(); }
+    /** Death-reaction messages (someone dies). */
+    public static List<String> chatDeathReactionMessages() { return BotMessageConfig.getDeathReactionMessages(); }
+    /** Leave-reaction messages (player leaves the server). */
+    public static List<String> chatLeaveReactionMessages() { return BotMessageConfig.getLeaveReactionMessages(); }
+    /** Keyword-specific reaction messages for a given keyword-pool key. */
+    public static List<String> chatKeywordReactionMessages(String key) { return BotMessageConfig.getKeywordReactionMessages(key); }
+
+    // ── Remote chat format ────────────────────────────────────────────────────
+
+    /**
+     * MiniMessage format used when broadcasting a bodyless or remote bot's message.
+     * Supports {@code {name}} (display name) and {@code {message}} (the resolved text).
+     * Config path: {@code fake-chat.remote-format}.
+     */
+    public static String fakeChatRemoteFormat() {
+        return cfg.getString("fake-chat.remote-format",
+                "<yellow>{name}<dark_gray>: <white>{message}");
+    }
+
+    // ── Event-triggered chat ──────────────────────────────────────────────────
+
+    /** Master switch for event-triggered chat reactions. */
+    public static boolean fakeChatEventTriggersEnabled() {
+        return cfg.getBoolean("fake-chat.event-triggers.enabled", true);
+    }
+
+    /** React when a real player joins the server. */
+    public static boolean fakeChatOnJoinEnabled() {
+        return cfg.getBoolean("fake-chat.event-triggers.on-player-join.enabled", true);
+    }
+    /** Probability (0–1) a bot reacts to a player join. */
+    public static double  fakeChatOnJoinChance() {
+        return cfg.getDouble("fake-chat.event-triggers.on-player-join.chance", 0.40);
+    }
+    /** Min seconds before a join-reaction fires. */
+    public static int     fakeChatOnJoinDelayMin() {
+        return cfg.getInt("fake-chat.event-triggers.on-player-join.delay.min", 2);
+    }
+    /** Max seconds before a join-reaction fires. */
+    public static int     fakeChatOnJoinDelayMax() {
+        return cfg.getInt("fake-chat.event-triggers.on-player-join.delay.max", 6);
+    }
+
+    /** React when a player or bot dies. */
+    public static boolean fakeChatOnDeathEnabled() {
+        return cfg.getBoolean("fake-chat.event-triggers.on-death.enabled", true);
+    }
+    /** Only react to player deaths, not mob/animal deaths. */
+    public static boolean fakeChatOnDeathPlayersOnly() {
+        return cfg.getBoolean("fake-chat.event-triggers.on-death.players-only", false);
+    }
+    /** Probability (0–1) a bot reacts to a death event. */
+    public static double  fakeChatOnDeathChance() {
+        return cfg.getDouble("fake-chat.event-triggers.on-death.chance", 0.30);
+    }
+    /** Min seconds before a death-reaction fires. */
+    public static int     fakeChatOnDeathDelayMin() {
+        return cfg.getInt("fake-chat.event-triggers.on-death.delay.min", 1);
+    }
+    /** Max seconds before a death-reaction fires. */
+    public static int     fakeChatOnDeathDelayMax() {
+        return cfg.getInt("fake-chat.event-triggers.on-death.delay.max", 4);
+    }
+
+    /** React when a real player leaves the server. */
+    public static boolean fakeChatOnLeaveEnabled() {
+        return cfg.getBoolean("fake-chat.event-triggers.on-player-leave.enabled", true);
+    }
+    /** Probability (0–1) a bot reacts to a player leaving. */
+    public static double  fakeChatOnLeaveChance() {
+        return cfg.getDouble("fake-chat.event-triggers.on-player-leave.chance", 0.30);
+    }
+    /** Min seconds before a leave-reaction fires. */
+    public static int     fakeChatOnLeaveDelayMin() {
+        return cfg.getInt("fake-chat.event-triggers.on-player-leave.delay.min", 1);
+    }
+    /** Max seconds before a leave-reaction fires. */
+    public static int     fakeChatOnLeaveDelayMax() {
+        return cfg.getInt("fake-chat.event-triggers.on-player-leave.delay.max", 4);
+    }
+
+    // ── Keyword reactions ─────────────────────────────────────────────────────
+
+    /** Master switch for keyword-triggered reactions. */
+    public static boolean fakeChatKeywordReactionsEnabled() {
+        return cfg.getBoolean("fake-chat.keyword-reactions.enabled", false);
+    }
+
+    /**
+     * Map of keyword → pool-key for keyword-triggered reactions.
+     * Config path: {@code fake-chat.keyword-reactions.keywords}.
+     * Example: {@code pvp: "pvp-reactions"}, {@code trade: "trade-reactions"}.
+     */
+    @SuppressWarnings("unchecked")
+    public static java.util.Map<String, String> fakeChatKeywordMap() {
+        Object raw = cfg.get("fake-chat.keyword-reactions.keywords");
+        if (raw instanceof java.util.Map<?, ?> m) {
+            java.util.Map<String, String> result = new java.util.LinkedHashMap<>();
+            for (java.util.Map.Entry<?, ?> e : m.entrySet()) {
+                if (e.getKey() instanceof String k && e.getValue() instanceof String v) {
+                    result.put(k.toLowerCase(), v);
+                }
+            }
+            return result;
+        }
+        return java.util.Map.of();
+    }
 
     // ── Database  (database.*) ────────────────────────────────────────────────
 
@@ -522,4 +689,5 @@ public final class Config {
     public static void debugConfigSync(String message) { FppLogger.debug("CONFIG_SYNC", debugConfigSync(), message); }
     public static void debugSkin(String message)       { FppLogger.debug("SKIN", debugSkin(), message); }
     public static void debugDatabase(String message)   { FppLogger.debug("DATABASE", debugDatabase(), message); }
+    public static void debugChat(String message)       { FppLogger.debug("CHAT", debugChat(), message); }
 }

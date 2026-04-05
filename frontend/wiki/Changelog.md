@@ -1,7 +1,38 @@
 # 📋 Changelog
 
 > **Full version history for Fake Player Plugin**  
-> Latest version: **v1.5.8** · Released: 2026-04-03
+> Latest version: **v1.5.10** · Released: 2026-04-05 · Config version: **41**
+
+---
+
+## v1.5.10 *(2026-04-05)*
+
+### 🔄 `/fpp swap` Toggle Fix
+- Running `/fpp swap` with no arguments now toggles swap on/off — exactly like `/fpp chat`
+- `swap-enabled` and `swap-disabled` messages redesigned to match the chat toggle style (`session rotation has been enabled/disabled`)
+- `swap-status-on` / `swap-status-off` now follow the same `is enabled / is disabled` pattern as chat status messages
+
+### 💬 Bot Chat Interval Fix
+- Bot chat loops are now restarted on `/fpp reload` so changes to `fake-chat.interval.min/max`, `fake-chat.chance`, and `fake-chat.stagger-interval` take effect **immediately** instead of waiting for each bot's old queued task to naturally expire
+- `/fpp reload` output now shows the new interval range as confirmation
+
+### 🤖 Fake Chat Realism Enhancements
+- **`typing-delay`** — simulates a 0–2.5 s typing pause before each message is sent
+- **`burst-chance` / `burst-delay`** — bots occasionally send a quick follow-up message a few seconds later
+- **`reply-to-mentions` / `mention-reply-chance` / `reply-delay`** — bots can reply when a real player says their name in chat
+- **`activity-variation`** — each bot gets a random chat-frequency tier (quiet / normal / active / very-active)
+- **`history-size`** — bots remember their own recent messages and avoid repeating them
+- **`remote-format`** — MiniMessage format for bodyless / proxy-remote bot broadcasts (`{name}` and `{message}` placeholders)
+
+### 🏊 Swim AI
+- New `swim-ai.enabled` config key (default `true`) — bots automatically swim upward when submerged in water or lava, mimicking a real player holding the spacebar
+- Set to `false` to let bots sink or drown instead
+
+### 🛠️ Language & Compatibility
+- `Biome.name()` deprecated call replaced with `Biome.getKey().getKey()` — compatible with Paper 1.22+
+- `sync-usage` and `swap-now-usage` messages now end with a period, matching the rest of the file
+- Startup banner now shows **Bot swap** state in the Features section alongside Fake chat
+- Startup banner now shows actual **Skin mode** (`auto`/`custom`/`off`) instead of the hardcoded `disabled`
 
 ---
 

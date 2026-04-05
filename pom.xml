@@ -6,7 +6,7 @@
 
     <groupId>me.bill</groupId>
     <artifactId>fpp</artifactId>
-    <version>1.5.8</version>
+    <version>1.5.10</version>
     <packaging>jar</packaging>
 
     <name>fpp</name>

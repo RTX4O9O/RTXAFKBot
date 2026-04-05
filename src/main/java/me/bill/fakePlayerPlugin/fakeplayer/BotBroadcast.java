@@ -103,7 +103,7 @@ public final class BotBroadcast {
     /**
      * Broadcasts a leave message using a pre-resolved display-name string.
      * Used when the {@link FakePlayer} object may already have been removed
-     * from the active map (e.g. entity-death callbacks, swap AI).
+     * from the active map (e.g. entity-death callbacks).
      */
     public static void broadcastLeaveByDisplayName(String displayName) {
         if (!Config.leaveMessage()) return;

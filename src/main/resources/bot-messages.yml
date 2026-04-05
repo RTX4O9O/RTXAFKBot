@@ -3,7 +3,16 @@
 #  Chat messages bots randomly send. Add, remove, or edit freely.
 #  Placeholders:
 #    {name}          — the bot's own name
-#    {random_player} — a random online real player's name
+#    {random_player} — a random online real player's name (or the joiner/deceased
+#                      for join-reactions and death-reactions respectively)
+#    {online}        — number of real (non-bot) players online
+#    {world}         — the bot's current world name
+#    {time}          — "day" or "night" based on the world's time
+#    {biome}         — the bot's current biome (e.g. "plains", "dark forest")
+#    {x} {y} {z}    — the bot's current block coordinates
+#    {server}        — the server ID (database.server-id in config.yml)
+#    {date}          — today's date (e.g. 2026-04-05)
+#    {day}           — full day of week (e.g. Sunday)
 # ─────────────────────────────────────────────────────────────────────────────
 
 messages:
@@ -1032,4 +1041,255 @@ messages:
   - "minecraft forever"
   - "gg"
   - "l"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  REPLY MESSAGES
+#  Used when a real player mentions a bot's name in chat.
+#  Placeholders: {name}  {random_player}
+# ─────────────────────────────────────────────────────────────────────────────
+replies:
+  - "yeah?"
+  - "what?"
+  - "sup"
+  - "hey"
+  - "hm?"
+  - "?"
+  - "yes?"
+  - "here!"
+  - "what's up?"
+  - "who me?"
+  - "you talking to me?"
+  - "lol what"
+  - "what do you need"
+  - "wassup"
+  - "hi!"
+  - "you called?"
+  - "present"
+  - "talking to me?"
+  - "oh hey"
+  - "what now lol"
+  - "yeah what"
+  - "ayy"
+  - "i heard that"
+  - "what's good"
+  - "what did i do"
+  - "lol yeah?"
+  - "omw"
+  - "on it"
+  - "say less"
+  - "ok ok"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  BURST FOLLOWUP MESSAGES
+#  Short messages sent a few seconds after the main message for a natural
+#  "still typing" effect.  Keep these brief.
+# ─────────────────────────────────────────────────────────────────────────────
+burst-followups:
+  - "lmao"
+  - "lol"
+  - "fr"
+  - "fr tho"
+  - "no cap"
+  - "ngl"
+  - "actually"
+  - "wait"
+  - "nah"
+  - "yep"
+  - "exactly"
+  - "true"
+  - "facts"
+  - "so true"
+  - "deadass"
+  - "real"
+  - "no literally"
+  - "ong"
+  - "xD"
+  - "smh"
+  - "bro"
+  - "not me tho"
+  - "wait what"
+  - "hold on"
+  - "actually wait"
+  - "nvm"
+  - "ikr"
+  - "preach"
+  - "same"
+  - "literally"
+  - "lowkey same"
+  - "highkey"
+  - "bruh"
+  - "omg"
+  - "no way"
+  - "crazy"
+  - "wild"
+  - "sheesh"
+  - "slay"
+  - "lfg"
+  - "pog"
+  - "big W"
+  - "W"
+  - "based"
+  - "goated"
+  - "for real"
+  - "nah fr"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  JOIN REACTIONS
+#  Sent by a random bot shortly after a real player joins the server.
+#  {random_player} resolves to the player who just joined.
+# ─────────────────────────────────────────────────────────────────────────────
+join-reactions:
+  - "hey {random_player}!"
+  - "welcome {random_player}"
+  - "yo {random_player}!"
+  - "wb {random_player}"
+  - "welcome back {random_player}"
+  - "hey hey {random_player}"
+  - "{random_player}! you made it"
+  - "oh nice {random_player} is here"
+  - "sup {random_player}"
+  - "welcome to the server {random_player}"
+  - "{random_player} in the chat"
+  - "{random_player}!"
+  - "finally {random_player}"
+  - "about time {random_player} lol"
+  - "oh hey {random_player}"
+  - "welcome {random_player}, glad you joined"
+  - "{random_player} welcome!"
+  - "heyy {random_player}"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  DEATH REACTIONS
+#  Sent by a random bot shortly after any entity dies.
+#  {random_player} resolves to the name of the entity that died.
+# ─────────────────────────────────────────────────────────────────────────────
+death-reactions:
+  - "rip"
+  - "F"
+  - "F in chat"
+  - "oof"
+  - "press F"
+  - "L"
+  - "rip {random_player}"
+  - "F for {random_player}"
+  - "oof {random_player}"
+  - "moment of silence for {random_player}"
+  - "RIP {random_player} lol"
+  - "lmao {random_player} died"
+  - "gg {random_player}"
+  - "bruh"
+  - "nah that's tough"
+  - "happens to the best of us"
+  - "skill issue"
+  - "unlucky"
+  - "that's rough"
+  - "rip bozo"
+  - "L + ratio"
+  - "press F to pay respects"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  LEAVE REACTIONS
+#  Sent by a random bot shortly after a real player leaves the server.
+#  {random_player} resolves to the player who just left.
+# ─────────────────────────────────────────────────────────────────────────────
+leave-reactions:
+  - "bye {random_player}!"
+  - "see ya {random_player}"
+  - "cya {random_player}"
+  - "later {random_player}"
+  - "take care {random_player}"
+  - "peace {random_player}"
+  - "{random_player} left :("
+  - "rip {random_player}"
+  - "nooo {random_player} left"
+  - "bye bye {random_player}"
+  - "sad to see {random_player} go"
+  - "come back soon {random_player}"
+  - "{random_player} logging off already?"
+  - "o7 {random_player}"
+  - "later {random_player} o7"
+  - "{random_player} left the chat"
+  - "gg {random_player} see you next time"
+  - "later!"
+  - "bye everyone"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  KEYWORD REACTIONS
+#  Used when a real player says a configured keyword (fake-chat.keyword-reactions).
+#  Add sections here matching the pool-key names in your config.yml.
+#  Example: if config maps "pvp" → "pvp-reactions", add a pvp-reactions section.
+#
+#  To enable: set fake-chat.keyword-reactions.enabled: true in config.yml and
+#  add keyword → pool-key pairs under fake-chat.keyword-reactions.keywords.
+# ─────────────────────────────────────────────────────────────────────────────
+keyword-reactions:
+
+  pvp-reactions:
+    - "anyone want to duel?"
+    - "pvp scene is active rn"
+    - "1v1 me"
+    - "who's the best pvper here?"
+    - "pvp is so fun on this server"
+    - "just warming up for pvp"
+    - "pvp practice let's go"
+    - "the pvp here is actually good"
+
+  trade-reactions:
+    - "anyone want to trade?"
+    - "i've got stuff to trade"
+    - "trading is the way to go"
+    - "what are you trading {random_player}?"
+    - "oh I need that, trade me"
+    - "good trades make the server go round"
+
+  help-reactions:
+    - "I can help!"
+    - "what do you need help with?"
+    - "i'll try to help"
+    - "ask the staff, they're helpful here"
+    - "what's the issue?"
+    - "check the discord for help"
+
+  gg-reactions:
+    - "gg!"
+    - "GG"
+    - "gg wp"
+    - "well played"
+    - "nice one!"
+    - "gg ez"
+    - "clutch"
+    - "big W"
+
+  build-reactions:
+    - "what are you building?"
+    - "ooh nice, what's the design?"
+    - "building is so satisfying"
+    - "I love seeing good builds"
+    - "send pics when done!"
+    - "what materials are you using?"
+    - "interior or exterior?"
+
+  grind-reactions:
+    - "grind never stops"
+    - "the grind is real"
+    - "respect the grind"
+    - "keep grinding!"
+    - "we all out here grinding"
+    - "grind mode activated"
+    - "stay focused"
+
+  mine-reactions:
+    - "mining is therapeutic ngl"
+    - "branch mining at y -58 is the way"
+    - "found anything good?"
+    - "strip mining or cave diving?"
+    - "watch out for lava"
+    - "bring plenty of torches"
+    - "always carry a water bucket"
 

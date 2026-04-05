@@ -67,8 +67,75 @@ public final class BotMessageConfig {
         return msgs.isEmpty() ? fallback() : msgs;
     }
 
+    /**
+     * Returns the list of reply messages used when a real player mentions
+     * a bot's name in chat ({@code replies:} section in {@code bot-messages.yml}).
+     * Falls back to an empty list — callers should fall back to {@link #getMessages()}.
+     */
+    public static List<String> getReplyMessages() {
+        if (cfg == null) return fallbackReplies();
+        List<String> msgs = cfg.getStringList("replies");
+        return msgs.isEmpty() ? fallbackReplies() : msgs;
+    }
+
+    /**
+     * Returns the list of short burst follow-up messages
+     * ({@code burst-followups:} section in {@code bot-messages.yml}).
+     * Falls back to a small built-in list if the section is missing.
+     */
+    public static List<String> getBurstMessages() {
+        if (cfg == null) return fallbackBursts();
+        List<String> msgs = cfg.getStringList("burst-followups");
+        return msgs.isEmpty() ? fallbackBursts() : msgs;
+    }
+
+    /**
+     * Returns the list of messages bots say when a player joins
+     * ({@code join-reactions:} section in {@code bot-messages.yml}).
+     */
+    public static List<String> getJoinReactionMessages() {
+        if (cfg == null) return List.of();
+        return cfg.getStringList("join-reactions");
+    }
+
+    /**
+     * Returns the list of messages bots say when someone dies nearby
+     * ({@code death-reactions:} section in {@code bot-messages.yml}).
+     */
+    public static List<String> getDeathReactionMessages() {
+        if (cfg == null) return List.of();
+        return cfg.getStringList("death-reactions");
+    }
+
+    /**
+     * Returns the list of messages bots say when a real player leaves the server
+     * ({@code leave-reactions:} section in {@code bot-messages.yml}).
+     */
+    public static List<String> getLeaveReactionMessages() {
+        if (cfg == null) return List.of();
+        return cfg.getStringList("leave-reactions");
+    }
+
+    /**
+     * Returns the keyword-reaction message pool for the given key
+     * ({@code keyword-reactions.<key>:} section in {@code bot-messages.yml}).
+     * Returns an empty list when the key is absent.
+     */
+    public static List<String> getKeywordReactionMessages(String key) {
+        if (cfg == null || key == null) return List.of();
+        return cfg.getStringList("keyword-reactions." + key.toLowerCase());
+    }
+
     private static List<String> fallback() {
         return Arrays.asList("gg", "let's go!", "hey everyone", "what's up", "nice server");
+    }
+
+    private static List<String> fallbackReplies() {
+        return Arrays.asList("yeah?", "sup", "what?", "hm?", "here!");
+    }
+
+    private static List<String> fallbackBursts() {
+        return Arrays.asList("lol", "fr", "ngl", "no cap", "lmao");
     }
 }
 

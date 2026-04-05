@@ -11,23 +11,24 @@ All changes take effect immediately after running `/fpp reload` — no server re
 |---------|---------|
 | [`language`](#language) | Active language file |
 | [`debug`](#debug) | Verbose console logging |
+| [`logging.debug.*`](#debug) | Per-subsystem debug toggles (startup, nms, packets, luckperms, network, config-sync, skin, database) |
 | [`bot-name`](#bot-display-names) | Admin/user format templates and tab-list format |
-| [`fake-player`](#fake-player) | Core bot behaviour |
-| [`fake-player.skin`](#skin) | Skin system mode |
-| [`body`](#body) | Physical Mannequin entity, pushable & damageable toggles |
-| [`fake-player.persist-on-restart`](#persistence) | Save/restore bots across restarts |
-| [`fake-player.join-delay`](#join-delay) | Staggered join timing |
-| [`fake-player.leave-delay`](#leave-delay) | Staggered leave timing |
-| [`fake-player.combat`](#combat) | Health and hurt sounds |
-| [`fake-player.death`](#death--respawn) | Respawn or leave on death |
-| [`fake-player.messages`](#messages) | Join/leave/kill message toggles |
-| [`fake-player.chunk-loading`](#chunk-loading) | Keep chunks loaded like a real player |
-| [`fake-player.head-ai`](#head-ai) | Head-tracking AI |
-| [`fake-player.collision`](#collision--push) | Push physics |
-| [`fake-player.swap`](#swap-system) | Bot rotation settings |
+| [`skin`](#skin) | Skin system mode (`auto` / `custom` / `off`) |
+| [`body`](#body) | Physical entity, pushable & damageable toggles |
+| [`persistence`](#persistence) | Save/restore bots across restarts |
+| [`join-delay` / `leave-delay`](#join-delay) | Staggered join/leave timing |
+| [`combat`](#combat) | Health and hurt sounds |
+| [`death`](#death--respawn) | Respawn or leave on death |
+| [`messages`](#messages) | Join/leave/kill message toggles |
+| [`chunk-loading`](#chunk-loading) | Keep chunks loaded like a real player |
+| [`head-ai`](#head-ai) | Head-tracking AI |
+| [`swim-ai`](#swim-ai) | Automatic swimming in water/lava |
+| [`collision`](#collision--push) | Push physics |
+| [`swap`](#swap-system) | Bot session rotation settings |
 | [`fake-chat`](#fake-chat) | Bot chat AI + message format |
 | [`tab-list`](#tab-list) | Tab-list header/footer and bot visibility toggle |
 | [`database`](#database) | SQLite / MySQL storage |
+| [`config-sync`](#config-sync) | Cross-server config push/pull mode |
 
 ---
 
@@ -97,12 +98,12 @@ When `nms: true` is enabled, you'll see:
 
 ---
 
-## fake-player
+## Limits
 
 ### max-bots
 
 ```yaml
-fake-player:
+limits:
   max-bots: 1000
 ```
 
@@ -112,7 +113,7 @@ The global maximum number of bots that can be active at any time.
 ### user-bot-limit
 
 ```yaml
-fake-player:
+limits:
   user-bot-limit: 1
 ```
 
@@ -120,12 +121,11 @@ The default personal bot limit for players with `fpp.user.spawn`.
 This is the fallback when the player has no `fpp.bot.<num>` node.  
 Override per-player or per-group with the `fpp.bot.<num>` permission nodes.
 
-### spawn-count-presets
+### spawn-presets
 
 ```yaml
-fake-player:
-  spawn-count-presets:
-    admin: [ 1, 5, 10, 15, 20 ]
+limits:
+  spawn-presets: [1, 5, 10, 15, 20]
 ```
 
 Tab-complete suggestions for the amount argument in `/fpp spawn`.  
@@ -152,9 +152,9 @@ bot-name:
 
 | Placeholder | Value |
 |-------------|-------|
-| `{prefix}` | LuckPerms group prefix (empty when `luckperms.use-prefix: false`) |
+| `{prefix}` | LuckPerms group prefix (empty when LuckPerms is not installed or no prefix is set) |
 | `{bot_name}` | Resolved bot name after `admin-format` / `user-format` substitution |
-| `{suffix}` | LuckPerms group suffix (empty when `luckperms.use-prefix: false`) |
+| `{suffix}` | LuckPerms group suffix (empty when LuckPerms is not installed or no suffix is set) |
 | `%any_papi%` | Any PlaceholderAPI placeholder — evaluated server-wide (null player context) |
 
 **Examples:**
@@ -168,21 +168,22 @@ bot-name:
 ## Skin
 
 ```yaml
-fake-player:
-  skin:
-    mode: auto
-    clear-cache-on-reload: true
+skin:
+  mode: auto
+  guaranteed-skin: false
 ```
 
 Controls how bots get their Minecraft player skin.
 
 | Mode | Description |
 |------|-------------|
-| `auto` | *(Recommended)* Calls `Mannequin.setProfile(name)` — Paper and the Minecraft client resolve the correct Mojang skin automatically. Zero HTTP calls. Requires online-mode server. |
-| `fetch` | The plugin fetches the texture value and signature from the Mojang API in the background and injects it into the Mannequin. Works on offline-mode servers. Results are cached per session. |
-| `disabled` | No skin applied. Bots display the default Steve / Alex skin. |
+| `auto` *(default)* | Fetches a real Mojang skin matching the bot's name from the Mojang API. Works on online-mode servers. |
+| `custom` | Full control — per-bot overrides, a `skins/` PNG folder, and a random pool. Resolution order: per-bot override → `skins/<name>.png` → random PNG from `skins/` → random pool entry → Mojang API. |
+| `off` | No skin applied. Bots display the default Steve / Alex appearance. |
 
-`clear-cache-on-reload` — when `true` and `mode: fetch`, the skin texture cache is cleared every time `/fpp reload` is run.
+`guaranteed-skin` (default `false`) — when `false`, bots whose name has no matching Mojang account use the default Steve/Alex appearance. Set to `true` to attempt a skin fetch even for generated names.
+
+In `custom` mode, place 64×64 or 64×32 PNG skin files inside `plugins/FakePlayerPlugin/skins/`. Name a file `<botname>.png` to assign it exclusively to that bot; any other PNG enters the random pool. Run `/fpp reload` after adding or removing skin files.
 
 ## Body
 
@@ -204,8 +205,8 @@ Controls whether a physical **Mannequin** entity is spawned for each bot and how
 ## Persistence
 
 ```yaml
-fake-player:
-  persist-on-restart: true
+persistence:
+  enabled: true
 ```
 
 | Value | Effect |
@@ -218,10 +219,9 @@ fake-player:
 ## Join Delay
 
 ```yaml
-fake-player:
-  join-delay:
-    min: 0    # ticks
-    max: 5    # ticks (≈0.25 s)
+join-delay:
+  min: 0    # ticks
+  max: 1    # ticks
 ```
 
 When spawning multiple bots, each bot waits a random number of ticks (between `min` and `max`) before appearing.  
@@ -234,13 +234,12 @@ This makes batch spawns look like natural player joins rather than a single-fram
 ## Leave Delay
 
 ```yaml
-fake-player:
-  leave-delay:
-    min: 0    # ticks
-    max: 5    # ticks (≈0.25 s)
+leave-delay:
+  min: 0    # ticks
+  max: 1    # ticks
 ```
 
-Same concept as join delay, applied when removing multiple bots (`/fpp delete all`).  
+Same concept as join delay, applied when removing multiple bots (`/fpp despawn all`).  
 Each bot's leave message and entity removal are staggered by a random delay in this range.
 
 ---
@@ -248,10 +247,9 @@ Each bot's leave message and entity removal are staggered by a random delay in t
 ## Combat
 
 ```yaml
-fake-player:
-  combat:
-    max-health: 20.0
-    hurt-sound: true
+combat:
+  max-health: 20.0
+  hurt-sound: true
 ```
 
 | Option | Description |
@@ -264,11 +262,10 @@ fake-player:
 ## Death & Respawn
 
 ```yaml
-fake-player:
-  death:
-    respawn-on-death: false
-    respawn-delay: 60
-    suppress-drops: true
+death:
+  respawn-on-death: false
+  respawn-delay: 60
+  suppress-drops: true
 ```
 
 | Option | Description |
@@ -282,93 +279,110 @@ fake-player:
 ## Messages
 
 ```yaml
-fake-player:
-  messages:
-    join-message: true
-    leave-message: true
-    kill-message: false
+messages:
+  join-message: true
+  leave-message: true
+  kill-message: false
+  notify-admins-on-join: true
 ```
 
 | Option | Description |
 |--------|-------------|
 | `join-message` | Broadcast a vanilla-style join message when a bot is spawned. |
 | `leave-message` | Broadcast a vanilla-style leave message when a bot is deleted or dies. |
-| `kill-message` | Broadcast a kill message when a player kills a bot (e.g. "Steve was slain by El_Pepes"). |
+| `kill-message` | Broadcast a kill message when a player kills a bot. |
+| `notify-admins-on-join` | Send compatibility warnings to admins when they join. |
 
 ---
 
 ## Chunk Loading
 
 ```yaml
-fake-player:
-  chunk-loading:
-    enabled: true
-    radius: 6
+chunk-loading:
+  enabled: true
+  radius: 0
+  update-interval: 20
 ```
 
 | Option | Description |
 |--------|-------------|
 | `enabled` | Keep chunks loaded around each bot like a real player. Mobs spawn, redstone ticks, and crops grow. |
-| `radius` | Chunk radius to keep loaded. Keep at or below your server's `view-distance`. |
+| `radius` | Chunk radius to keep loaded. `0` = match server simulation-distance. |
+| `update-interval` | Ticks between position checks (20 = 1 s). |
 
 ---
 
 ## Head AI
 
 ```yaml
-fake-player:
-  head-ai:
-    look-range: 8.0
-    turn-speed: 0.3
+head-ai:
+  enabled: true
+  look-range: 8.0
+  turn-speed: 0.3
 ```
 
 | Option | Description |
 |--------|-------------|
+| `enabled` | Enable/disable head tracking entirely. |
 | `look-range` | Radius (blocks) within which a bot rotates its head to face the nearest player. Set to `0` to disable. |
 | `turn-speed` | Interpolation factor (0.0–1.0). `1.0` = instant snap. `0.1` = very slow smooth turn. |
+
+---
+
+## Swim AI
+
+```yaml
+swim-ai:
+  enabled: true
+```
+
+When `enabled: true`, bots automatically swim upward when submerged in water or lava — mimicking a real player holding the spacebar. Set to `false` to let bots sink or drown instead.
 
 ---
 
 ## Collision / Push
 
 ```yaml
-fake-player:
-  collision:
-    walk-radius: 0.85
-    walk-strength: 0.22
-    max-horizontal-speed: 0.30
-    hit-strength: 0.45
-    bot-radius: 0.90
-    bot-strength: 0.14
+collision:
+  walk-radius: 0.85
+  walk-strength: 0.22
+  hit-strength: 0.45
+  hit-max-horizontal-speed: 0.80
+  bot-radius: 0.90
+  bot-strength: 0.14
+  max-horizontal-speed: 0.30
 ```
 
 | Option | Description |
 |--------|-------------|
 | `walk-radius` | Distance (blocks) at which a player walking into a bot triggers a push. |
 | `walk-strength` | Impulse applied when a player walks into a bot. |
-| `max-horizontal-speed` | Maximum horizontal speed a bot can reach from any push. |
-| `hit-strength` | Impulse when a player punches a bot. |
+| `hit-strength` | Knockback force when hitting a bot. |
+| `hit-max-horizontal-speed` | Max horizontal speed for hit/explosion knockback. |
 | `bot-radius` | Radius at which two bots push each other apart. |
 | `bot-strength` | Impulse for bot-vs-bot separation. |
+| `max-horizontal-speed` | Maximum push speed cap for walk/separation sources. |
 
 ---
 
 ## Swap System
 
 ```yaml
-fake-player:
-  swap:
-    enabled: false
-    session-min: 120
-    session-max: 600
-    rejoin-delay-min: 5
-    rejoin-delay-max: 45
-    jitter: 30
-    reconnect-chance: 0.15
-    afk-kick-chance: 5
-    farewell-chat: true
-    greeting-chat: true
-    time-of-day-bias: true
+swap:
+  enabled: false
+
+  session:
+    min: 60    # Minimum session duration in seconds
+    max: 300   # Maximum session duration in seconds
+
+  absence:
+    min: 30    # Minimum offline time in seconds
+    max: 120   # Maximum offline time in seconds
+
+  max-swapped-out: 0        # Max bots offline simultaneously (0 = unlimited)
+  farewell-chat: true       # Bots say goodbye before leaving
+  greeting-chat: true       # Bots say hi when rejoining
+  same-name-on-rejoin: true # Reuse the same name if available on rejoin
 ```
 
 See [Swap System](Swap-System.md) for a full explanation of every option.
@@ -385,7 +399,20 @@ fake-chat:
   interval:
     min: 5
     max: 10
-  chat-format: "&7{bot_name}: {message}"
+  typing-delay: true
+  burst-chance: 0.12
+  burst-delay:
+    min: 2
+    max: 5
+  reply-to-mentions: true
+  mention-reply-chance: 0.65
+  reply-delay:
+    min: 2
+    max: 8
+  stagger-interval: 3
+  activity-variation: true
+  history-size: 5
+  remote-format: "<yellow>{name}<dark_gray>: <white>{message}"
 ```
 
 | Key | Description |
@@ -393,16 +420,26 @@ fake-chat:
 | `enabled` | Master toggle for the entire fake-chat system. |
 | `require-player-online` | Suppress bot messages when no real players are online. |
 | `chance` | Roll probability (0.0–1.0) per interval tick. |
-| `interval.min` / `interval.max` | Seconds between each bot's own messages (random range). |
-| `chat-format` | **Full chat line format.** Supports MiniMessage tags and legacy `&` codes. |
+| `interval.min` / `interval.max` | Seconds between each bot's own messages (random range). Hot-reloadable — `/fpp reload` restarts all bot chat loops immediately. |
+| `typing-delay` | Simulate a 0–2.5 s typing pause before each message. |
+| `burst-chance` | Probability a bot sends a quick follow-up message shortly after. |
+| `burst-delay.min` / `max` | Seconds before the follow-up fires. |
+| `reply-to-mentions` | When a real player says a bot's name in chat, that bot may reply. |
+| `mention-reply-chance` | Probability a named bot actually replies (0.0–1.0). |
+| `reply-delay.min` / `max` | Seconds before the mention reply fires. |
+| `stagger-interval` | Minimum gap (seconds) between any two bots chatting — prevents floods. 0 = disabled. |
+| `activity-variation` | Give each bot a random chat-frequency multiplier (quiet/normal/active/very-active). |
+| `history-size` | How many of a bot's own recent messages to remember and avoid repeating. |
+| `remote-format` | MiniMessage format for bodyless or proxy-remote bot broadcasts. Placeholders: `{name}`, `{message}`. |
+| `chat-format` | **Full chat line format.** Supports MiniMessage tags and legacy `&` codes. Placeholders: `{prefix}`, `{bot_name}`, `{suffix}`, `{message}`. |
 
 **`chat-format` placeholders:**
 
 | Placeholder | Value |
 |-------------|-------|
-| `{prefix}` | LuckPerms group prefix (empty when `luckperms.use-prefix: false`) |
+| `{prefix}` | LuckPerms group prefix (empty when LuckPerms is not installed or no prefix is set) |
 | `{bot_name}` | Bot display name |
-| `{suffix}` | LuckPerms group suffix (empty when `luckperms.use-prefix: false`) |
+| `{suffix}` | LuckPerms group suffix (empty when LuckPerms is not installed or no suffix is set) |
 | `{message}` | Text drawn from `bot-messages.yml` |
 
 **`chat-format` examples:**

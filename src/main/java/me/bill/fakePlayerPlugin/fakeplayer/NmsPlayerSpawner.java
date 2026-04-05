@@ -16,25 +16,25 @@ import java.util.*;
 /**
  * Reflection-based NMS {@code ServerPlayer} factory and physics driver.
  *
- * <h3>How physics work (matching the hello09x/fakeplayer reference plugin)</h3>
- * <ol>
- *   <li>Spawn: create a real {@code ServerPlayer} and call
- *       {@code PlayerList.placeNewPlayer()} with a {@link FakeChannel}-backed
- *       connection.  {@code placeNewPlayer()} creates a vanilla
- *       {@code ServerGamePacketListenerImpl} (SGPL) and sends a spawn-position
- *       packet — setting {@code awaitingPositionFromClient} on that SGPL.</li>
- *   <li>After {@code placeNewPlayer()}, create a fresh
- *       {@link FakeServerGamePacketListenerImpl} (a SGPL subclass whose
- *       {@code send()} is a no-op).  This fresh instance has
- *       {@code awaitingPositionFromClient == null} and it can never be set
- *       (because {@code send()} discards all packets).  Assign it to
- *       {@code ServerPlayer.connection} via reflection.</li>
- *   <li>Every tick: the server's PlayerList calls {@code handle.connection.tick()}.
- *       Since {@code awaitingPositionFromClient} is always null on our fake
- *       listener, no position correction runs.  We also call
- *       {@code ServerPlayer.doTick()} to drive gravity and collision.</li>
- * </ol>
- */
+     * <h3>How physics work (matching the hello09x/fakeplayer reference plugin)</h3>
+     * <ol>
+     *   <li>Spawn: create a real {@code ServerPlayer} and call
+     *       {@code PlayerList.placeNewPlayer()} with a FakeChannel-backed
+     *       connection.  {@code placeNewPlayer()} creates a vanilla
+     *       {@code ServerGamePacketListenerImpl} (SGPL) and sends a spawn-position
+     *       packet — setting {@code awaitingPositionFromClient} on that SGPL.</li>
+     *   <li>After {@code placeNewPlayer()}, create a fresh
+     *       {@link FakeServerGamePacketListenerImpl} (a SGPL subclass whose
+     *       {@code send()} is a no-op).  This fresh instance has
+     *       {@code awaitingPositionFromClient == null} and it can never be set
+     *       (because {@code send()} discards all packets).  Assign it to
+     *       {@code ServerPlayer.connection} via reflection.</li>
+     *   <li>Every tick: the server's PlayerList calls {@code handle.connection.tick()}.
+     *       Since {@code awaitingPositionFromClient} is always null on our fake
+     *       listener, no position correction runs.  We also call
+     *       {@code ServerPlayer.doTick()} to drive gravity and collision.</li>
+     * </ol>
+     */
 public final class NmsPlayerSpawner {
 
     // ── Initialisation state ───────────────────────────────────────────────────
@@ -76,6 +76,10 @@ public final class NmsPlayerSpawner {
     // ── ServerPlayer.connection field ─────────────────────────────────────────
     /** Used to replace the vanilla SGPL with {@link FakeServerGamePacketListenerImpl}. */
     private static Field connectionFieldInPlayer;
+
+    // ── ServerPlayer.attack method (for PVP AI) ────────────────────────────────
+    /** Used to make bot perform actual attack on target entity. */
+    private static Method attackMethod;
 
     // ── ClientInformation cache ────────────────────────────────────────────────
     private static Object clientInfoDefault;
@@ -255,9 +259,23 @@ public final class NmsPlayerSpawner {
                 }
             }
 
+            // ── ServerPlayer.attack(Entity) method (for PVP AI) ───────────────────
+            try {
+                Class<?> entityClassForAttack = nmsLoader.loadClass("net.minecraft.world.entity.Entity");
+                attackMethod = findMethod(serverPlayerClass, "attack", 1, entityClassForAttack);
+                if (attackMethod != null) {
+                    FppLogger.debug("NmsPlayerSpawner: attack(Entity) method cached");
+                } else {
+                    FppLogger.warn("NmsPlayerSpawner: attack(Entity) method not found — PVP bots will use fallback damage");
+                }
+            } catch (Exception e) {
+                FppLogger.warn("NmsPlayerSpawner: Failed to cache attack method: " + e.getMessage());
+            }
+
             initialized = true;
             FppLogger.info("NmsPlayerSpawner initialised (doTick=" + (doTickMethod != null)
-                    + ", connectionField=" + (connectionFieldInPlayer != null) + ")");
+                    + ", connectionField=" + (connectionFieldInPlayer != null)
+                    + ", attack=" + (attackMethod != null) + ")");
 
             // ── Skin-parts entity metadata (DATA_PLAYER_MODE_CUSTOMISATION) ────
             // Done after initialized=true so forceAllSkinParts() can use the already-
@@ -514,6 +532,52 @@ public final class NmsPlayerSpawner {
         }
     }
 
+    /**
+     * Makes the bot perform a real NMS attack on the target entity.
+     *
+     * <p>This uses the bot's NMS {@code ServerPlayer.attack(Entity)} method,
+     * which triggers proper combat mechanics including critical hits, knockback,
+     * damage events, and all vanilla attack logic.
+     *
+     * <p>If the attack method is unavailable (reflection failed), this falls back
+     * to {@code target.damage(dmg, bot)} which applies damage but skips vanilla
+     * combat mechanics.
+     *
+     * @param bot    the attacking bot (Bukkit Player)
+     * @param target the entity being attacked (Bukkit Player or LivingEntity)
+     * @param damage fallback damage amount (used only if reflection fails)
+     */
+    public static void performAttack(Player bot, org.bukkit.entity.Entity target, double damage) {
+        if (!initialized || craftPlayerGetHandleMethod == null) {
+            // Fallback: direct damage
+            if (target instanceof org.bukkit.entity.Damageable damageable) {
+                damageable.damage(damage, bot);
+            }
+            return;
+        }
+
+        try {
+            Object nmsBot = craftPlayerGetHandleMethod.invoke(bot);
+            Object nmsTarget = craftPlayerGetHandleMethod.invoke(target);
+
+            if (attackMethod != null && nmsTarget != null) {
+                // Use real NMS attack — this triggers all vanilla combat mechanics
+                attackMethod.invoke(nmsBot, nmsTarget);
+            } else {
+                // Fallback: direct damage
+                if (target instanceof org.bukkit.entity.Damageable damageable) {
+                    damageable.damage(damage, bot);
+                }
+            }
+        } catch (Exception e) {
+            FppLogger.debug("NmsPlayerSpawner.performAttack failed: " + e.getMessage());
+            // Final fallback
+            if (target instanceof org.bukkit.entity.Damageable damageable) {
+                damageable.damage(damage, bot);
+            }
+        }
+    }
+
     // ══════════════════════════════════════════════════════════════════════════
     //  Remove
     // ══════════════════════════════════════════════════════════════════════════
@@ -559,10 +623,57 @@ public final class NmsPlayerSpawner {
      *   <li>Right after {@code placeNewPlayer()} in {@link #spawnFakePlayer} to set
      *       the correct value before the initial entity-metadata packet is sent.</li>
      *   <li>After {@code Player.setPlayerProfile()} in
-     *       {@link FakePlayerBody#applyPaperSkin} because Paper's profile-refresh
+     *       {@code FakePlayerBody#applyPaperSkin} because Paper's profile-refresh
      *       may re-send entity metadata with default values.</li>
      * </ul>
      */
+    /**
+     * Triggers the NMS {@code ServerPlayer.startUsingItem(InteractionHand.MAIN_HAND)} call.
+     * This makes Minecraft start the eating animation for the bot's current main-hand item
+     * and broadcasts the "isHandActive" entity metadata to nearby clients automatically.
+     *
+     * <p>The bot's {@code doTick()} loop (called by {@link #tickPhysics}) will process the
+     * item-use timer each tick, play eating sounds, show particles, and call
+     * {@code completeUsingItem()} after the vanilla eatin€g duration (32 ticks for food).
+     */
+    public static void startUsingMainHandItem(Player bot) {
+        if (!initialized || craftPlayerGetHandleMethod == null) return;
+        try {
+            Object nmsPlayer = craftPlayerGetHandleMethod.invoke(bot);
+            ClassLoader cl   = nmsPlayer.getClass().getClassLoader();
+
+            // Resolve InteractionHand enum
+            Class<?> interactionHandClass = cl.loadClass("net.minecraft.world.InteractionHand");
+            Object[] hands = interactionHandClass.getEnumConstants();
+            if (hands == null || hands.length == 0) return;
+            Object mainHand = hands[0]; // MAIN_HAND is the first constant
+
+            // Find and call startUsingItem(InteractionHand)
+            for (Method m : nmsPlayer.getClass().getMethods()) {
+                if (m.getParameterCount() == 1
+                        && m.getParameterTypes()[0] == interactionHandClass) {
+                    String name = m.getName();
+                    if (name.equals("startUsingItem") || name.equals("c")) {
+                        m.setAccessible(true);
+                        m.invoke(nmsPlayer, mainHand);
+                        return;
+                    }
+                }
+            }
+            // Fallback: try all methods with one InteractionHand parameter
+            for (Method m : nmsPlayer.getClass().getMethods()) {
+                if (m.getParameterCount() == 1
+                        && m.getParameterTypes()[0] == interactionHandClass) {
+                    m.setAccessible(true);
+                    m.invoke(nmsPlayer, mainHand);
+                    return;
+                }
+            }
+        } catch (Exception e) {
+            FppLogger.debug("NmsPlayerSpawner.startUsingMainHandItem failed: " + e.getMessage());
+        }
+    }
+
     public static void forceAllSkinParts(Player bot) {
         if (!initialized
                 || skinPartsDataAccessor == null
@@ -822,6 +933,34 @@ public final class NmsPlayerSpawner {
         while (cur != null && cur != Object.class) {
             for (Method m : cur.getDeclaredMethods()) {
                 if (m.getName().equals(name) && m.getParameterCount() == paramCount) {
+                    m.setAccessible(true);
+                    return m;
+                }
+            }
+            cur = cur.getSuperclass();
+        }
+        return null;
+    }
+
+    private static Method findMethod(Class<?> clazz, String name, int paramCount, Class<?>... paramTypes) {
+        Class<?> cur = clazz;
+        while (cur != null && cur != Object.class) {
+            for (Method m : cur.getDeclaredMethods()) {
+                if (!m.getName().equals(name) || m.getParameterCount() != paramCount) continue;
+                if (paramTypes.length == 0) {
+                    m.setAccessible(true);
+                    return m;
+                }
+                // Check parameter types are assignable
+                Class<?>[] mParams = m.getParameterTypes();
+                boolean match = true;
+                for (int i = 0; i < paramTypes.length && i < mParams.length; i++) {
+                    if (!mParams[i].isAssignableFrom(paramTypes[i])) {
+                        match = false;
+                        break;
+                    }
+                }
+                if (match) {
                     m.setAccessible(true);
                     return m;
                 }

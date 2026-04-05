@@ -107,6 +107,11 @@ public final class BotPersistence {
             section.put("z",               loc.getZ());
             section.put("yaw",             (double) loc.getYaw());
             section.put("pitch",           (double) loc.getPitch());
+            section.put("bot-type",        fp.getBotType().name());
+            section.put("chat-enabled",    fp.isChatEnabled());
+            if (fp.getChatTier() != null) {
+                section.put("chat-tier", fp.getChatTier());
+            }
             list.add(section);
         }
         return list;
@@ -159,17 +164,20 @@ public final class BotPersistence {
                 List<SavedBot> saved = new ArrayList<>();
                 for (var row : rows) {
                     try {
-                        saved.add(new SavedBot(
-                                row.botName(),
-                                UUID.fromString(row.botUuid()),
-                                row.botDisplay(),
-                                row.spawnedBy(),
-                                UUID.fromString(row.spawnedByUuid()),
-                                row.world(),
-                                row.x(), row.y(), row.z(),
-                                row.yaw(), row.pitch(),
-                                null   // No LP group from DB - LP handles natively now
-                        ));
+                    saved.add(new SavedBot(
+                            row.botName(),
+                            UUID.fromString(row.botUuid()),
+                            row.botDisplay(),
+                            row.spawnedBy(),
+                            UUID.fromString(row.spawnedByUuid()),
+                            row.world(),
+                            row.x(), row.y(), row.z(),
+                            row.yaw(), row.pitch(),
+                            null,  // No LP group from DB - LP handles natively now
+                            // Infer PVP type from name prefix (covers admin PVP bots)
+                            row.botName().startsWith("pvp_") ? BotType.PVP : BotType.AFK,
+                            true, null  // chat-enabled defaults; DB doesn't persist these
+                    ));
                     } catch (Exception e) {
                         FppLogger.warn("Skipping malformed DB active-bot row: " + e.getMessage());
                     }
@@ -207,9 +215,16 @@ public final class BotPersistence {
                 double z             = toDouble(map.get("z"));
                 float  yaw           = (float) toDouble(map.get("yaw"));
                 float  pitch         = (float) toDouble(map.get("pitch"));
+                Object btRaw         = map.get("bot-type");
+                BotType botType      = btRaw instanceof String bts
+                        ? BotType.parse(bts) : BotType.AFK;
+                Object ceRaw         = map.get("chat-enabled");
+                boolean chatEnabled  = !(ceRaw instanceof Boolean b) || b;
+                Object ctRaw         = map.get("chat-tier");
+                String chatTier      = ctRaw instanceof String s2 ? s2 : null;
                 if (name == null || worldName == null) continue;
                 saved.add(new SavedBot(name, uuid, displayName, spawnedBy, spawnedByUuid,
-                        worldName, x, y, z, yaw, pitch, null)); // No LP group from YAML
+                        worldName, x, y, z, yaw, pitch, null, botType, chatEnabled, chatTier));
             } catch (Exception e) {
                 FppLogger.warn("Skipping malformed bot entry in " + FILE_NAME + ": " + e.getMessage());
             }
@@ -244,7 +259,14 @@ public final class BotPersistence {
         Location loc = new Location(world, sb.x, sb.y, sb.z, sb.yaw, sb.pitch);
 
         // Spawn with restored UUID and display name
-        manager.spawnRestored(sb.name, sb.uuid, sb.displayName, sb.spawnedBy, sb.spawnedByUuid, loc);
+        manager.spawnRestored(sb.name, sb.uuid, sb.displayName, sb.spawnedBy, sb.spawnedByUuid, loc, sb.botType);
+
+        // Restore per-bot chat state
+        FakePlayer fp = manager.getByName(sb.name);
+        if (fp != null) {
+            fp.setChatEnabled(sb.chatEnabled);
+            if (sb.chatTier != null) fp.setChatTier(sb.chatTier);
+        }
 
         // Stagger: use the configured join-delay range — values are TICKS (20 = 1 second)
         int delayMinTicks = Config.joinDelayMin();
@@ -335,7 +357,10 @@ public final class BotPersistence {
             String worldName,
             double x, double y, double z,
             float yaw, float pitch,
-            String luckpermsGroup  // Kept for compatibility, ignored in new system
+            String luckpermsGroup,  // Kept for compatibility, ignored in new system
+            BotType botType,
+            boolean chatEnabled,
+            String chatTier         // nullable
     ) {}
 }
 

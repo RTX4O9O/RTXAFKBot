@@ -198,26 +198,37 @@ Remote Bots (5):
 ### 💬 `/fpp chat`
 
 ```bash
-/fpp chat [on|off|toggle|status]
+/fpp chat
+/fpp chat [on|off|status]
+/fpp chat <bot> [on|off|status|say <msg>|tier <tier>|mute [seconds]]
 ```
 
-**Description:** Control the fake chat system globally.
+**Description:** Control the fake chat system globally, or manage per-bot chat settings. Running with no arguments **toggles** the current global state.
 
-**Parameters:**
+**Parameters (global):**
+- *(no args)* — Toggle fake chat on/off
 - `on` — Enable fake chat
 - `off` — Disable fake chat
-- `toggle` — Switch current state
 - `status` — Show current status
-- (no args) — Same as `toggle`
 
-**Permission Required:** `fpp.admin.chat`
+**Parameters (per-bot):**
+- `<bot> on|off` — Enable/disable chat for a specific bot
+- `<bot> say <message>` — Force a bot to send a message immediately
+- `<bot> tier <quiet|passive|normal|active|chatty|reset>` — Set bot's chat frequency tier
+- `<bot> mute [seconds]` — Permanently or temporarily silence a bot
+
+**Permission Required:** `fpp.chat`
 
 **Examples:**
 ```bash
-/fpp chat on              # Enable fake chat
-/fpp chat off             # Disable fake chat
-/fpp chat toggle          # Switch state
-/fpp chat status          # Check status
+/fpp chat              # Toggle on → off or off → on
+/fpp chat on           # Enable fake chat globally
+/fpp chat off          # Disable fake chat globally
+/fpp chat status       # Show current chat state
+/fpp chat Steve say hey what's up   # Force Steve to say something
+/fpp chat Steve tier chatty         # Make Steve chat very frequently
+/fpp chat Steve mute 60             # Silence Steve for 60 seconds
+/fpp chat all on                    # Enable chat on all bots
 ```
 
 ---
@@ -225,25 +236,30 @@ Remote Bots (5):
 ### 🔄 `/fpp swap`
 
 ```bash
-/fpp swap [on|off|toggle|status] [--player <playername>]
+/fpp swap
+/fpp swap [on|off|status|now <bot>|list]
 ```
 
-**Description:** Control the bot swap system.
+**Description:** Control the bot session-rotation system. Running with no arguments **toggles** the current state (just like `/fpp chat`).
 
 **Parameters:**
-- `on` — Enable swap system
-- `off` — Disable swap system  
-- `toggle` — Switch current state
-- `status` — Show current status
-- `--player <name>` — Force swap specific player
+- *(no args)* — Toggle swap on/off
+- `on` — Enable swap and start session countdowns for all active bots
+- `off` — Disable swap and cancel all pending countdowns
+- `status` — Show current state: active sessions, offline bot count, next swap time
+- `now <bot>` — Immediately trigger a swap-out for a specific bot
+- `list` — List all bots that have swap sessions scheduled
 
-**Permission Required:** `fpp.admin.swap`
+**Permission Required:** `fpp.swap`
 
 **Examples:**
 ```bash
-/fpp swap on              # Enable swap system
-/fpp swap off             # Disable swap system
-/fpp swap --player Notch  # Force swap Notch immediately
+/fpp swap              # Toggle on → off or off → on
+/fpp swap on           # Enable swap
+/fpp swap off          # Disable swap
+/fpp swap status       # sessions: 3 | offline: 1 | next: 45s
+/fpp swap now Steve    # Immediately swap Steve out
+/fpp swap list         # List scheduled bots + personalities
 ```
 
 ---
@@ -546,36 +562,37 @@ Migrate SQLite data to MySQL.
 ### 👤 **User Permissions**
 ```yaml
 fpp.user.*              # All user commands
-├── fpp.user.spawn      # Spawn personal bots  
-├── fpp.user.delete     # Delete own bots
-├── fpp.user.list       # List all bots
-├── fpp.user.info       # Bot information
-└── fpp.user.tph        # Teleport bots here
+├── fpp.user.spawn      # Spawn personal bots
+├── fpp.user.tph        # Teleport bots to you
+└── fpp.user.info       # View bot info
 ```
 
 ### 👑 **Admin Permissions**
 ```yaml
-fpp.admin.*             # All admin commands
-├── fpp.admin.spawn     # Unlimited bot spawning
-├── fpp.admin.delete    # Delete any bot
-├── fpp.admin.chat      # Control fake chat
-├── fpp.admin.swap      # Control swap system
-├── fpp.admin.freeze    # Freeze any bot
-├── fpp.admin.tp        # Teleport to bots
-├── fpp.admin.rank      # Manage bot groups
-├── fpp.admin.reload    # Hot-reload configs
-├── fpp.admin.migrate   # Migration utilities
-├── fpp.admin.stats     # Server statistics
-└── fpp.admin.lpinfo    # LuckPerms diagnostics
+fpp.*                   # All permissions (admin wildcard)
+├── fpp.spawn           # Spawn bots (unlimited)
+├── fpp.delete          # Remove any bot
+├── fpp.delete.all      # Remove all bots
+├── fpp.list            # List all bots
+├── fpp.chat            # Control fake chat
+├── fpp.swap            # Control swap system
+├── fpp.freeze          # Freeze any bot
+├── fpp.tp              # Teleport to bots
+├── fpp.rank            # Manage bot LP groups
+├── fpp.lpinfo          # LuckPerms diagnostics
+├── fpp.stats           # Live stats panel
+├── fpp.info            # Query the database
+├── fpp.reload          # Hot-reload configs
+└── fpp.admin.migrate   # Migration utilities
 ```
 
 ### 🎯 **Special Permissions**
 ```yaml
-fpp.bypass.*            # Bypass restrictions
-├── fpp.bypass.cooldown # No spawn cooldown
-└── fpp.bypass.limit    # Ignore global limits
+fpp.bypass.*               # Bypass restrictions
+├── fpp.bypass.cooldown    # No spawn cooldown
+└── fpp.bypass.maxbots     # Ignore global bot cap
 
-fpp.bot.*               # Bot quantity limits
+fpp.bot.*               # Personal bot quantity limits
 ├── fpp.bot.1           # Max 1 personal bot
 ├── fpp.bot.5           # Max 5 personal bots
 ├── fpp.bot.10          # Max 10 personal bots

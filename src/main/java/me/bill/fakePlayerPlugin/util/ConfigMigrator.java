@@ -42,7 +42,7 @@ public final class ConfigMigrator {
      * The config-version value written by this build.
      * <b>Increment this whenever config.yml structure changes.</b>
      */
-    public static final int CURRENT_VERSION = 37;
+    public static final int CURRENT_VERSION = 41;
 
     /**
      * Mirrors the {@code debug} flag read directly from the raw YAML during migration.
@@ -129,6 +129,10 @@ public final class ConfigMigrator {
         if (stored < 35) anyChange |= v34to35(cfg);
         if (stored < 36) anyChange |= v35to36(cfg);
         if (stored < 37) anyChange |= v36to37(cfg);
+        if (stored < 38) anyChange |= v37to38(cfg);
+        if (stored < 39) anyChange |= v38to39(cfg);
+        if (stored < 40) anyChange |= v39to40(cfg);
+        if (stored < 41) anyChange |= v40to41(cfg);
 
         // ── Fill any remaining missing keys from jar defaults ──────────────────
         fillDefaults(plugin, cfg);
@@ -935,6 +939,150 @@ public final class ConfigMigrator {
         // No config keys changed in this release — stamp only.
         log("v36→v37", "version stamp updated to 37 (FPP 1.5.8 — no structural config changes)");
         return false;
+    }
+
+    /**
+     * v37 → v38: Remove {@code bot-name.tab-list-format}.
+     * <ul>
+     *   <li>The key is no longer used — LuckPerms manages prefix/suffix natively
+     *       for real NMS ServerPlayer entities; the display name packet carries
+     *       only the bot name itself.</li>
+     *   <li>Any custom value (e.g. {@code "{prefix}{bot_name}{suffix}"}) the user
+     *       may have set has had no effect since v31→v32 reset it to {@code "{bot_name}"},
+     *       so removing it is safe and non-destructive.</li>
+     * </ul>
+     */
+    private static boolean v37to38(YamlConfiguration cfg) {
+        if (!cfg.contains("bot-name.tab-list-format")) return false;
+        cfg.set("bot-name.tab-list-format", null);
+        log("v37→v38", "removed bot-name.tab-list-format (key no longer used)");
+        return true;
+    }
+
+    /**
+     * v38 → v39: Remove {@code fake-chat.chat-format}.
+     * <p>
+     * Bots now send chat via {@code Player.chat()} — the server's real chat pipeline
+     * handles formatting. The config key was the last remnant of the old fake-broadcast
+     * approach and serves no purpose now that local bots route through
+     * {@code AsyncChatEvent}.  Bodyless / remote bots use a hardcoded
+     * {@code <name> message} Component built directly in code.
+     */
+    private static boolean v38to39(YamlConfiguration cfg) {
+        if (!cfg.contains("fake-chat.chat-format")) return false;
+        cfg.set("fake-chat.chat-format", null);
+        log("v38→v39", "removed fake-chat.chat-format (key no longer used — chat goes through real pipeline)");
+        return true;
+    }
+
+    /**
+     * v39 → v40: Enhanced bot-chat realism features.
+     * <ul>
+     *   <li>Adds {@code fake-chat.typing-delay} (default {@code true}) — simulate typing pause.</li>
+     *   <li>Adds {@code fake-chat.burst-chance} (default {@code 0.12}) — follow-up message chance.</li>
+     *   <li>Adds {@code fake-chat.burst-delay.min/max} (default {@code 2/5}).</li>
+     *   <li>Adds {@code fake-chat.reply-to-mentions} (default {@code true}) — bot replies when mentioned.</li>
+     *   <li>Adds {@code fake-chat.reply-delay.min/max} (default {@code 2/8}).</li>
+     *   <li>Adds {@code fake-chat.stagger-interval} (default {@code 3}) — min gap between bot chats.</li>
+     *   <li>Adds {@code fake-chat.activity-variation} (default {@code true}) — per-bot frequency multiplier.</li>
+     *   <li>Adds {@code fake-chat.history-size} (default {@code 5}) — no-repeat window per bot.</li>
+     * </ul>
+     */
+    private static boolean v39to40(YamlConfiguration cfg) {
+        boolean changed = false;
+        if (!cfg.contains("fake-chat.typing-delay")) {
+            cfg.set("fake-chat.typing-delay", true);
+            log("v39→v40", "added fake-chat.typing-delay = true");
+            changed = true;
+        }
+        if (!cfg.contains("fake-chat.burst-chance")) {
+            cfg.set("fake-chat.burst-chance", 0.12);
+            log("v39→v40", "added fake-chat.burst-chance = 0.12");
+            changed = true;
+        }
+        if (!cfg.contains("fake-chat.burst-delay.min")) {
+            cfg.set("fake-chat.burst-delay.min", 2);
+            cfg.set("fake-chat.burst-delay.max", 5);
+            log("v39→v40", "added fake-chat.burst-delay section");
+            changed = true;
+        }
+        if (!cfg.contains("fake-chat.reply-to-mentions")) {
+            cfg.set("fake-chat.reply-to-mentions", true);
+            log("v39→v40", "added fake-chat.reply-to-mentions = true");
+            changed = true;
+        }
+        if (!cfg.contains("fake-chat.reply-delay.min")) {
+            cfg.set("fake-chat.reply-delay.min", 2);
+            cfg.set("fake-chat.reply-delay.max", 8);
+            log("v39→v40", "added fake-chat.reply-delay section");
+            changed = true;
+        }
+        if (!cfg.contains("fake-chat.stagger-interval")) {
+            cfg.set("fake-chat.stagger-interval", 3);
+            log("v39→v40", "added fake-chat.stagger-interval = 3");
+            changed = true;
+        }
+        if (!cfg.contains("fake-chat.activity-variation")) {
+            cfg.set("fake-chat.activity-variation", true);
+            log("v39→v40", "added fake-chat.activity-variation = true");
+            changed = true;
+        }
+        if (!cfg.contains("fake-chat.history-size")) {
+            cfg.set("fake-chat.history-size", 5);
+            log("v39→v40", "added fake-chat.history-size = 5");
+            changed = true;
+        }
+        return changed;
+    }
+
+    /**
+     * v40 → v41: Add chat debug flag, remote-format, event-triggers, and keyword-reactions.
+     */
+    private static boolean v40to41(YamlConfiguration cfg) {
+        boolean changed = false;
+        if (!cfg.contains("logging.debug.chat")) {
+            cfg.set("logging.debug.chat", false);
+            log("v40→v41", "added logging.debug.chat = false");
+            changed = true;
+        }
+        if (!cfg.contains("fake-chat.remote-format")) {
+            cfg.set("fake-chat.remote-format", "<yellow>{name}<dark_gray>: <white>{message}");
+            log("v40→v41", "added fake-chat.remote-format");
+            changed = true;
+        }
+        if (!cfg.contains("fake-chat.event-triggers.enabled")) {
+            cfg.set("fake-chat.event-triggers.enabled", true);
+            log("v40→v41", "added fake-chat.event-triggers.enabled = true");
+            changed = true;
+        }
+        if (!cfg.contains("fake-chat.event-triggers.on-player-join.enabled")) {
+            cfg.set("fake-chat.event-triggers.on-player-join.enabled", true);
+            cfg.set("fake-chat.event-triggers.on-player-join.chance", 0.40);
+            cfg.set("fake-chat.event-triggers.on-player-join.delay.min", 2);
+            cfg.set("fake-chat.event-triggers.on-player-join.delay.max", 6);
+            log("v40→v41", "added fake-chat.event-triggers.on-player-join section");
+            changed = true;
+        }
+        if (!cfg.contains("fake-chat.event-triggers.on-death.enabled")) {
+            cfg.set("fake-chat.event-triggers.on-death.enabled", true);
+            cfg.set("fake-chat.event-triggers.on-death.chance", 0.30);
+            cfg.set("fake-chat.event-triggers.on-death.delay.min", 1);
+            cfg.set("fake-chat.event-triggers.on-death.delay.max", 4);
+            log("v40→v41", "added fake-chat.event-triggers.on-death section");
+            changed = true;
+        }
+        if (!cfg.contains("fake-chat.keyword-reactions.enabled")) {
+            cfg.set("fake-chat.keyword-reactions.enabled", false);
+            log("v40→v41", "added fake-chat.keyword-reactions.enabled = false");
+            changed = true;
+        }
+        if (!cfg.contains("fake-chat.keyword-reactions.keywords")) {
+            cfg.set("fake-chat.keyword-reactions.keywords",
+                    new java.util.LinkedHashMap<String, String>());
+            log("v40→v41", "added fake-chat.keyword-reactions.keywords = {}");
+            changed = true;
+        }
+        return changed;
     }
 
     /**

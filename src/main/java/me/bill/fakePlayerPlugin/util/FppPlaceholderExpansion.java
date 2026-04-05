@@ -40,7 +40,6 @@ import java.util.stream.Stream;
  *   <tr><td>{@code %fpp_names%}</td><td>Comma-joined display names (local + remote in NETWORK mode)</td></tr>
  *   <tr><td>{@code %fpp_network_names%}</td><td>Comma-joined display names of remote-server bots only</td></tr>
  *   <tr><td>{@code %fpp_chat%}</td><td>{@code on}/{@code off} — fake-chat</td></tr>
- *   <tr><td>{@code %fpp_swap%}</td><td>{@code on}/{@code off} — bot swap</td></tr>
  *   <tr><td>{@code %fpp_skin%}</td><td>{@code auto}/{@code custom}/{@code off} — active skin mode</td></tr>
  *   <tr><td>{@code %fpp_body%}</td><td>{@code on}/{@code off} — physical body</td></tr>
  *   <tr><td>{@code %fpp_pushable%}</td><td>{@code on}/{@code off} — body pushable</td></tr>
@@ -126,7 +125,6 @@ public final class FppPlaceholderExpansion extends PlaceholderExpansion {
                     .map(RemoteBotEntry::displayName)
                     .collect(Collectors.joining(", "));
             case "chat"       -> Config.fakeChatEnabled()  ? "on" : "off";
-            case "swap"       -> Config.swapEnabled()      ? "on" : "off";
             // Returns actual skin mode: "auto", "custom", or "off"
             case "skin"       -> Config.skinMode();
             case "body"       -> Config.spawnBody()        ? "on" : "off";

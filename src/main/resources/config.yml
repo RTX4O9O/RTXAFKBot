@@ -1,11 +1,11 @@
 # ─────────────────────────────────────────────────────────────────────────────
-#  ꜰᴀᴋᴇ ᴘʟᴀʏᴇʀ ᴘʟᴜɢɪɴ  ·  config.yml  ·  v1.5.8
+#  ꜰᴀᴋᴇ ᴘʟᴀʏᴇʀ ᴘʟᴜɢɪɴ  ·  config.yml  ·  v1.5.10
 #  Run /fpp reload to apply changes without restarting the server.
 #  Colors use MiniMessage: <#0079FF>text</#0079FF>  <gray>text</gray>
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Internal — managed by the migration system. Do NOT edit.
-config-version: 37
+config-version: 41
 # Internal migration version — updated automatically. Do not edit.
 
 language: en         # Language file to use (language/<lang>.yml)
@@ -27,6 +27,7 @@ logging:
     config-sync: false  # Network config push/pull activity and YAML sync internals
     skin: false         # Reserved for skin subsystem debugging
     database: false     # Database init, migrations, flushes, and session persistence
+    chat: false         # Bot chat AI scheduling, reactions, and event triggers
 
 update-checker:
   enabled: true      # Check for new versions on startup and /fpp reload
@@ -64,16 +65,6 @@ bot-name:
   admin-format: '{bot_name}'             # /fpp spawn (admin)
   user-format:  'bot-{spawner}-{num}'   # /fpp spawn (user tier)
 
-  # Full tab-list / nametag display format.
-  # Placeholders: {prefix}   — LuckPerms group prefix (respects use-prefix toggle)
-  #               {bot_name} — name resolved from admin-format / user-format above
-  #               {suffix}   — LuckPerms group suffix (respects use-prefix toggle)
-  #               %any_papi% — any PlaceholderAPI placeholder (server-wide context)
-  # Examples:
-  #   "{prefix}{bot_name}{suffix}"                   ← default (same as old behaviour)
-  #   "&7{prefix}{bot_name}{suffix}"                 ← gray prefix/suffix
-  #   "{prefix}{bot_name}{suffix} <gray>%server_uptime%"
-  tab-list-format: '{bot_name}'
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  LUCKPERMS INTEGRATION
@@ -187,6 +178,35 @@ swim-ai:
   enabled: true   # Set false to let bots sink/drown instead of swimming up
 
 # ─────────────────────────────────────────────────────────────────────────────
+#  PVP AI  ·  ⚠  COMING SOON — This feature is not yet finished.
+#              The pvp bot type is currently restricted to internal testing only.
+#              It will be available to all users in a future release.
+#  Controls combat behaviour for BotType.PVP bots.
+#  The bot is DYNAMIC — it always equips and uses the best item it has.
+#  The gear section only controls what it receives at spawn; hand it better
+#  items at runtime and it will switch automatically.
+# ─────────────────────────────────────────────────────────────────────────────
+pvp-ai:
+  # COMING SOON — set to false once the PVP system is ready for public use.
+  # While true, only the designated developer UUID may spawn pvp bots.
+  coming-soon: true
+
+  # Difficulty — attack range, timing precision, crit/s-tap frequency.
+  # easy   → 1.5 block reach, waits full cooldown, rare crits
+  # medium → 2.0 block reach, moderate aggression   (default)
+  # hard   → 2.5 block reach, sprint-resets & s-taps more often
+  # tier1  → 3.0 block reach, near-optimal combo pressure
+  # hacker → 4.6 block reach, always crits, never misses timing
+  difficulty: medium
+
+  # Defensive mode: bot only retaliates when a player hits it first.
+  # false = aggressive — bot attacks any player within detect-range.
+  defensive-mode: true
+
+  # Detection radius in blocks (how far the bot scans for targets).
+  detect-range: 32.0
+
+# ─────────────────────────────────────────────────────────────────────────────
 #  COLLISION & PUSH  ·  Advanced — defaults work well for most servers.
 #  Controls how hard players/hits push bots, and how bots separate from each other.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -200,27 +220,34 @@ collision:
   max-horizontal-speed: 0.30  # Maximum push speed cap for walk/separation sources
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  BOT SWAP / ROTATION
-#  Bots automatically leave and rejoin with a new name to simulate real turnover.
+#  SWAP / SESSION ROTATION
+#  Bots periodically leave and rejoin the server, mimicking real player
+#  behaviour. Each bot gets a randomised session countdown + personality
+#  that scales how long they stay online.
 # ─────────────────────────────────────────────────────────────────────────────
 swap:
-  enabled: false
-  session-min: 120   # Min seconds a bot stays online before swapping
-  session-max: 600   # Max seconds
+  enabled: false              # Master toggle: false = bots never swap out
 
-  # Advanced options — fine-tune realism (leave at defaults for most servers)
-  rejoin-delay-min: 5      # Min seconds between leave and rejoin
-  rejoin-delay-max: 45     # Max seconds
-  jitter: 30               # ± seconds added randomly to session timer
-  reconnect-chance: 0.15   # Chance (0.0–1.0) to rejoin with the same name
-  afk-kick-chance: 5       # % chance the rejoin gap is extended (AFK-kick sim)
-  farewell-chat: true      # Bot sends a farewell message before leaving
-  greeting-chat: true      # Bot sends a greeting message after rejoining
-  time-of-day-bias: true   # Longer sessions during peak hours
+  session:
+    min: 60                   # Minimum session duration in seconds (1 min)
+    max: 300                  # Maximum session duration in seconds (5 min)
+
+  absence:
+    min: 30                   # Minimum offline time in seconds (30 s)
+    max: 120                  # Maximum offline time in seconds (2 min)
+
+  max-swapped-out: 0          # Max bots allowed offline simultaneously (0 = unlimited)
+  farewell-chat: true         # Bots say goodbye before leaving
+  greeting-chat: true         # Bots say hi when rejoining
+  same-name-on-rejoin: true   # Reuse the same name if available on rejoin
+
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  FAKE CHAT
+#  BOT CHAT
 #  Bots send random messages from bot-messages.yml at random intervals.
+#  Each local bot fires AsyncChatEvent directly (no [Not Secure] label) so
+#  EssentialsChat, VentureChat, etc. format the message exactly as if a real
+#  player typed it.  Several realism features are configurable below.
 # ─────────────────────────────────────────────────────────────────────────────
 fake-chat:
   enabled: false
@@ -229,16 +256,81 @@ fake-chat:
   interval:
     min: 5    # Seconds between messages (min)
     max: 10   # Seconds between messages (max)
-  # Chat line format. Supports MiniMessage tags and legacy & codes.
-  # Placeholders: {prefix}    — LuckPerms group prefix (respects use-prefix toggle)
-  #               {bot_name}  — bot display name
-  #               {suffix}    — LuckPerms group suffix (respects use-prefix toggle)
-  #               {message}   — text drawn from bot-messages.yml
-  # Examples:
-  #   "&7{prefix}{bot_name}&7: {message}"
-  #   "<gray>{bot_name}<white>: {message}"
-  #   "<{bot_name}> {message}"
-  chat-format: "&7{bot_name}: {message}"
+
+  # ── Realism enhancements ───────────────────────────────────────────────────
+  # Simulate a typing pause (0–2.5 s) right before each message is sent.
+  typing-delay: true
+
+  # Chance (0.0–1.0) a bot sends a quick follow-up message a few seconds later.
+  burst-chance: 0.12
+  burst-delay:
+    min: 2   # Seconds before the follow-up fires (min)
+    max: 5   # Seconds before the follow-up fires (max)
+
+  # When a real player says a bot's name in chat, that bot may reply.
+  reply-to-mentions: true
+  # Probability (0.0–1.0) a named bot actually replies to a mention.
+  mention-reply-chance: 0.65
+  reply-delay:
+    min: 2   # Seconds before the reply fires (min)
+    max: 8   # Seconds before the reply fires (max)
+
+  # Minimum gap (seconds) between any two bots chatting to prevent message floods.
+  # 0 = disabled (all bots may chat at the same tick).
+  stagger-interval: 3
+
+  # Give each bot a random chat-frequency multiplier so some bots talk more or
+  # less than others (quiet / normal / active / very-active tiers).
+  activity-variation: true
+
+  # How many of a bot's own recent messages to remember and avoid repeating.
+  history-size: 5
+
+  # ── Remote format ──────────────────────────────────────────────────────────
+  # MiniMessage format used when a bodyless or proxy-remote bot broadcasts.
+  # Supports {name} (display name) and {message} (resolved message text).
+  remote-format: "<yellow>{name}<dark_gray>: <white>{message}"
+
+  # ── Event-triggered reactions ───────────────────────────────────────────────
+  # Bots can react to server events (player joins, deaths) by sending messages
+  # from the join-reactions / death-reactions pools in bot-messages.yml.
+  event-triggers:
+    enabled: true  # Master switch — disabling here also turns off on-player-join/on-death
+
+    on-player-join:
+      enabled: true   # A bot greets real players when they join the server
+      chance: 0.40    # Probability (0.0–1.0) that a bot reacts to a join
+      delay:
+        min: 2        # Seconds before the reaction fires (min)
+        max: 6        # Seconds before the reaction fires (max)
+
+    on-death:
+      enabled: true   # A bot reacts when any entity dies
+      players-only: false  # true = only react to player deaths (mobs/animals ignored)
+      chance: 0.30    # Probability (0.0–1.0) that a bot reacts to a death
+      delay:
+        min: 1        # Seconds before the reaction fires (min)
+        max: 4        # Seconds before the reaction fires (max)
+
+    on-player-leave:
+      enabled: true   # A bot says goodbye when a real player leaves the server
+      chance: 0.30    # Probability (0.0–1.0) that a bot reacts to a player leaving
+      delay:
+        min: 1        # Seconds before the reaction fires (min)
+        max: 4        # Seconds before the reaction fires (max)
+
+  # ── Keyword reactions ────────────────────────────────────────────────────────
+  # When a real player's message contains a keyword, a random bot replies using
+  # messages from the matching pool in bot-messages.yml (keyword-reactions section).
+  # Example: if a player says "pvp", a bot may reply using the "pvp-reactions" pool.
+  keyword-reactions:
+    enabled: false  # Set true to activate keyword-triggered replies
+    keywords: {}    # keyword: pool-key pairs, e.g.  pvp: "pvp-reactions"
+    # keywords:
+    #   pvp: "pvp-reactions"
+    #   trade: "trade-reactions"
+    #   help: "help-reactions"
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  TAB LIST

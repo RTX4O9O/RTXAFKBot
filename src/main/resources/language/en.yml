@@ -52,7 +52,7 @@ invalid-number: "{prefix}<red>ɪɴᴠᴀʟɪᴅ ɴᴜᴍʙᴇʀ. ᴘʟᴇᴀꜱ�
 spawn-success:            "{prefix}<#0079FF>{count}</#0079FF> <gray>ꜰᴀᴋᴇ ᴘʟᴀʏᴇʀ(ꜱ) <white>ꜱᴜᴍᴍᴏɴᴇᴅ<gray>. <dark_gray>(<#0079FF>{total}</#0079FF> <gray>ᴀᴄᴛɪᴠᴇ<dark_gray>)"
 spawn-max-reached:        "{prefix}<red>ᴍᴀx ʙᴏᴛ ʟɪᴍɪᴛ ʀᴇᴀᴄʜᴇᴅ <dark_gray>(<#0079FF>{max}</#0079FF> <gray>ʙᴏᴛꜱ<dark_gray>)<red>. ᴅᴇʟᴇᴛᴇ ꜱᴏᴍᴇ ꜰɪʀꜱᴛ."
 spawn-user-limit-reached: "{prefix}<red>ʏᴏᴜ'ᴠᴇ ʀᴇᴀᴄʜᴇᴅ ʏᴏᴜʀ ᴘᴇʀꜱᴏɴᴀʟ ʙᴏᴛ ʟɪᴍɪᴛ <dark_gray>(<#0079FF>{limit}</#0079FF> <gray>ʙᴏᴛ(ꜱ)<dark_gray>)<red>."
-spawn-invalid:            "{prefix}<red>ɪɴᴠᴀʟɪᴅ ᴜꜱᴀɢᴇ. <gray>ᴛʀʏ <#0079FF>/fpp spawn [amount] [--name <name>]</#0079FF><gray>."
+spawn-invalid:            "{prefix}<red>ɪɴᴠᴀʟɪᴅ ᴜꜱᴀɢᴇ. <gray>ᴛʀʏ <#0079FF>/fpp spawn [afk|pvp] [amount] [--name <name>]</#0079FF><gray>."
 spawn-invalid-name:       "{prefix}<red>ɪɴᴠᴀʟɪᴅ ʙᴏᴛ ɴᴀᴍᴇ. <gray>ᴜꜱᴇ <white>1–16 <gray>ᴄʜᴀʀꜱ <dark_gray>(<white>ʟᴇᴛᴛᴇʀꜱ<gray>, <white>ᴅɪɡɪᴛꜱ<gray>, <white>_<dark_gray>)<gray>."
 spawn-name-taken:         "{prefix}<red>ᴀ ʙᴏᴛ ɴᴀᴍᴇᴅ <white>{name} <red>ɪꜱ ᴀʟʀᴇᴀᴅʏ ᴀᴄᴛɪᴠᴇ."
 spawn-no-names-left:      "{prefix}<red>ᴀʟʟ ɴᴀᴍᴇꜱ ɪɴ ᴛʜᴇ ᴘᴏᴏʟ ᴀʀᴇ ɪɴ ᴜꜱᴇ. <gray>ʀᴇᴅᴜᴄᴇ ᴀᴄᴛɪᴠᴇ ʙᴏᴛꜱ ᴏʀ ᴀᴅᴅ ᴍᴏʀᴇ ɴᴀᴍᴇꜱ."
@@ -61,6 +61,10 @@ spawn-no-names-left:      "{prefix}<red>ᴀʟʟ ɴᴀᴍᴇꜱ ɪɴ ᴛʜᴇ ᴘ
 spawn-console-no-world:   "{prefix}<red>ɴᴏ ᴡᴏʀʟᴅ ɪꜱ ʟᴏᴀᴅᴇᴅ — ᴄᴀɴɴᴏᴛ ᴅᴇᴛᴇʀᴍɪɴᴇ ᴀ ꜱᴘᴀᴡɴ ʟᴏᴄᴀᴛɪᴏɴ."
 spawn-world-not-found:    "{prefix}<red>ᴡᴏʀʟᴅ '<white>{world}<red>' ᴅᴏᴇꜱ ɴᴏᴛ ᴇxɪꜱᴛ ᴏʀ ɪꜱ ɴᴏᴛ ʟᴏᴀᴅᴇᴅ."
 spawn-invalid-coords:     "{prefix}<red>ɪɴᴠᴀʟɪᴅ ᴄᴏᴏʀᴅɪɴᴀᴛᴇꜱ. <gray>ᴜꜱᴇ ꜰᴏʀᴍᴀᴛ: <white>x,y,z <gray><dark_gray>(ᴇ.ɢ. <white>100,64,200<gray>)"
+# PVP bot specific
+# {bot} — number of bots, {player} — target player name
+pvp-bot-target-set:       "{prefix}<#0079FF>{bot}</#0079FF> <gray>ᴘᴠᴘ ʙᴏᴛ(ꜱ) ᴡɪʟʟ <red>ʜᴜɴᴛ <white>{player}<gray>."
+player-not-found:         "{prefix}<red>ᴘʟᴀʏᴇʀ <white>{player} <red>ɪꜱ ɴᴏᴛ ᴏɴʟɪɴᴇ."
 
 # ── Delete ────────────────────────────────────────────────────────────────────
 # {name}  — bot name
@@ -83,19 +87,41 @@ bot-leave: "<yellow>{name} left the game"
 bot-kill:  "<gray>{killer} <white>slain <gray>{name}"
 
 
-# ── Swap ──────────────────────────────────────────────────────────────────────
-swap-enabled:    "{prefix}<#0079FF>ʙᴏᴛ ꜱᴡᴀᴘ</#0079FF> <gray>ʜᴀꜱ ʙᴇᴇɴ <white>ᴇɴᴀʙʟᴇᴅ<gray>."
-swap-disabled:   "{prefix}<#0079FF>ʙᴏᴛ ꜱᴡᴀᴘ</#0079FF> <gray>ʜᴀꜱ ʙᴇᴇɴ <white>ᴅɪꜱᴀʙʟᴇᴅ<gray>."
-swap-status-on:  "{prefix}<#0079FF>ʙᴏᴛ ꜱᴡᴀᴘ</#0079FF> <gray>ɪꜱ <white>ᴇɴᴀʙʟᴇᴅ<gray>."
-swap-status-off: "{prefix}<#0079FF>ʙᴏᴛ ꜱᴡᴀᴘ</#0079FF> <gray>ɪꜱ <white>ᴅɪꜱᴀʙʟᴇᴅ<gray>."
-swap-invalid:    "{prefix}<red>ᴜꜱᴀɢᴇ<gray>: <#0079FF>/fpp swap <on|off|status></#0079FF><gray>."
 
 # ── Fake chat ─────────────────────────────────────────────────────────────────
 chat-enabled:    "{prefix}<#0079FF>ꜰᴀᴋᴇ ᴄʜᴀᴛ</#0079FF> <gray>ʜᴀꜱ ʙᴇᴇɴ <white>ᴇɴᴀʙʟᴇᴅ<gray>."
 chat-disabled:   "{prefix}<#0079FF>ꜰᴀᴋᴇ ᴄʜᴀᴛ</#0079FF> <gray>ʜᴀꜱ ʙᴇᴇɴ <white>ᴅɪꜱᴀʙʟᴇᴅ<gray>."
 chat-status-on:  "{prefix}<#0079FF>ꜰᴀᴋᴇ ᴄʜᴀᴛ</#0079FF> <gray>ɪꜱ <white>ᴇɴᴀʙʟᴇᴅ<gray>."
 chat-status-off: "{prefix}<#0079FF>ꜰᴀᴋᴇ ᴄʜᴀᴛ</#0079FF> <gray>ɪꜱ <white>ᴅɪꜱᴀʙʟᴇᴅ<gray>."
-chat-invalid:    "{prefix}<red>ᴜꜱᴀɢᴇ<gray>: <#0079FF>/fpp chat <on|off|status></#0079FF><gray>."
+chat-invalid:    "{prefix}<red>ᴜꜱᴀɢᴇ<gray>: <#0079FF>/fpp chat <on|off|status></#0079FF> <dark_gray>|</dark_gray> <#0079FF>/fpp chat <bot> [on|off|say <msg>|tier <tier>]</#0079FF><gray>."
+# Per-bot chat management — {name} = bot display name
+# {message} = the message that was forced-sent
+# {tier}    = the activity tier name  |  {tiers} = valid tiers list
+chat-bot-not-found:    "{prefix}<red>ɴᴏ ᴀᴄᴛɪᴠᴇ ʙᴏᴛ ɴᴀᴍᴇᴅ <white>{name}<red>."
+chat-bot-status-on:    "{prefix}<#0079FF>{name}</#0079FF> <gray>ᴄʜᴀᴛ ɪꜱ <white>ᴇɴᴀʙʟᴇᴅ<gray>."
+chat-bot-status-off:   "{prefix}<#0079FF>{name}</#0079FF> <gray>ᴄʜᴀᴛ ɪꜱ <white>ꜱɪʟᴇɴᴄᴇᴅ<gray>."
+chat-bot-enabled:      "{prefix}<#0079FF>{name}</#0079FF> <gray>ᴡɪʟʟ <white>ɴᴏᴡ ᴄʜᴀᴛ<gray>."
+chat-bot-disabled:     "{prefix}<#0079FF>{name}</#0079FF> <gray>ʜᴀꜱ ʙᴇᴇɴ <white>ꜱɪʟᴇɴᴄᴇᴅ<gray>."
+chat-bot-said:         "{prefix}<#0079FF>{name}</#0079FF> <gray>ꜱᴀɪᴅ: <white>{message}"
+chat-bot-info:         "{prefix}<#0079FF>{name}</#0079FF> <dark_gray>│ <gray>ᴇɴᴀʙʟᴇᴅ: <white>{enabled} <dark_gray>│ <gray>ᴛɪᴇʀ: <white>{tier} <dark_gray>│ <gray>ᴍᴜʟᴛ: <white>{multiplier}×"
+chat-bot-muted:        "{prefix}<#0079FF>{name}</#0079FF> <gray>ʜᴀꜱ ʙᴇᴇɴ <white>ᴘᴇʀᴍᴀɴᴇɴᴛʟʏ ꜱɪʟᴇɴᴄᴇᴅ<gray>."
+chat-bot-muted-timed:  "{prefix}<#0079FF>{name}</#0079FF> <gray>ꜱɪʟᴇɴᴄᴇᴅ ꜰᴏʀ <white>{seconds}ꜱ<gray>."
+chat-mute-usage:       "{prefix}<red>ᴜꜱᴀɢᴇ<gray>: <#0079FF>/fpp chat <bot> mute [seconds]</#0079FF><gray>."
+chat-bot-tier-set:     "{prefix}<#0079FF>{name}</#0079FF><gray>'ꜱ ᴀᴄᴛɪᴠɪᴛʏ ᴛɪᴇʀ ꜱᴇᴛ ᴛᴏ <white>{tier}<gray>."
+chat-bot-tier-reset:   "{prefix}<#0079FF>{name}</#0079FF><gray>'ꜱ ᴀᴄᴛɪᴠɪᴛʏ ᴛɪᴇʀ ʀᴇꜱᴇᴛ ᴛᴏ <white>ʀᴀɴᴅᴏᴍ<gray>."
+chat-bot-tier-invalid: "{prefix}<red>ɪɴᴠᴀʟɪᴅ ᴛɪᴇʀ '<white>{tier}<red>'. <gray>ᴜꜱᴇ: <white>{tiers}<gray>."
+chat-say-usage:        "{prefix}<red>ᴜꜱᴀɢᴇ<gray>: <#0079FF>/fpp chat <bot> say <message></#0079FF><gray>."
+chat-tier-usage:       "{prefix}<red>ᴜꜱᴀɢᴇ<gray>: <#0079FF>/fpp chat <bot> tier <quiet|passive|normal|active|chatty|reset></#0079FF><gray>."
+# /fpp chat all — bulk bot chat control
+# {count} = number of bots affected  |  {enabled}/{disabled} = status counts  |  {tier} = tier name  |  {message} = message text
+chat-all-usage:        "{prefix}<red>ᴜꜱᴀɢᴇ<gray>: <#0079FF>/fpp chat all <on|off|status|say <msg>|tier <tier>></#0079FF><gray>."
+chat-all-say-usage:    "{prefix}<red>ᴜꜱᴀɢᴇ<gray>: <#0079FF>/fpp chat all say <message></#0079FF><gray>."
+chat-all-enabled:      "{prefix}<gray>ᴀʟʟ <white>{count}<gray> ʙᴏᴛ(ꜱ) ᴡɪʟʟ <white>ɴᴏᴡ ᴄʜᴀᴛ<gray>."
+chat-all-disabled:     "{prefix}<gray>ᴀʟʟ <white>{count}<gray> ʙᴏᴛ(ꜱ) ʜᴀᴠᴇ ʙᴇᴇɴ <white>ꜱɪʟᴇɴᴄᴇᴅ<gray>."
+chat-all-status:       "{prefix}<gray>ᴄʜᴀᴛ ᴇɴᴀʙʟᴇᴅ: <white>{enabled}<gray> | ꜱɪʟᴇɴᴄᴇᴅ: <white>{disabled}<gray>."
+chat-all-said:         "{prefix}<gray>ᴍᴇꜱꜱᴀɢᴇ ꜱᴇɴᴛ ᴛʜʀᴏᴜɢʜ <white>{count}<gray> ʙᴏᴛ(ꜱ): <white>{message}"
+chat-all-tier-set:     "{prefix}<gray>ᴀʟʟ ʙᴏᴛꜱ' ᴀᴄᴛɪᴠɪᴛʏ ᴛɪᴇʀ ꜱᴇᴛ ᴛᴏ <white>{tier}<gray>."
+chat-all-tier-reset:   "{prefix}<gray>ᴀʟʟ ʙᴏᴛꜱ' ᴀᴄᴛɪᴠɪᴛʏ ᴛɪᴇʀ ʀᴇꜱᴇᴛ ᴛᴏ <white>ʀᴀɴᴅᴏᴍ<gray>."
 
 # ── Info / database ───────────────────────────────────────────────────────────
 # {name} — bot or spawner name queried
@@ -117,7 +143,7 @@ tp-specify-name:  "{prefix}<red>ᴍᴜʟᴛɪᴘʟᴇ ʙᴏᴛꜱ ᴀᴄᴛɪᴠ
 # {latest}  — latest version
 update-available:  "<dark_gray><st>━━━━━━━━━</st> <bold><#0079FF>ᴜᴘᴅᴀᴛᴇ ᴀᴠᴀɪʟᴀʙʟᴇ</#0079FF></bold> <dark_gray><st>━━━━━━━━━</st>\n  <gray>Installed <dark_gray>: <white>v{current}\n  <gray>Latest    <dark_gray>: <#0079FF>v{latest}</#0079FF>\n  <gray>Download  <dark_gray>: <click:open_url:'https://modrinth.com/plugin/fake-player-plugin-(fpp)'><#0079FF><underlined>Modrinth</underlined></#0079FF></click><gray>, <click:open_url:'https://www.spigotmc.org/resources/fake-player-plugin-fpp.133572/'><#0079FF><underlined>SpigotMC</underlined></#0079FF></click><gray>, <click:open_url:'https://hangar.papermc.io/Pepe-tf/FakePlayerPlugin'><#0079FF><underlined>PaperMC</underlined></#0079FF></click><gray>, <click:open_url:'https://builtbybit.com/resources/fake-player-plugin.98704/'><#0079FF><underlined>BuiltByBit</underlined></#0079FF></click>\n<dark_gray><st>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</st>"
 update-beta:       "<dark_gray><st>━━━━━━━━━</st> <bold><#FF9500>ʙᴇᴛᴀ ᴠᴇʀꜱɪᴏɴ</#FF9500></bold> <dark_gray><st>━━━━━━━━━</st>\n  <gray>Running   <dark_gray>: <#FF9500>v{current}</#FF9500> <dark_gray>(<#FF9500>ʙᴇᴛᴀ</#FF9500><dark_gray>)\n  <gray>Stable    <dark_gray>: <#0079FF>v{latest}</#0079FF>\n  <gray>Download  <dark_gray>: <click:open_url:'https://modrinth.com/plugin/fake-player-plugin-(fpp)'><#0079FF><underlined>Modrinth</underlined></#0079FF></click><gray>, <click:open_url:'https://www.spigotmc.org/resources/fake-player-plugin-fpp.133572/'><#0079FF><underlined>SpigotMC</underlined></#0079FF></click><gray>, <click:open_url:'https://hangar.papermc.io/Pepe-tf/FakePlayerPlugin'><#0079FF><underlined>PaperMC</underlined></#0079FF></click><gray>, <click:open_url:'https://builtbybit.com/resources/fake-player-plugin.98704/'><#0079FF><underlined>BuiltByBit</underlined></#0079FF></click>\n<dark_gray><st>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</st>"
-update-up-to-date: "{prefix}<#66CC66>Plugin is up to date</#66CC66> <dark_gray>(<#0079FF>v{current}</#0079FF><dark_gray>)"
+update-up-to-date: "{prefix}<#66CC66>ᴘʟᴜɢɪɴ ɪꜱ ᴜᴘ ᴛᴏ ᴅᴀᴛᴇ</#66CC66> <dark_gray>(<#0079FF>v{current}</#0079FF><dark_gray>)"
 update-failed:     "{prefix}<gray>ᴄᴏᴜʟᴅ ɴᴏᴛ ᴄʜᴇᴄᴋ ꜰᴏʀ ᴜᴘᴅᴀᴛᴇꜱ."
 
 
@@ -151,19 +177,37 @@ alert-sent:        "{prefix}<#66CC66>✓</#66CC66> <gray>ᴀʟᴇʀᴛ ʙʀᴏ�
 alert-usage:       "{prefix}<red>ᴜꜱᴀɢᴇ<gray>: <#0079FF>/fpp alert <message></#0079FF><gray>."
 
 # ── Sync (config synchronization) ─────────────────────────────────────────────
-sync-not-available:      "{prefix}<red>Config sync is not available (NETWORK mode required)."
-sync-usage:              "{prefix}<red>Usage: <#0079FF>/fpp sync <push|pull|check> [file|all]</#0079FF>"
-sync-push-success:       "{prefix}<#66CC66>✓</#66CC66> <gray>Pushed <#0079FF>{file}</#0079FF> <gray>to database."
-sync-push-failed:        "{prefix}<red>Failed to push <white>{file}<red> to database."
-sync-push-all-success:   "{prefix}<#66CC66>✓</#66CC66> <gray>Pushed <#0079FF>all config files</#0079FF> <gray>to database."
-sync-pull-success:       "{prefix}<#66CC66>✓</#66CC66> <gray>Pulled <#0079FF>{file}</#0079FF> <gray>from database."
-sync-pull-failed:        "{prefix}<red>Failed to pull <white>{file}<red> from database."
-sync-pull-all-success:   "{prefix}<#66CC66>✓</#66CC66> <gray>Pulled <#0079FF>all config files</#0079FF> <gray>from database."
-sync-pull-no-updates:    "{prefix}<gray>All config files are already up to date."
-sync-pull-reload-hint:   "{prefix}<gray>Run <#0079FF>/fpp reload</#0079FF> <gray>to apply the changes."
-sync-check-has-changes:  "{prefix}<yellow>⚠<reset> <#0079FF>{file}</#0079FF> <gray>has local changes (different from database)."
-sync-check-no-changes:   "{prefix}<#66CC66>✓</#66CC66> <#0079FF>{file}</#0079FF> <gray>is up to date with database."
-sync-check-all-clean:    "{prefix}<#66CC66>✓</#66CC66> <gray>All config files are synchronized with database."
-sync-check-summary:      "{prefix}<gray>Sync status: <#0079FF>{count}</#0079FF> <gray>file(s) with changes."
-sync-status-no-network:  "{prefix}<red>Sync is disabled (not in NETWORK mode)."
+# {file}  — config file name  |  {count} — number of files with local changes
+sync-not-available:      "{prefix}<red>ᴄᴏɴꜰɪɢ ꜱʏɴᴄ ɪꜱ ɴᴏᴛ ᴀᴠᴀɪʟᴀʙʟᴇ <dark_gray>(ɴᴇᴛᴡᴏʀᴋ ᴍᴏᴅᴇ ᴏɴʟʏ<dark_gray>)<red>."
+sync-usage:              "{prefix}<red>ᴜꜱᴀɢᴇ<gray>: <#0079FF>/fpp sync <push|pull|check|status> [file]</#0079FF><gray>."
+sync-push-success:       "{prefix}<#66CC66>✓</#66CC66> <gray>ᴘᴜꜱʜᴇᴅ <#0079FF>{file}</#0079FF> <gray>ᴛᴏ ᴅᴀᴛᴀʙᴀꜱᴇ."
+sync-push-failed:        "{prefix}<red>ꜰᴀɪʟᴇᴅ ᴛᴏ ᴘᴜꜱʜ <white>{file}<red> ᴛᴏ ᴅᴀᴛᴀʙᴀꜱᴇ."
+sync-push-all-success:   "{prefix}<#66CC66>✓</#66CC66> <gray>ᴘᴜꜱʜᴇᴅ <#0079FF>ᴀʟʟ ᴄᴏɴꜰɪɡ ꜰɪʟᴇꜱ</#0079FF> <gray>ᴛᴏ ᴅᴀᴛᴀʙᴀꜱᴇ."
+sync-pull-success:       "{prefix}<#66CC66>✓</#66CC66> <gray>ᴘᴜʟʟᴇᴅ <#0079FF>{file}</#0079FF> <gray>ꜰʀᴏᴍ ᴅᴀᴛᴀʙᴀꜱᴇ."
+sync-pull-failed:        "{prefix}<red>ꜰᴀɪʟᴇᴅ ᴛᴏ ᴘᴜʟʟ <white>{file}<red> ꜰʀᴏᴍ ᴅᴀᴛᴀʙᴀꜱᴇ."
+sync-pull-all-success:   "{prefix}<#66CC66>✓</#66CC66> <gray>ᴘᴜʟʟᴇᴅ <#0079FF>ᴀʟʟ ᴄᴏɴꜰɪɡ ꜰɪʟᴇꜱ</#0079FF> <gray>ꜰʀᴏᴍ ᴅᴀᴛᴀʙᴀꜱᴇ."
+sync-pull-no-updates:    "{prefix}<gray>ᴀʟʟ ᴄᴏɴꜰɪɡ ꜰɪʟᴇꜱ ᴀʀᴇ ᴀʟʀᴇᴀᴅʏ ᴜᴘ ᴛᴏ ᴅᴀᴛᴇ."
+sync-pull-reload-hint:   "{prefix}<gray>ʀᴜɴ <#0079FF>/fpp reload</#0079FF> <gray>ᴛᴏ ᴀᴘᴘʟʏ ᴛʜᴇ ᴄʜᴀɴɢᴇꜱ."
+sync-check-has-changes:  "{prefix}<yellow>⚠<reset> <#0079FF>{file}</#0079FF> <gray>ʜᴀꜱ ʟᴏᴄᴀʟ ᴄʜᴀɴɢᴇꜱ <dark_gray>(ᴅɪꜰꜰᴇʀᴇɴᴛ ꜰʀᴏᴍ ᴅᴀᴛᴀʙᴀꜱᴇ<dark_gray>)."
+sync-check-no-changes:   "{prefix}<#66CC66>✓</#66CC66> <#0079FF>{file}</#0079FF> <gray>ɪꜱ ᴜᴘ ᴛᴏ ᴅᴀᴛᴇ ᴡɪᴛʜ ᴅᴀᴛᴀʙᴀꜱᴇ."
+sync-check-all-clean:    "{prefix}<#66CC66>✓</#66CC66> <gray>ᴀʟʟ ᴄᴏɴꜰɪɢ ꜰɪʟᴇꜱ ꜱʏɴᴄʜʀᴏɴɪᴢᴇᴅ ᴡɪᴛʜ ᴅᴀᴛᴀʙᴀꜱᴇ."
+sync-check-summary:      "{prefix}<gray>ꜱʏɴᴄ ꜱᴛᴀᴛᴜꜱ: <#0079FF>{count}</#0079FF> <gray>ꜰɪʟᴇ(ꜱ) ᴡɪᴛʜ ʟᴏᴄᴀʟ ᴄʜᴀɴɢᴇꜱ."
+sync-status-no-network:  "{prefix}<red>ꜱʏɴᴄ ɪꜱ ᴅɪꜱᴀʙʟᴇᴅ <dark_gray>(ɴᴏᴛ ɪɴ ɴᴇᴛᴡᴏʀᴋ ᴍᴏᴅᴇ<dark_gray>)<red>."
+
+# ── Swap (session rotation) ───────────────────────────────────────────────────
+# {sessions} — number of active session timers  |  {offline} — bots waiting to rejoin
+# {name} — bot name  |  {count} — bot count  |  {next} — time until next swap
+# {personality} — bot personality  |  {swaps} — swap count
+swap-enabled:        "{prefix}<#0079FF>ꜱᴇꜱꜱɪᴏɴ ʀᴏᴛᴀᴛɪᴏɴ</#0079FF> <gray>ʜᴀꜱ ʙᴇᴇɴ <white>ᴇɴᴀʙʟᴇᴅ<gray>."
+swap-disabled:       "{prefix}<#0079FF>ꜱᴇꜱꜱɪᴏɴ ʀᴏᴛᴀᴛɪᴏɴ</#0079FF> <gray>ʜᴀꜱ ʙᴇᴇɴ <white>ᴅɪꜱᴀʙʟᴇᴅ<gray>."
+swap-status-on:      "{prefix}<#0079FF>ꜱᴇꜱꜱɪᴏɴ ʀᴏᴛᴀᴛɪᴏɴ</#0079FF> <gray>ɪꜱ <white>ᴇɴᴀʙʟᴇᴅ <dark_gray>│ <gray>ꜱᴇꜱꜱɪᴏɴꜱ: <#0079FF>{sessions}</#0079FF> <dark_gray>│ <gray>ᴏꜰꜰʟɪɴᴇ: <#0079FF>{offline}</#0079FF> <dark_gray>│ <gray>ɴᴇxᴛ: <#0079FF>{next}</#0079FF>"
+swap-status-off:     "{prefix}<#0079FF>ꜱᴇꜱꜱɪᴏɴ ʀᴏᴛᴀᴛɪᴏɴ</#0079FF> <gray>ɪꜱ <white>ᴅɪꜱᴀʙʟᴇᴅ<gray>."
+swap-invalid:        "{prefix}<red>ᴜꜱᴀɢᴇ<gray>: <#0079FF>/fpp swap</#0079FF> <dark_gray>[<gray>ᴛᴏɢɢʟᴇ<dark_gray>]</dark_gray> <dark_gray>│</dark_gray> <#0079FF>/fpp swap <on|off|status|now <bot>|list></#0079FF><gray>."
+swap-now-usage:      "{prefix}<red>ᴜꜱᴀɢᴇ<gray>: <#0079FF>/fpp swap now <bot></#0079FF><gray>."
+swap-not-available:  "{prefix}<red>ꜱᴡᴀᴘ ꜱʏꜱᴛᴇᴍ ɴᴏᴛ ᴀᴠᴀɪʟᴀʙʟᴇ."
+swap-now-success:    "{prefix}<#66CC66>✓</#66CC66> <#0079FF>{name}</#0079FF> <gray>ɪꜱ ɴᴏᴡ ʟᴇᴀᴠɪɴɢ<gray>."
+swap-now-failed:     "{prefix}<red>ꜰᴀɪʟᴇᴅ ᴛᴏ ꜱᴡᴀᴘ ᴏᴜᴛ <white>{name}<red>."
+swap-list-empty:     "{prefix}<gray>ɴᴏ ʙᴏᴛꜱ ᴄᴜʀʀᴇɴᴛʟʏ ꜱᴄʜᴇᴅᴜʟᴇᴅ ꜰᴏʀ ꜱᴡᴀᴘ."
+swap-list-header:    "{prefix}<gray>ꜱᴄʜᴇᴅᴜʟᴇᴅ ʙᴏᴛꜱ<gray>: <#0079FF>{count}</#0079FF>"
+swap-list-entry:     "  <dark_gray>• <#0079FF>{name}</#0079FF> <dark_gray>│ <gray>{personality} <dark_gray>│ <gray>ᴄʏᴄʟᴇꜱ: <white>{swaps}"
 

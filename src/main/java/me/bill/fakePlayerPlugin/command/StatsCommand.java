@@ -97,7 +97,6 @@ public class StatsCommand implements FppCommand {
         // ── Systems ───────────────────────────────────────────────────────────
         sender.sendMessage(section("ꜱʏꜱᴛᴇᴍꜱ"));
         statusBoolRow(sender, "ꜰᴀᴋᴇ ᴄʜᴀᴛ",     Config.fakeChatEnabled(),     "enabled",     "disabled");
-        statusBoolRow(sender, "ʙᴏᴛ ꜱᴡᴀᴘ",       Config.swapEnabled(),          "enabled",     "disabled");
         statusBoolRow(sender, "ᴄʜᴜɴᴋ ʟᴏᴀᴅɪɴɢ", Config.chunkLoadingEnabled(),  "enabled",     "disabled");
         statusBoolRow(sender, "ᴘᴇʀꜱɪꜱᴛᴇɴᴄᴇ",   Config.persistOnRestart(),     "enabled",     "disabled");
         statusBoolRow(sender, "ʙᴏᴛ ʙᴏᴅɪᴇꜱ",    Config.spawnBody(),            "enabled",     "disabled");

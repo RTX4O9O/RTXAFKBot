@@ -2,389 +2,478 @@ package me.bill.fakePlayerPlugin.fakeplayer;
 
 import me.bill.fakePlayerPlugin.FakePlayerPlugin;
 import me.bill.fakePlayerPlugin.config.Config;
-import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.format.NamedTextColor;
-import net.kyori.adventure.text.format.TextColor;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
- import org.bukkit.entity.Player;
- import org.bukkit.entity.Entity;
-import org.bukkit.scheduler.BukkitTask;
 
-import java.time.LocalTime;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * Realistic bot swap / rotation system.
+ * Drives the bot swap / session-rotation system.
  *
- * <h3>Realism features</h3>
- * <ul>
- *   <li><b>Personality</b> — each bot is assigned one of three session archetypes
- *       at schedule-time: VISITOR (short), REGULAR (medium), LURKER (long).
- *       Personalities bias the session length independently of the global config.</li>
- *   <li><b>Session growth</b> — a bot that has swapped many times gradually stays
- *       longer per session (simulates a "returning regular").</li>
- *   <li><b>Time-of-day bias</b> — session lengths are shortened during off-peak
- *       hours (night) and extended during peak hours (evening), mirroring real
- *       player behaviour.</li>
- *   <li><b>Farewell chat</b> — before leaving the bot optionally sends a
- *       farewell message ("gtg", "brb", "cya", etc.).</li>
- *   <li><b>Greeting chat</b> — after the replacement bot joins it optionally
- *       sends a greeting ("hey", "back", "what did I miss", etc.).</li>
- *   <li><b>Reconnect simulation</b> — small configurable chance the rejoining
- *       bot keeps the same name (as if the player briefly lost connection).</li>
- *   <li><b>Staggered leave</b> — uses the global leave-delay config so the
- *       body disappears and leave-message fire with the same natural lag as
- *       a normal /fpp delete.</li>
- *   <li><b>AFK kick simulation</b> — low chance of a very short extra delay
- *       before rejoin, as if the server AFK-kicked the player.</li>
- * </ul>
+ * <h3>How it works</h3>
+ * <ol>
+ *   <li>Every active AFK bot receives a randomised session countdown at startup
+ *       (or when the feature is enabled via {@code /fpp swap on}).</li>
+ *   <li>When the countdown expires the bot says an optional farewell message,
+ *       waits a short "packing-up" pause, then leaves via the normal
+ *       {@link FakePlayerManager#delete(String)} path — the vanilla leave
+ *       message fires through NMS just like a real player disconnect.</li>
+ *   <li>After a configurable absence period the bot respawns at its last
+ *       known location, optionally with the same or a fresh random name, and
+ *       says a greeting message.</li>
+ *   <li>Each bot is assigned a {@link Personality} that scales its session
+ *       duration. Regulars also accumulate a small "growth" multiplier so
+ *       long-standing bots naturally log longer sessions over time.</li>
+ * </ol>
+ *
+ * <h3>Config keys</h3>
+ * All keys live under {@code swap.*} in {@code config.yml}.  See
+ * {@link Config#swapEnabled()} and siblings for the full list.
  */
 public final class BotSwapAI {
 
-    // ── Personality archetypes ────────────────────────────────────────────────
-
-    private enum Personality {
-        /** Quick visitor — stays 30–60 % of the configured session range. */
-        VISITOR,
-        /** Typical player — uses the configured range as-is. */
-        REGULAR,
-        /** Long-term lurker — stays 150–250 % of the configured session range. */
-        LURKER
-    }
-
-    // ── State ─────────────────────────────────────────────────────────────────
-
-    private final FakePlayerPlugin plugin;
+    private final FakePlayerPlugin  plugin;
     private final FakePlayerManager manager;
 
-    /** uuid → active session countdown task */
-    private final Map<UUID, BukkitTask> sessionTasks   = new ConcurrentHashMap<>();
-    /** uuid → personality assigned at first schedule */
-    private final Map<UUID, Personality> personalities = new ConcurrentHashMap<>();
-    /** uuid → how many times this uuid has swapped (session count) */
-    private final Map<UUID, Integer> swapCounts        = new ConcurrentHashMap<>();
-
-    // ── Farewell / greeting message pools ────────────────────────────────────
+    // ── Farewell / Greeting pools ─────────────────────────────────────────────
 
     private static final List<String> FAREWELLS = List.of(
-            "gtg", "brb", "cya", "gotta run", "be back later", "bye everyone",
-            "peace ✌", "afk for a bit", "dinner time lol", "gonna log off",
-            "see ya", "later", "gn everyone", "bye!", "logging off",
-            "gotta go do stuff", "be back in a bit", "ttyl", "afk", "bbs",
+            "gtg", "brb", "bye!", "cya", "gotta go", "peace ✌",
+            "afk for a bit", "dinner time lol", "gonna log off",
+            "see ya", "later", "gn everyone", "logging off",
+            "gotta do stuff", "be back in a bit", "ttyl", "bbs",
             "ok gtg now", "bye byee", "seeya around", "taking a break",
             "stepping out for a sec", "gonna grab food", "one sec brb",
-            "lag is killing me lol", "my pc is dying", "phone call brb"
+            "lag is killing me lol", "my pc is dying", "phone call brb",
+            "back in a few", "gonna touch grass real quick", "grabbing dinner brb",
+            "afk", "need a break", "stepping away", "be right back"
     );
 
     private static final List<String> GREETINGS = List.of(
-            "hey", "back", "yo", "hi", "wassup", "hello", "I'm back",
+            "back", "hey", "yo", "hi", "wassup", "I'm back",
             "missed me?", "what did I miss?", "heyy", "yo what's good",
             "back at it", "ready to grind", "let's go", "sup everyone",
             "finally back", "ok I'm here", "heyo", "back again lol",
             "hi everyone", "just reconnected", "connection dropped lol",
             "stupid internet", "wifi fixed", "alright I'm back",
             "what happened while I was gone?", "did anything cool happen?",
-            "back from dinner", "ok ready now", "lets get it"
+            "back from dinner", "ok ready now", "lets get it",
+            "recharged and back", "I return", "back from the void",
+            "here again lol", "connection issues smh"
     );
+
+    // ── Personality ───────────────────────────────────────────────────────────
+
+    /**
+     * Per-bot personality that scales session duration and influences how
+     * often the bot participates in farewell / greeting chat.
+     */
+    public enum Personality {
+        /** Average session times, normal behaviour. */
+        CASUAL(1.0),
+        /** Power player — longer sessions. */
+        GRINDER(1.6),
+        /** Social type — shorter sessions, quick to return. */
+        SOCIAL(0.65),
+        /** Quiet presence — very long sessions, rarely leaves. */
+        LURKER(2.2),
+        /** High activity — short cycles, frequent rejoins. */
+        ACTIVE(0.45);
+
+        /** Multiplied against the configured base session duration. */
+        public final double sessionMultiplier;
+
+        Personality(double mult) { sessionMultiplier = mult; }
+    }
+
+    // ── State ─────────────────────────────────────────────────────────────────
+
+    /** Active session countdown task per live bot UUID. */
+    private final Map<UUID, Integer>     sessionTimers  = new ConcurrentHashMap<>();
+    /** "Packing up" pre-delete delay task per bot UUID (started when session expires). */
+    private final Map<UUID, Integer>     packingTimers  = new ConcurrentHashMap<>();
+    /** Pending rejoin task per old (removed) bot UUID. */
+    private final Map<UUID, Integer>     rejoinTimers   = new ConcurrentHashMap<>();
+    /** Personality assigned to each UUID (active AND awaiting rejoin). */
+    private final Map<UUID, Personality> personalities = new ConcurrentHashMap<>();
+    /** Cumulative swap cycles completed per UUID. */
+    private final Map<UUID, Integer>     swapCounts    = new ConcurrentHashMap<>();
+    /** Count of bots currently offline awaiting rejoin. */
+    private final AtomicInteger          swappedOut    = new AtomicInteger(0);
+    /** Epoch-ms when each bot's current session will expire (for status display). */
+    private final Map<UUID, Long>        sessionExpiry = new ConcurrentHashMap<>();
 
     // ── Constructor ───────────────────────────────────────────────────────────
 
     public BotSwapAI(FakePlayerPlugin plugin, FakePlayerManager manager) {
         this.plugin  = plugin;
         this.manager = manager;
+
+        // 1-second watcher: schedule new bots, clean up removed ones.
+        // 2-tick startup delay so the manager is fully ready.
+        Bukkit.getScheduler().runTaskTimer(plugin, this::syncBotSchedules, 40L, 20L);
+    }
+
+    // ── Sync loop ─────────────────────────────────────────────────────────────
+
+    private void syncBotSchedules() {
+        if (!Config.swapEnabled()) return;
+
+        for (FakePlayer fp : manager.getActivePlayers()) {
+            UUID id = fp.getUuid();
+            // PVP bots never swap out
+            if (fp.getBotType() == BotType.PVP) continue;
+            if (!sessionTimers.containsKey(id)) {
+                assignPersonality(id);
+                schedule(fp);
+            }
+        }
+
+        // Cancel session/packing timers for bots that were removed externally
+        sessionTimers.entrySet().removeIf(e -> {
+            if (manager.getByUuid(e.getKey()) == null) {
+                Bukkit.getScheduler().cancelTask(e.getValue());
+                cleanupState(e.getKey());
+                return true;
+            }
+            return false;
+        });
+        packingTimers.entrySet().removeIf(e -> {
+            if (manager.getByUuid(e.getKey()) == null) {
+                Bukkit.getScheduler().cancelTask(e.getValue());
+                return true;
+            }
+            return false;
+        });
     }
 
     // ── Public API ────────────────────────────────────────────────────────────
 
     /**
-     * Starts a swap timer for {@code fp}.
-     * Assigns a personality on the first call; subsequent calls (after rejoin)
-     * inherit the same personality and increment the swap count.
+     * Schedules (or reschedules) a session countdown for {@code fp}.
+     * No-op when swap is disabled.
+     *
+     * @param fp the fake player to schedule
      */
     public void schedule(FakePlayer fp) {
         if (!Config.swapEnabled()) return;
-        cancel(fp.getUuid());
+        if (fp.getBotType() == BotType.PVP) return;
 
-        // Assign personality once per uuid
-        personalities.computeIfAbsent(fp.getUuid(), u -> randomPersonality());
+        UUID id = fp.getUuid();
+        // Cancel any existing timer first
+        Integer prev = sessionTimers.remove(id);
+        if (prev != null) Bukkit.getScheduler().cancelTask(prev);
 
-        long sessionTicks = sessionTicks(fp.getUuid());
-        BukkitTask task = Bukkit.getScheduler().runTaskLater(plugin,
-                () -> doLeave(fp), sessionTicks);
-        sessionTasks.put(fp.getUuid(), task);
+        assignPersonality(id);
+        long delay = sessionDurationTicks(id);
+        sessionExpiry.put(id, System.currentTimeMillis() + (delay * 50L)); // 50 ms per tick
 
-        Config.debug("Swap scheduled for " + fp.getName()
-                + " [" + personalities.get(fp.getUuid()) + "]"
-                + " in " + (sessionTicks / 20) + "s"
-                + " (swap #" + swapCounts.getOrDefault(fp.getUuid(), 0) + ").");
+        int taskId = Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            sessionTimers.remove(id);
+            FakePlayer current = manager.getByUuid(id);
+            if (current != null) doLeave(current);
+        }, delay).getTaskId();
+
+        sessionTimers.put(id, taskId);
+        Config.debugChat("[SwapAI] Session scheduled for " + fp.getName()
+                + " (delay=" + (delay / 20) + "s, personality="
+                + personalities.getOrDefault(id, Personality.CASUAL).name().toLowerCase() + ")");
     }
 
-    /** Cancels the swap timer for {@code uuid}. */
+    /**
+     * Cancels the swap timer for a specific bot.
+     * Called when the bot is removed externally (e.g. {@code /fpp despawn}).
+     *
+     * @param uuid the UUID of the bot being removed
+     */
     public void cancel(UUID uuid) {
-        BukkitTask t = sessionTasks.remove(uuid);
-        if (t != null) t.cancel();
+        Integer tid = sessionTimers.remove(uuid);
+        if (tid != null) Bukkit.getScheduler().cancelTask(tid);
+        Integer ptid = packingTimers.remove(uuid);
+        if (ptid != null) Bukkit.getScheduler().cancelTask(ptid);
+        Integer rid = rejoinTimers.remove(uuid);
+        if (rid != null) {
+            Bukkit.getScheduler().cancelTask(rid);
+            swappedOut.decrementAndGet();
+        }
+        cleanupState(uuid);
     }
 
-    /** Cancels all swap timers (called on plugin disable). */
+    /** Cancels ALL pending swap / rejoin timers. */
     public void cancelAll() {
-        sessionTasks.values().forEach(BukkitTask::cancel);
-        sessionTasks.clear();
+        sessionTimers.values().forEach(Bukkit.getScheduler()::cancelTask);
+        packingTimers.values().forEach(Bukkit.getScheduler()::cancelTask);
+        rejoinTimers.values().forEach(Bukkit.getScheduler()::cancelTask);
+        sessionTimers.clear();
+        packingTimers.clear();
+        rejoinTimers.clear();
         personalities.clear();
         swapCounts.clear();
+        sessionExpiry.clear();
+        swappedOut.set(0);
+    }
+
+    /**
+     * Forces an immediate leave for the named bot.
+     *
+     * @param botName name of the active bot to swap out
+     * @return {@code true} if found and the leave was triggered, {@code false} if not found
+     */
+    public boolean triggerNow(String botName) {
+        FakePlayer fp = findByName(botName);
+        if (fp == null) return false;
+        UUID id = fp.getUuid();
+        Integer tid = sessionTimers.remove(id);
+        if (tid != null) Bukkit.getScheduler().cancelTask(tid);
+        // Also cancel any existing packing-up task to avoid a double-leave
+        Integer ptid = packingTimers.remove(id);
+        if (ptid != null) Bukkit.getScheduler().cancelTask(ptid);
+        doLeave(fp);
+        return true;
+    }
+
+    // ── Diagnostics ───────────────────────────────────────────────────────────
+
+    /** Number of bots currently offline and waiting to rejoin. */
+    public int getSwappedOutCount() { return swappedOut.get(); }
+
+    /** Number of active bots currently in their session countdown. */
+    public int getActiveSessionCount() { return sessionTimers.size(); }
+
+    /** UUIDs of all active bots that have a live session timer. */
+    public Set<UUID> getActiveSessions() {
+        return Collections.unmodifiableSet(new HashSet<>(sessionTimers.keySet()));
+    }
+
+    /**
+     * Returns how many seconds until the NEXT bot swaps out (the one with the
+     * soonest expiry), or {@code -1} if no sessions are scheduled.
+     */
+    public long getNextSwapSeconds() {
+        long now = System.currentTimeMillis();
+        long soonest = Long.MAX_VALUE;
+        for (long expiry : sessionExpiry.values()) {
+            if (expiry < soonest) soonest = expiry;
+        }
+        if (soonest == Long.MAX_VALUE) return -1;
+        return Math.max(0, (soonest - now) / 1000L);
+    }
+
+    /**
+     * Human-readable personality label for a bot, e.g. {@code "casual"}.
+     * Returns {@code "unset"} if no personality has been assigned yet.
+     */
+    public String getPersonalityLabel(UUID uuid) {
+        Personality p = personalities.get(uuid);
+        return p != null ? p.name().toLowerCase() : "unset";
+    }
+
+    /** How many complete swap cycles this bot UUID has finished. */
+    public int getSwapCount(UUID uuid) {
+        return swapCounts.getOrDefault(uuid, 0);
     }
 
     // ── Leave phase ───────────────────────────────────────────────────────────
 
     private void doLeave(FakePlayer fp) {
-        // Safety guard: if swap was disabled between schedule() and the timer firing, abort.
-        if (!Config.swapEnabled()) {
-            sessionTasks.remove(fp.getUuid());
-            return;
-        }
-        if (manager.getByUuid(fp.getUuid()) == null) return;
-        sessionTasks.remove(fp.getUuid());
+        if (!Config.swapEnabled()) return;
 
-        // Capture location BEFORE removing from world
-        Location loc = currentLocation(fp);
-        if (loc == null) {
-            Config.debug("Swap: no valid location for " + fp.getName() + " — skipping.");
+        // Respect max-swapped-out limit
+        int maxOut = Config.swapMaxSwappedOut();
+        if (maxOut > 0 && swappedOut.get() >= maxOut) {
+            Config.debugChat("[SwapAI] " + fp.getName() + " leave skipped (maxSwappedOut="
+                    + maxOut + "), rescheduling.");
+            schedule(fp);
             return;
         }
 
-        // Snapshot identity before name is freed
-        final String leavingName = fp.getDisplayName();
-        final UUID   leavingUuid = fp.getUuid();
-        final int    swapCount   = swapCounts.getOrDefault(leavingUuid, 0);
+        UUID  leavingUuid = fp.getUuid();
+        Personality p     = personalities.getOrDefault(leavingUuid, Personality.CASUAL);
+        int   newCount    = swapCounts.getOrDefault(leavingUuid, 0) + 1;
+        Location lastLoc  = fp.getLiveLocation();
+        String oldName    = fp.getName();
 
-        Config.debug("Swap leave: " + leavingName
-                + " (swap #" + swapCount + ", personality=" + personalities.get(leavingUuid) + ")");
+        Config.debugChat("[SwapAI] " + oldName + " starting leave (swap #" + newCount
+                + ", personality=" + p.name().toLowerCase() + ")");
 
-        // ── 1. Farewell chat (before body disappears) ─────────────────────
+        // 1. Farewell chat — fires before the body disappears
         if (Config.swapFarewellChat() && shouldChat()) {
             sendBotChat(fp, randomFrom(FAREWELLS));
         }
 
-        // ── 2. Short "packing up" pause (makes it feel natural) ──────────
-        long leaveDelay = leaveStaggerTicks();
-        Bukkit.getScheduler().runTaskLater(plugin, () -> {
+        // 2. Natural "packing up" pause (1–5 s) so farewell message lands before leave notification
+        long preDeleteDelay = 20L + ThreadLocalRandom.current().nextInt(80);
 
-            // ── 3. Visual remove ──────────────────────────────────────────
-            manager.swapRemove(fp);
-            FakePlayerBody.removeAll(fp);
-            List<Player> online = new ArrayList<>(Bukkit.getOnlinePlayers());
-            for (Player p : online) PacketHelper.sendTabListRemove(p, fp);
+        // Track this task so cancelAll() / cancel() can stop it while it is pending.
+        int packingId = Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            packingTimers.remove(leavingUuid);
 
-            // NMS player's quit event fires naturally — no custom leave message needed.
+            // Guard: swap disabled or bot manually removed while we were waiting
+            if (!Config.swapEnabled()) return;
+            if (manager.getByName(oldName) == null) return;
 
-            // ── 4. Schedule rejoin ────────────────────────────────────────
-            long rejoinTicks = rejoinTicks(swapCount);
-            Config.debug("Swap: " + leavingName + " rejoining in " + (rejoinTicks / 20) + "s.");
-            Bukkit.getScheduler().runTaskLater(plugin,
-                    () -> doRejoin(loc, leavingName, leavingUuid, swapCount + 1),
-                    rejoinTicks);
+            // 3. Normal delete — fires vanilla leave message via NMS, cleans up tab-list etc.
+            // Remove from swap state BEFORE calling manager.delete() to prevent the
+            // delete() path from calling cancel(uuid) and cleaning up state we still need.
+            sessionTimers.remove(leavingUuid);
+            sessionExpiry.remove(leavingUuid);
+            swappedOut.incrementAndGet();
 
-        }, leaveDelay);
+            // 4. Build the rejoin delay: absence + native leave-delay buffer
+            int absMin = Config.swapAbsenceMin();
+            int absMax = Math.max(absMin, Config.swapAbsenceMax());
+            int absSec = absMin + (absMax > absMin
+                    ? ThreadLocalRandom.current().nextInt(absMax - absMin + 1) : 0);
+            long absenceTicks     = Math.max(40L, (long) absSec * 20L);
+            long leaveBuffer      = (long) Math.max(Config.leaveDelayMin(), Config.leaveDelayMax()) + 10L;
+            long totalRejoinDelay = absenceTicks + leaveBuffer;
+
+            int rid = Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                rejoinTimers.remove(leavingUuid);
+                doRejoin(lastLoc, oldName, newCount, p);
+            }, totalRejoinDelay).getTaskId();
+
+            rejoinTimers.put(leavingUuid, rid);
+            Config.debugChat("[SwapAI] " + oldName + " offline for ~" + absSec
+                    + "s — rejoining in " + (totalRejoinDelay / 20) + "s.");
+
+            // Delete AFTER the rejoin timer is registered so cancelAll() can reach it.
+            manager.delete(oldName);
+
+        }, preDeleteDelay).getTaskId();
+
+        packingTimers.put(leavingUuid, packingId);
     }
 
     // ── Rejoin phase ──────────────────────────────────────────────────────────
 
-    private void doRejoin(Location loc, String oldName, UUID oldUuid, int newSwapCount) {
+    private void doRejoin(Location loc, String oldName, int newSwapCount, Personality p) {
+        swappedOut.decrementAndGet();
+
         if (!Config.swapEnabled()) return;
+        if (loc == null || loc.getWorld() == null) return;
 
-        // Decide name: reconnect (same name) or new name
-        boolean reconnect = ThreadLocalRandom.current().nextDouble()
-                < Config.swapReconnectChance();
-        String forcedName = reconnect ? oldName : null;
+        // Name selection: reuse old name if configured and currently available
+        String customName = null;
+        if (Config.swapSameNameOnRejoin() && !manager.isNameUsed(oldName)) {
+            customName = oldName;
+        }
 
-        Config.debug("Swap rejoin: " + (reconnect ? "reconnect as " + oldName : "new name")
-                + " at " + loc.getWorld().getName()
-                + " " + loc.getBlockX() + "," + loc.getBlockY() + "," + loc.getBlockZ());
+        // Snapshot active UUIDs so we can identify the newly spawned bot
+        Set<UUID> before = manager.getActiveUUIDs();
 
-        // Spawn via manager — picks name, creates FakePlayer, does full visual chain
-        int spawned = manager.spawnSwap(loc, forcedName);
-
-        if (spawned <= 0) {
-            Config.debug("Swap rejoin failed (no names available or at limit). Retrying in 30s.");
-            // Retry in 30 s — might free up if another bot gets deleted
-            Bukkit.getScheduler().runTaskLater(plugin,
-                    () -> doRejoin(loc, oldName, oldUuid, newSwapCount), 600L);
+        int result = manager.spawn(loc, 1, null, customName, true);
+        if (result <= 0) {
+            Config.debugChat("[SwapAI] Rejoin failed for ex-bot '" + oldName
+                    + "' (spawn result=" + result + ")");
             return;
         }
 
-        // Find the newly spawned bot to attach personality + swap count + greeting
-        // Delay lookup slightly so finishSpawn has registered it
+        // Wait a tick for the NMS spawn + visual chain to settle
         Bukkit.getScheduler().runTaskLater(plugin, () -> {
-            FakePlayer newBot = reconnect
-                    ? findByName(oldName)
-                    : findNewest(loc);
-
-            if (newBot == null) return;
-
-            // Carry over personality + increment swap count
-            UUID newUuid = newBot.getUuid();
-            personalities.putIfAbsent(newUuid, personalities.getOrDefault(oldUuid, randomPersonality()));
-            swapCounts.put(newUuid, newSwapCount);
-
-            // Greeting chat — short delay after join message
-            if (Config.swapGreetingChat() && shouldChat()) {
-                long greetDelay = 20L + ThreadLocalRandom.current().nextInt(60); // 1–4 s
-                Bukkit.getScheduler().runTaskLater(plugin,
-                        () -> sendBotChat(newBot, randomFrom(GREETINGS)), greetDelay);
+            FakePlayer newBot = null;
+            for (FakePlayer fp : manager.getActivePlayers()) {
+                if (!before.contains(fp.getUuid())) {
+                    newBot = fp;
+                    break;
+                }
             }
+
+            if (newBot == null) {
+                Config.debugChat("[SwapAI] Rejoin: could not find new bot after spawn for '"
+                        + oldName + "'");
+                return;
+            }
+
+            // Carry personality and swap count forward
+            personalities.put(newBot.getUuid(), p);
+            swapCounts.put(newBot.getUuid(), newSwapCount);
+
+            Config.debugChat("[SwapAI] " + newBot.getName() + " rejoined (swap #"
+                    + newSwapCount + ", personality=" + p.name().toLowerCase() + ")");
+
+            // Greeting chat — slight delay after the join message
+            if (Config.swapGreetingChat() && shouldChat()) {
+                UUID newId = newBot.getUuid();
+                long greetDelay = 20L + ThreadLocalRandom.current().nextInt(60);
+                Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                    FakePlayer b = manager.getByUuid(newId);
+                    if (b != null) sendBotChat(b, randomFrom(GREETINGS));
+                }, greetDelay);
+            }
+
+            // Start next session countdown
+            schedule(newBot);
         }, 10L);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     /**
-     * Session duration in ticks — factors in:
-     * personality multiplier, session growth (returning regulars stay longer),
-     * time-of-day bias, and per-bot jitter.
+     * Calculates session duration in ticks for a bot.
+     * Factors in personality multiplier and a growth bonus for experienced cyclers.
      */
-    private long sessionTicks(UUID uuid) {
-        int min = Config.swapSessionMin();
-        int max = Math.max(min + 1, Config.swapSessionMax());
-        int base = min + ThreadLocalRandom.current().nextInt(max - min + 1);
-
-        // Personality multiplier
-        Personality p = personalities.getOrDefault(uuid, Personality.REGULAR);
-        double multiplier = switch (p) {
-            case VISITOR -> 0.3 + ThreadLocalRandom.current().nextDouble() * 0.3; // 30–60 %
-            case REGULAR -> 0.8 + ThreadLocalRandom.current().nextDouble() * 0.4; // 80–120 %
-            case LURKER  -> 1.5 + ThreadLocalRandom.current().nextDouble(); // 150–250 %
-        };
-
-        // Session growth — each swap adds up to 15 % more stay time (caps at +75 %)
-        int count = swapCounts.getOrDefault(uuid, 0);
-        double growth = Math.min(1.0 + count * 0.15, 1.75);
-
-        // Time-of-day bias
-        double timeBias = timeOfDayBias();
-
-        // Jitter
-        int jitter = Config.swapJitter();
-        int jitterOffset = jitter > 0
-                ? ThreadLocalRandom.current().nextInt(jitter * 2 + 1) - jitter
-                : 0;
-
-        int seconds = (int) Math.round(base * multiplier * growth * timeBias) + jitterOffset;
-        seconds = Math.max(15, seconds); // hard floor: 15 s
-
-        return (long) seconds * 20L;
+    private long sessionDurationTicks(UUID botUuid) {
+        Personality p   = personalities.getOrDefault(botUuid, Personality.CASUAL);
+        int minSec      = Config.swapSessionMin();
+        int maxSec      = Math.max(minSec, Config.swapSessionMax());
+        int spread      = maxSec - minSec;
+        int baseSec     = minSec + (spread > 0 ? ThreadLocalRandom.current().nextInt(spread + 1) : 0);
+        // Growth: +8% per completed swap cycle, capped at +40% (5 cycles)
+        int count       = swapCounts.getOrDefault(botUuid, 0);
+        double growth   = 1.0 + (Math.min(count, 5) * 0.08);
+        long ticks      = (long)(baseSec * p.sessionMultiplier * growth * 20.0);
+        return Math.max(200L, ticks); // minimum 10 s
     }
 
-    /**
-     * Rejoin gap in ticks — LURKERS wait longer before coming back;
-     * after many swaps the gap shrinks (the player "knows the server now").
-     */
-    private long rejoinTicks(int swapCount) {
-        int min = Config.swapRejoinDelayMin();
-        int max = Math.max(min + 1, Config.swapRejoinDelayMax());
-        int seconds = min + ThreadLocalRandom.current().nextInt(max - min + 1);
-
-        // Shrink gap slightly with experience (familiarity)
-        double familiarity = Math.max(0.5, 1.0 - swapCount * 0.05);
-        seconds = (int) Math.round(seconds * familiarity);
-
-        // AFK-kick simulation — rare long gap
-        if (ThreadLocalRandom.current().nextInt(100) < Config.swapAfkKickChance()) {
-            seconds += 60 + ThreadLocalRandom.current().nextInt(120); // +1–3 min
-            Config.debug("Swap: AFK-kick simulation — extra " + seconds + "s gap.");
-        }
-
-        seconds = Math.max(2, seconds);
-        return (long) seconds * 20L;
-    }
-
-    /**
-     * Time-of-day bias: returns a multiplier for session length.
-     * Peak hours (18–22) → longer sessions (up to 1.4×).
-     * Off-peak (01–06)   → shorter sessions (down to 0.5×).
-     * Shoulder hours     → linear interpolation.
-     */
-    private double timeOfDayBias() {
-        if (!Config.swapTimeOfDayBias()) return 1.0;
-        int hour = LocalTime.now().getHour();
-        // Peak: 18–22  → 1.4
-        if (hour >= 18 && hour <= 22) return 1.4;
-        // Off-peak: 1–5 → 0.5
-        if (hour >= 1  && hour <= 5)  return 0.5;
-        // Ramp up: 6–17
-        if (hour >= 6  && hour <= 17) return 0.5 + (hour - 6) * (0.9 / 12.0);
-        // Late night: 23–0
-        return 1.4 - (hour == 23 ? 0.3 : 0.7);
-    }
-
-    /** Stagger ticks for the leave phase — matches the global leave-delay config. */
-    private long leaveStaggerTicks() {
-        // Config leave-delay values are in seconds; convert to ticks
-        int minSecs = Config.leaveDelayMin();
-        int maxSecs = Math.max(minSecs, Config.leaveDelayMax());
-        if (maxSecs <= 0) return 1L;
-        int spread = maxSecs - minSecs;
-        int secs = minSecs + (spread > 0 ? ThreadLocalRandom.current().nextInt(spread + 1) : 0);
-        return Math.max(1L, (long) secs * 20L);
-    }
-
-    /** Whether to send a chat message this swap cycle (70 % base chance). */
+    /** {@code true} when fake-chat is enabled and at least one real player is online. */
     private boolean shouldChat() {
         if (!Config.fakeChatEnabled()) return false;
-        if (Config.fakeChatRequirePlayer() && Bukkit.getOnlinePlayers().isEmpty()) return false;
-        return ThreadLocalRandom.current().nextDouble() < 0.70;
+        for (org.bukkit.entity.Player p : Bukkit.getOnlinePlayers()) {
+            if (manager.getByUuid(p.getUniqueId()) == null) return true; // at least one real player
+        }
+        // No real players — still fire if require-player-online is off
+        return !Config.fakeChatRequirePlayer()
+                && ThreadLocalRandom.current().nextDouble() < 0.70;
     }
 
     private void sendBotChat(FakePlayer bot, String message) {
-        Entity entity = bot.getPhysicsEntity();
-        if (entity == null || !entity.isValid()) return;
-        Component chatLine = Component.empty()
-                .append(Component.text("<", NamedTextColor.WHITE))
-                .append(Component.text(bot.getName(), TextColor.color(0x0079FF)))
-                .append(Component.text("> ", NamedTextColor.WHITE))
-                .append(Component.text(message, NamedTextColor.WHITE));
-        Bukkit.getServer().broadcast(chatLine);
+        org.bukkit.entity.Player entity = bot.getPlayer();
+        if (entity == null || !entity.isValid() || !entity.isOnline()) return;
+        BotChatAI.dispatchChat(entity, message);
+    }
+
+    private void assignPersonality(UUID botUuid) {
+        personalities.computeIfAbsent(botUuid, k -> randomPersonality());
+    }
+
+    private void cleanupState(UUID uuid) {
+        personalities.remove(uuid);
+        swapCounts.remove(uuid);
+        sessionExpiry.remove(uuid);
     }
 
     private static Personality randomPersonality() {
-        int r = ThreadLocalRandom.current().nextInt(100);
-        if (r < 25) return Personality.VISITOR; // 25 %
-        if (r < 75) return Personality.REGULAR; // 50 %
-        return Personality.LURKER;              // 25 %
+        double r = ThreadLocalRandom.current().nextDouble();
+        if      (r < 0.18) return Personality.GRINDER;
+        else if (r < 0.36) return Personality.SOCIAL;
+        else if (r < 0.50) return Personality.LURKER;
+        else if (r < 0.65) return Personality.ACTIVE;
+        else               return Personality.CASUAL;
     }
 
     private static <T> T randomFrom(List<T> list) {
         return list.get(ThreadLocalRandom.current().nextInt(list.size()));
     }
 
-    private Location currentLocation(FakePlayer fp) {
-        if (fp.getPhysicsEntity() != null && fp.getPhysicsEntity().isValid())
-            return fp.getPhysicsEntity().getLocation().clone();
-        if (fp.getSpawnLocation() != null)
-            return fp.getSpawnLocation().clone();
-        return null;
-    }
-
     private FakePlayer findByName(String name) {
-        for (FakePlayer fp : manager.getActivePlayers())
-            if (fp.getName().equalsIgnoreCase(name)) return fp;
-        return null;
-    }
-
-    /** Finds the most recently spawned bot within 32 blocks of the given location. */
-    private FakePlayer findNewest(Location loc) {
-        FakePlayer best = null;
-        double bestDist = Double.MAX_VALUE;
         for (FakePlayer fp : manager.getActivePlayers()) {
-            if (fp.getPhysicsEntity() == null || !fp.getPhysicsEntity().isValid()) continue;
-            if (!fp.getPhysicsEntity().getWorld().equals(loc.getWorld())) continue;
-            double d = fp.getPhysicsEntity().getLocation().distanceSquared(loc);
-            if (d < bestDist && d < 1024) { // within 32 blocks
-                bestDist = d;
-                best = fp;
-            }
+            if (fp.getName().equalsIgnoreCase(name)) return fp;
         }
-        return best;
+        return null;
     }
 }
+

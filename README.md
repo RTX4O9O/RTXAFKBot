@@ -22,7 +22,8 @@ FPP adds fake players to your server that look and behave like real ones:
 - Always have a **real skin** (guaranteed fallback chain — never Steve/Alex unless you want it)
 - **Load chunks** around them exactly like a real player
 - **Rotate their head** to face nearby players
-- **Send fake chat messages** from a configurable message pool (with LP prefix/suffix support)
+- **Swim automatically** in water and lava — mimics a real player holding spacebar
+- **Send fake chat messages** from a configurable message pool (with LP prefix/suffix support, typing delays, burst messages, mention replies, and event reactions)
 - **Swap in and out** automatically with fresh names and personalities
 - **Persist across restarts** — they come back where they left off
 - **Freeze** any bot in place with `/fpp freeze`
@@ -168,9 +169,10 @@ Located at `plugins/FakePlayerPlugin/config.yml`. Run `/fpp reload` after any ch
 | `death` | Respawn on death, respawn delay, item drop suppression |
 | `chunk-loading` | Radius, update interval |
 | `head-ai` | Enable/disable, look range, turn speed |
+| `swim-ai` | Automatic swimming in water/lava (`enabled`, default `true`) |
 | `collision` | Push physics — walk strength, hit strength, bot separation |
 | `swap` | Auto rotation — session length, farewell/greeting chat, AFK simulation |
-| `fake-chat` | Enable, message chance, interval, `chat-format` (supports `{prefix}` / `{bot_name}` / `{suffix}`) |
+| `fake-chat` | Enable, message chance, interval, typing delays, burst messages, mention replies, event reactions, `chat-format` (supports `{prefix}` / `{bot_name}` / `{suffix}`) |
 | `tab-list` | Show/hide bots in the player tab list |
 | `config-sync` | Cross-server config push/pull mode (`DISABLED` / `MANUAL` / `AUTO_PULL` / `AUTO_PUSH`) |
 | `database` | `mode` (`LOCAL` / `NETWORK`), `server-id`, SQLite (default) or MySQL |
@@ -349,6 +351,34 @@ Placeholders: `{prefix}` (LP prefix), `{bot_name}`, `{suffix}` (LP suffix), `{me
 
 ## Changelog
 
+### v1.5.10 *(2026-04-05)*
+
+**`/fpp swap` Toggle Fix**
+- Running `/fpp swap` with no arguments now toggles swap on/off — exactly like `/fpp chat`
+- `swap-enabled` and `swap-disabled` messages redesigned to match chat toggle style (`session rotation has been enabled/disabled`)
+- `swap-status-on` / `swap-status-off` now follow the same `is enabled / is disabled` pattern as chat status messages
+
+**Bot Chat Interval Fix**
+- Bot chat loops are now restarted on `/fpp reload` so changes to `fake-chat.interval.min/max`, `fake-chat.chance`, and `fake-chat.stagger-interval` take effect immediately instead of waiting for each bot's old scheduled task to naturally expire
+- `/fpp reload` output shows the new interval range as confirmation
+
+**Fake Chat Realism Enhancements**
+- `typing-delay` — simulates a 0–2.5 s typing pause before each message
+- `burst-chance` / `burst-delay` — bots occasionally send a quick follow-up message
+- `reply-to-mentions` / `mention-reply-chance` / `reply-delay` — bots can reply when a player says their name in chat
+- `activity-variation` — random per-bot chat frequency tier (quiet/normal/active/very-active)
+- `history-size` — bots avoid repeating their own recent messages
+- `remote-format` — MiniMessage format for bodyless / proxy-remote bot broadcasts
+
+**Swim AI**
+- New `swim-ai.enabled` config key (default `true`) — bots automatically swim upward when submerged in water or lava, mimicking a player holding spacebar. Set to `false` to let bots sink.
+
+**Language & Compatibility**
+- `Biome.name()` deprecated call replaced with `Biome.getKey().getKey()` — compatible with Paper 1.22+
+- `sync-usage` and `swap-now-usage` messages now end with a period for consistency
+- Startup banner now shows **Bot swap** status in the Features section
+- Startup banner now shows actual **Skin mode** (`auto`/`custom`/`off`) instead of `disabled`
+
 ### v1.5.8 *(2026-04-03)*
 
 **Ghost Player / "Anonymous User" Fix**
@@ -519,4 +549,4 @@ Thank you for using Fake Player Plugin. Without you, it wouldn't be where it is 
 
 ---
 
-*Built for Paper 1.21.x · Java 21 · FPP v1.5.8 · [Modrinth](https://modrinth.com/plugin/fake-player-plugin-(fpp)) · [SpigotMC](https://www.spigotmc.org/resources/fake-player-plugin-fpp.133572/) · [PaperMC](https://hangar.papermc.io/Pepe-tf/FakePlayerPlugin) · [BuiltByBit](https://builtbybit.com/resources/fake-player-plugin.98704/) · [Wiki](https://fakeplayerplugin.xyz)*
+*Built for Paper 1.21.x · Java 21 · FPP v1.5.10 · [Modrinth](https://modrinth.com/plugin/fake-player-plugin-(fpp)) · [SpigotMC](https://www.spigotmc.org/resources/fake-player-plugin-fpp.133572/) · [PaperMC](https://hangar.papermc.io/Pepe-tf/FakePlayerPlugin) · [BuiltByBit](https://builtbybit.com/resources/fake-player-plugin.98704/) · [Wiki](https://fakeplayerplugin.xyz)*

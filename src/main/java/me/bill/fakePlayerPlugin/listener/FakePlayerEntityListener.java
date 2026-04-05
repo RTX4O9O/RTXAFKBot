@@ -3,6 +3,7 @@ package me.bill.fakePlayerPlugin.listener;
 import me.bill.fakePlayerPlugin.FakePlayerPlugin;
 import me.bill.fakePlayerPlugin.config.Config;
 import me.bill.fakePlayerPlugin.fakeplayer.BotBroadcast;
+import me.bill.fakePlayerPlugin.fakeplayer.BotType;
 import me.bill.fakePlayerPlugin.fakeplayer.FakePlayer;
 import me.bill.fakePlayerPlugin.fakeplayer.ChunkLoader;
 import me.bill.fakePlayerPlugin.fakeplayer.FakePlayerBody;
@@ -17,6 +18,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.entity.EntityPortalEvent;
@@ -62,6 +64,33 @@ public class FakePlayerEntityListener implements Listener {
             Location loc = event.getEntity().getLocation();
             for (Player p : Bukkit.getOnlinePlayers())
                 p.playSound(loc, Sound.ENTITY_PLAYER_HURT, SoundCategory.PLAYERS, 1.0f, 1.0f);
+        }
+    }
+
+    // ── PVP Bot Damage Tracking (for defensive mode) ──────────────────────────
+
+    /**
+     * Tracks when a PVP bot is damaged by a player.
+     * This enables defensive mode retaliation.
+     */
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onBotDamagedByPlayer(EntityDamageByEntityEvent event) {
+        if (!isFakeBotBody(event.getEntity())) return;
+        if (!(event.getEntity() instanceof Player victim)) return;
+        if (!(event.getDamager() instanceof Player attacker)) return;
+
+        FakePlayer fp = manager.getByEntity(victim);
+        if (fp == null) return;
+
+        // Only track for PVP bots
+        if (fp.getBotType() != BotType.PVP) return;
+
+        // Notify PVP AI that this bot was attacked
+        if (manager.getPvpAI() != null) {
+            manager.getPvpAI().onBotAttacked(
+                victim.getUniqueId(),
+                attacker.getUniqueId()
+            );
         }
     }
 
@@ -113,13 +142,15 @@ public class FakePlayerEntityListener implements Listener {
     public void onEntityDeath(EntityDeathEvent event) {
         if (!isFakeBotBody(event.getEntity())) return;
 
-        if (Config.suppressDrops()) {
+        FakePlayer fp = manager.getByEntity(event.getEntity());
+        if (fp == null) return;
+
+        // PVP bots always drop their inventory
+        // Other bots respect the config setting
+        if (fp.getBotType() != me.bill.fakePlayerPlugin.fakeplayer.BotType.PVP && Config.suppressDrops()) {
             event.getDrops().clear();
             event.setDroppedExp(0);
         }
-
-        FakePlayer fp = manager.getByEntity(event.getEntity());
-        if (fp == null) return;
 
         Player killer = event.getEntity().getKiller();
         if (killer != null) {

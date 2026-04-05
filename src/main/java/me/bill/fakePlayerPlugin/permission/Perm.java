@@ -41,7 +41,7 @@ public final class Perm {
 
     /**
      * Grants all user-facing FPP commands (spawn, tph, info-self).
-     * Does NOT include admin commands (delete, reload, swap, chat, list, info-full).
+     * Does NOT include admin commands (delete, reload, chat, list, info-full).
      * Children declared in plugin.yml.
      */
     public static final String USER_ALL   = "fpp.user.*";
@@ -117,8 +117,6 @@ public final class Perm {
     /** Toggle /fpp chat on|off. Default: op. */
     public static final String CHAT       = "fpp.chat";
 
-    /** Toggle /fpp swap on|off. Default: op. */
-    public static final String SWAP       = "fpp.swap";
 
     /** Run /fpp reload. Default: op. */
     public static final String RELOAD     = "fpp.reload";
@@ -164,6 +162,9 @@ public final class Perm {
 
     /** Sync configs across network via /fpp sync. */
     public static final String SYNC          = "fpp.sync";
+
+    /** Control bot session rotation (swap in/out) via /fpp swap. */
+    public static final String SWAP          = "fpp.swap";
 
     // ── Static helpers ────────────────────────────────────────────────────────
 

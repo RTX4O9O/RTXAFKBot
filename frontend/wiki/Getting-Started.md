@@ -50,15 +50,15 @@
 ### Step 2: **Install FPP**
 
 1. **Download FPP** from [Modrinth](https://modrinth.com/plugin/fake-player-plugin-(fpp))
-2. **Place** `fpp-1.4.28.jar` in your `plugins/` folder
+2. **Place** `fpp-1.5.10.jar` in your `plugins/` folder
 3. **Verify** your plugins folder:
 
 ```
 📁 plugins/
-├── 📦 packetevents-spigot-2.11.2.jar
+├── 📦 packetevents-spigot-2.x.x.jar
 ├── 📦 PlaceholderAPI-2.11.6.jar (optional)
-├── 📦 LuckPerms-Bukkit-5.4.x.jar (optional)
-└── 📦 fpp-1.4.28.jar
+├── 📦 LuckPerms-Bukkit-5.5.x.jar (optional)
+└── 📦 fpp-1.5.10.jar
 ```
 
 ### Step 3: **First Launch**
@@ -67,12 +67,29 @@
 2. **Watch the console** for FPP startup messages:
 
 ```
-[INFO]: [FPP] ✓ PacketEvents found - tab list integration enabled
-[INFO]: [FPP] ✓ PlaceholderAPI found - placeholder support enabled
-[INFO]: [FPP] ✓ LuckPerms found - prefix/suffix support enabled
-[INFO]: [FPP] ✓ Configuration loaded (version 28)
-[INFO]: [FPP] ✓ Database initialized (SQLite)
-[INFO]: [FPP] ✓ Fake Player Plugin v1.4.28 enabled successfully!
+[FPP] ══════════════════════════════════════════════════
+[FPP]   FakePlayerPlugin v1.5.10
+[FPP] ──────────────────────────────────────────────────
+[FPP] ── Runtime ─────────────────────────────────────────
+[FPP]   [+] Database ........ SQLite (local)
+[FPP]   Config version ...... v37 ✔
+[FPP] ── Features ────────────────────────────────────────
+[FPP]   [+] Physical bodies . enabled
+[FPP]   [+] Persistence ..... enabled
+[FPP]   [+] Chunk loading ... enabled
+[FPP]   [-] Fake chat ....... disabled
+[FPP]   [-] Bot swap ........ disabled
+[FPP] ── Integrations ──────────────────────────────────
+[FPP]   [-] LuckPerms ....... disabled
+[FPP]   [-] Metrics ......... disabled
+[FPP] ── Pools & Limits ──────────────────────────────────
+[FPP]   Name pool ........... 50
+[FPP]   Message pool ........ 30
+[FPP]   Skin mode ........... auto
+[FPP]   Max bots ............ unlimited
+[FPP] ──────────────────────────────────────────────────
+[FPP]   Ready: /fpp help
+[FPP] ══════════════════════════════════════════════════
 ```
 
 3. **Check generated files**:
@@ -200,10 +217,7 @@ permissions:
 2. **Configure FPP** (`config.yml`):
    ```yaml
    luckperms:
-     use-prefix: true
-     bot-group: "bots"
-     weight-ordering-enabled: true
-     packet-prefix-char: "{"
+     default-group: "bots"   # LP group for all bots
    ```
 
 3. **Result**: Bots appear with prefixes in chat and tab list!
@@ -269,7 +283,7 @@ For better performance with many bots:
 - ✅ Check you have `fpp.user.spawn` or higher
 
 **"Bots disappear after restart"**
-- ✅ Normal behavior - configure swap system for persistence
+- ✅ Enable `persistence.enabled: true` in config.yml (default: true — bots rejoin on restart)
 
 ---
 

@@ -64,6 +64,14 @@ public class ReloadCommand implements FppCommand {
         BotMessageConfig.reload();
         sendStep(sender, "Config, language, names & messages reloaded");
 
+        // ── 1b. Restart bot-chat loops so new interval/chance/stagger values
+        //        take effect immediately instead of waiting for old tasks to expire
+        if (plugin.getBotChatAI() != null && Config.fakeChatEnabled()) {
+            plugin.getBotChatAI().restartLoops();
+            sendStep(sender, "Bot-chat loops restarted  —  interval "
+                    + Config.fakeChatIntervalMin() + "–" + Config.fakeChatIntervalMax() + "s");
+        }
+
         // ── 1a. AUTO_PUSH — push updated configs to the network after reload ──
         if (Config.configSyncMode().equalsIgnoreCase("AUTO_PUSH")
                 && plugin.getConfigSyncManager() != null) {
@@ -82,10 +90,6 @@ public class ReloadCommand implements FppCommand {
         // ── 3. Active bot runtime state ───────────────────────────────────────
         FakePlayerManager fpm = plugin.getFakePlayerManager();
         if (fpm != null) {
-            if (!Config.swapEnabled()) {
-                fpm.cancelAllSwap();
-                sendStep(sender, "Swap disabled — all pending timers cancelled");
-            }
             fpm.applyBodyConfig();
             fpm.applyTabListConfig();
             int active = fpm.getCount();

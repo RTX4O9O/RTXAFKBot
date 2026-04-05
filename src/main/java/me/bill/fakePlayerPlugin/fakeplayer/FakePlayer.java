@@ -127,6 +127,26 @@ public final class FakePlayer {
      */
     private String luckpermsGroup = null;
 
+    /**
+     * The archetype this bot was spawned as.
+     * {@link BotType#AFK} = default passive bot.
+     * {@link BotType#PVP} = PvP bot (name prefixed {@code pvp_}).
+     */
+    private BotType botType = BotType.AFK;
+
+    /**
+     * Whether this bot participates in auto-chat and mention-replies.
+     * {@code false} = permanently silenced until re-enabled via {@code /fpp chat <bot> on}.
+     */
+    private boolean chatEnabled = true;
+
+    /**
+     * Per-bot chat activity tier override. When non-null, overrides the randomly-assigned
+     * tier. Valid values: {@code "quiet"}, {@code "passive"}, {@code "normal"},
+     * {@code "active"}, {@code "chatty"}. {@code null} = use random assignment.
+     */
+    private String chatTier = null;
+
     public FakePlayer(UUID uuid, String name, PlayerProfile profile) {
         this.uuid    = uuid;
         this.name    = name;
@@ -236,6 +256,20 @@ public final class FakePlayer {
     /** Currently-assigned LuckPerms group for this bot, or {@code null} if not yet set. */
     public String getLuckpermsGroup()             { return luckpermsGroup; }
     public void setLuckpermsGroup(String group)   { this.luckpermsGroup = group; }
+    /** The archetype this bot was spawned as ({@link BotType#AFK} by default). */
+    public BotType getBotType()                   { return botType != null ? botType : BotType.AFK; }
+    public void    setBotType(BotType type)       { this.botType = type; }
+
+    /** Whether this bot participates in auto-chat. {@code false} = silenced. */
+    public boolean isChatEnabled()               { return chatEnabled; }
+    public void    setChatEnabled(boolean v)     { this.chatEnabled = v; }
+
+    /**
+     * Per-bot chat activity tier override, or {@code null} for random assignment.
+     * Values: {@code "quiet"}, {@code "passive"}, {@code "normal"}, {@code "active"}, {@code "chatty"}.
+     */
+    public String  getChatTier()                 { return chatTier; }
+    public void    setChatTier(String tier)      { this.chatTier = tier; }
     public void setSkinName(String name)          { this.skinName      = name; }
     public void setResolvedSkin(SkinProfile skin) { this.resolvedSkin  = skin; }
 

@@ -119,52 +119,42 @@ logging:
 
 ---
 
-## 🏃 **Physical Bodies (Mannequins)**
+### 🏃 **Physical Bodies**
 
-### 🎮 **Entity Structure**
-
-Each bot's physical presence consists of **two entities**:
-
-1. **👤 Visual Entity (Mannequin)**
-   - Player-shaped model with skin
-   - Proper hitbox and collision
-   - Physics and movement capabilities
-   - Tagged with `FakePlayerBody.VISUAL_PDC_VALUE`
-
-2. **📛 Nametag Entity (ArmorStand)**  
-   - Invisible ArmorStand riding the Mannequin
-   - Displays bot name above head
-   - Tagged with `FakePlayerBody.NAMETAG_PDC_VALUE`
+Each bot is a full **NMS ServerPlayer** entity — not a Mannequin. It has a real player model, hitbox, and physics.
 
 ### ⚙️ **Body Configuration**
 
-**Main Settings (config.yml):**
 ```yaml
 body:
-  spawn-body: true           # Enable physical bodies
-  pushable: true             # Players can push bots
-  damageable: false          # Bots take no damage
-  max-health: 20.0           # Bot health points
+  enabled: true      # Spawn a visible entity in the world
+  pushable: true     # Players can push bots
+  damageable: true   # Bots take damage and can die
 ```
 
-**Entity Behavior:**
+Both `pushable` and `damageable` are **live-reloadable** via `/fpp reload`.
+
+**Head AI:**
 ```yaml
-body:
-  immovable: false           # Bots can be moved by physics
-  invulnerable: true         # Immune to all damage when damageable: false
+head-ai:
+  enabled: true
+  look-range: 8.0   # Detection radius in blocks
+  turn-speed: 0.3   # 0.0 = frozen, 1.0 = instant snap
 ```
+
+**Swim AI:**
+```yaml
+swim-ai:
+  enabled: true   # Bots swim upward in water/lava; false = bots sink
+```
+
+When `swim-ai.enabled: true`, bots automatically hold jump while submerged — mimicking a real player pressing spacebar in water or lava.
 
 ### 🎨 **Visual Appearance**
 
-**Skin System Integration:**
-- Bots display configured skins from the [Skin System](Skin-System.md)
-- Skins update automatically when changed
-- Fallback to default Steve/Alex if skin fails
-
-**Display Name:**
-- Shows bot name in configurable format
-- Supports LuckPerms prefixes/suffixes
-- Color codes and formatting supported
+- Skins from the [Skin System](Skin-System.md)
+- Display name in configurable format with LuckPerms prefix/suffix
+- Full color code and MiniMessage formatting support
 
 ---
 
@@ -172,34 +162,26 @@ body:
 
 ### 🧠 **Intelligent Head Tracking**
 
-Bots can **intelligently track nearby players** by rotating their heads, creating realistic interaction behavior.
+Bots smoothly rotate to look at the nearest player within a configurable range.
 
 **Configuration (config.yml):**
 ```yaml
-bot-head-ai:
-  enabled: true              # Enable head rotation
-  range: 8.0                 # Detection range (blocks)
-  update-interval: 10        # Update frequency (ticks)
-  max-rotation-speed: 30.0   # Maximum degrees per update
+head-ai:
+  enabled: true
+  look-range: 8.0   # Detection radius in blocks
+  turn-speed: 0.3   # Rotation smoothing (0.0 = frozen, 1.0 = instant snap)
 ```
 
 ### 🎯 **Tracking Behavior**
 
 **Target Priority:**
 1. **Closest player** within range
-2. **Players moving** (dynamic targeting)
-3. **Players looking at bot** (mutual attention)
-
-**Rotation Mechanics:**
-- **Smooth rotation** — No instant snapping
-- **Natural limits** — Realistic head movement range  
-- **Performance optimized** — Updates only when needed
-- **Multi-player support** — Tracks multiple players intelligently
+2. **Smooth rotation** — no instant snapping; `turn-speed` controls how fast the head turns each tick
 
 **Visual Effect:**
-- Bot head follows players naturally
-- Creates impression of awareness and intelligence
-- Enhances immersion for players interacting with bots
+- Bot head follows nearby players naturally
+- Creates an impression of awareness and engagement
+- Set `look-range: 0` to disable head tracking entirely
 
 ---
 
@@ -210,21 +192,19 @@ bot-head-ai:
 **Damage Configuration (config.yml):**
 ```yaml
 body:
-  damageable: true           # Bots can take damage
-  max-health: 20.0           # Health points (default player health)
+  damageable: true   # Bots can take damage (hot-reloadable)
 
-bot-combat:
-  death-enabled: true        # Bots can die
-  respawn-enabled: false     # Auto-respawn after death
-  damage-sounds: true        # Play hurt/death sounds
+combat:
+  max-health: 20.0   # Health points (20.0 = standard player health)
+  hurt-sound: true   # Play hurt sound when bot takes damage
 ```
 
 ### 💀 **Death System**
 
-**When Bot Dies:**
+**When a Bot Dies:**
 1. **Death Animation** — Plays death animation and sound
-2. **Entity Cleanup** — Removes both Mannequin and nametag
-3. **Tab List Update** — Bot disappears from player list
+2. **Entity Cleanup** — Bot entity is removed from the world
+3. **Tab List Update** — Bot disappears from the player list
 4. **Event Logging** — Records death in database (if enabled)
 
 **Death Sources:**
@@ -235,10 +215,10 @@ bot-combat:
 
 **Respawn Options:**
 ```yaml
-bot-combat:
-  respawn-enabled: true      # Enable auto-respawn
-  respawn-delay: 100         # Delay in ticks (5 seconds)
-  respawn-location: "spawn"  # "spawn", "death", or "original"
+death:
+  respawn-on-death: false   # Respawn bot instead of removing it on death
+  respawn-delay: 60         # Ticks before respawn (60 = 3 seconds)
+  suppress-drops: true      # Prevent item drops on death
 ```
 
 ---
@@ -251,57 +231,34 @@ Bots support **realistic physics simulation** including collision, pushing, and 
 
 **Push Configuration (config.yml):**
 ```yaml
-bot-collision:
-  enabled: true              # Enable collision physics
+body:
+  pushable: true   # Allow players/entities to push bots (hot-reloadable)
 
-  # Player → Bot collision
-  walk-radius: 1.5           # Activation distance  
-  walk-strength: 0.3         # Push force multiplier
-  
-  # Player hits Bot collision  
-  hit-strength: 0.8          # Punch force multiplier
-  
-  # Bot → Bot collision
-  bot-radius: 1.0            # Bot separation distance
-  bot-strength: 0.2          # Inter-bot push force
-  
-  # Movement limits
-  max-horizontal-speed: 2.0  # Maximum push speed
-  vertical-damping: 0.1      # Reduce vertical movement
+collision:
+  walk-radius: 0.85           # Player walk-into activation distance
+  walk-strength: 0.22         # Push force when walking into a bot
+  hit-strength: 0.45          # Knockback force when hitting a bot
+  hit-max-horizontal-speed: 0.80  # Max horizontal speed for hit/explosion knockback
+  bot-radius: 0.90            # Bot-vs-bot separation radius
+  bot-strength: 0.14          # Separation force between bots
+  max-horizontal-speed: 0.30  # Push speed cap for walk/separation sources
 ```
+
+When `body.pushable: false`, all collision physics are disabled and bots become completely immovable.
 
 ### 🎯 **Collision Types**
 
 **1. Player Walks Into Bot**
 - **Trigger:** Player gets within `walk-radius`
 - **Effect:** Bot is gently pushed aside with `walk-strength`
-- **Use Case:** Natural movement around bots
 
-**2. Player Hits Bot**  
+**2. Player Hits Bot**
 - **Trigger:** Player attacks bot (punch, weapon)
 - **Effect:** Stronger push with `hit-strength`
-- **Use Case:** Intentional bot positioning
 
 **3. Bot Bumps Bot**
 - **Trigger:** Two bots get within `bot-radius` of each other
-- **Effect:** Bots push apart with `bot-strength`  
-- **Use Case:** Prevents bot clustering
-
-### ⚡ **Performance Optimization**
-
-**Physics Settings:**
-```yaml
-bot-collision:
-  update-interval: 5         # Physics update frequency (ticks)
-  max-entities-per-tick: 10  # Limit collision calculations
-  enable-optimization: true  # Use spatial optimization
-```
-
-**Optimization Features:**
-- **Spatial partitioning** — Only check nearby entities
-- **Update throttling** — Limit calculations per tick
-- **Distance culling** — Skip distant collision checks
-- **Smart activation** — Only process when needed
+- **Effect:** Bots push apart with `bot-strength` — prevents clustering
 
 ---
 
@@ -309,36 +266,23 @@ bot-collision:
 
 ### 🌍 **World Presence**
 
-Bots can **keep chunks loaded** around their location to maintain world presence even when no players are nearby.
+Bots keep chunks loaded around their location exactly like a real player — mobs spawn, redstone ticks, and crops grow inside the loaded radius.
 
 **Configuration (config.yml):**
 ```yaml
 chunk-loading:
-  enabled: true              # Enable chunk loading
-  radius: 2                  # Chunks to keep loaded (radius)
-  unload-delay: 300          # Delay before unloading (seconds)
-  max-loaded-chunks: 50      # Global limit on bot-loaded chunks
+  enabled: true
+  radius: 0            # 0 = match server simulation-distance
+  update-interval: 20  # Ticks between position checks (20 = 1 s)
 ```
 
 ### 📊 **Chunk Management**
 
-**Loading Behavior:**
 - **Load on spawn** — Bot loads surrounding chunks when created
 - **Maintain presence** — Keeps chunks loaded while bot exists
 - **Smart unloading** — Releases chunks when bot is removed
-- **Memory management** — Respects server chunk limits
 
-**Radius Examples:**
-- `radius: 1` — 9 chunks (3x3 area)
-- `radius: 2` — 25 chunks (5x5 area)  
-- `radius: 3` — 49 chunks (7x7 area)
-
-**Performance Impact:**
-```yaml
-chunk-loading:
-  enabled: false             # Disable if causing lag
-  radius: 1                  # Minimize radius for performance
-```
+Set `chunk-loading.enabled: false` if chunk loading is causing performance issues.
 
 ---
 
@@ -346,103 +290,67 @@ chunk-loading:
 
 ### 🗨️ **Intelligent Messaging**
 
-Bots can **automatically send chat messages** to create realistic server activity and engagement.
+Bots send random chat messages from `bot-messages.yml` at random intervals. See [Fake Chat](Fake-Chat.md) for full documentation.
 
 **Basic Configuration (config.yml):**
 ```yaml
 fake-chat:
-  enabled: true              # Enable fake chat
-  interval: 300-900          # Message frequency (seconds)
-  chat-format: "&7{prefix}{bot_name}{suffix}: {message}"
-```
-
-### 📝 **Message System**
-
-**Message Pool (bot-messages.yml):**
-```yaml
-messages:
-  general:
-    - "Hello everyone!"
-    - "How's everyone doing?"
-    - "Nice weather today"
-    
-  greetings:
-    - "Good morning!"
-    - "Hey there!"
-    
-  questions:
-    - "Anyone want to build something?"
-    - "What's everyone up to?"
+  enabled: false
+  require-player-online: true
+  chance: 0.75
+  interval:
+    min: 5
+    max: 10
+  typing-delay: true        # Simulate typing pause before messages
+  activity-variation: true  # Random per-bot chat frequency tier
+  stagger-interval: 3       # Min seconds gap between any two bots chatting
 ```
 
 **Chat Features:**
-- **Random selection** — Messages chosen from pools randomly
-- **Timing variation** — Interval ranges prevent predictable patterns  
-- **LuckPerms integration** — Prefixes and suffixes in messages
-- **Color support** — Full MiniMessage and legacy color codes
-
-### 🎯 **Advanced Chat Behavior**
-
-**Smart Messaging:**
-```yaml
-fake-chat:
-  player-requirement: 2      # Only chat when 2+ real players online
-  cooldown: 60               # Minimum delay between bot messages
-  max-per-hour: 10           # Limit messages per bot per hour
-```
-
-**Contextual Messages:**
-- **Time-based** — Different messages for day/night
-- **Event-triggered** — Messages on player join/leave
-- **Location-aware** — Different messages per world
+- **Random selection** — Messages chosen from `bot-messages.yml` randomly
+- **Timing variation** — Per-bot independent intervals prevent predictable patterns
+- **LuckPerms integration** — `{prefix}` and `{suffix}` in `chat-format`
+- **Full color support** — MiniMessage and legacy `&` codes
+- **Event reactions** — Bots react to player joins, leaves, and deaths
+- **Mention replies** — Bots reply when a player says their name in chat
 
 ---
 
 ## 🔄 **Swap AI System**
 
-### 🎭 **Player Replacement**
+### 🎭 **Session Rotation**
 
-The **Swap System** can **automatically replace offline players** with bots to maintain consistent server population.
+The Swap System periodically rotates bots — each bot leaves after a configurable session and rejoins with a fresh name. See [Swap System](Swap-System.md) for full documentation.
 
 **Configuration (config.yml):**
 ```yaml
-swap-system:
-  enabled: true              # Enable player swapping
-  delay: 300                 # Seconds before swapping offline player
-  probability: 0.7           # Chance to swap (70%)
-  max-swaps: 10              # Maximum simultaneous swaps
+swap:
+  enabled: false
+  session:
+    min: 60    # Minimum session duration (seconds)
+    max: 300   # Maximum session duration (seconds)
+  absence:
+    min: 30    # Minimum offline gap (seconds)
+    max: 120   # Maximum offline gap (seconds)
+  max-swapped-out: 0        # Max bots offline simultaneously (0 = unlimited)
+  farewell-chat: true       # Bot says goodbye before leaving
+  greeting-chat: true       # Bot says hi when rejoining
+  same-name-on-rejoin: true # Reuse the same name if available
 ```
 
-### 🧠 **Swap Intelligence**
+Toggle live with `/fpp swap` (bare command toggles on/off, just like `/fpp chat`).
 
-**Replacement Logic:**
-1. **Monitor departures** — Track when players leave
-2. **Wait period** — Delay before considering swap
-3. **Eligibility check** — Verify player can be swapped
-4. **Bot creation** — Spawn bot with similar characteristics
-5. **Seamless transition** — Maintain server activity appearance
+### 🧠 **Personality Archetypes**
 
-**Smart Features:**
-- **Whitelist protection** — VIP players never swapped
-- **Permission respect** — Honors bypass permissions
-- **Natural behavior** — Bots act like the replaced player
-- **Automatic cleanup** — Removes bots when player returns
+Each bot gets a random personality multiplier when swap starts:
 
-### 🎯 **Swap Targeting**
-
-**Player Selection:**
-```yaml
-swap-system:
-  min-playtime: 1800         # Minimum seconds online before swapping
-  whitelist-enabled: true    # Use whitelist protection
-  respect-permissions: true  # Check swap bypass permissions
-```
-
-**Protected Players:**
-- Players with `fpp.bypass.swap` permission
-- Players in configured whitelist
-- Players online less than minimum time
-- Staff members (configurable)
+| Archetype | Session Modifier |
+|-----------|-----------------|
+| **quiet** | 2.0× — stays extended periods |
+| **passive** | 1.4× — below-average activity |
+| **normal** | 1.0× — typical session |
+| **active** | 0.7× — leaves more often |
+| **chatty** | 0.5× — quick popper |
 
 ---
 
@@ -452,109 +360,19 @@ swap-system:
 
 **Bot Limits:**
 ```yaml
-global-bot-limit: 50         # Total bots on server
-performance:
-  max-ai-updates: 20         # AI updates per tick
-  physics-interval: 5        # Physics update frequency
-  cleanup-interval: 1200     # Cleanup frequency (ticks)
+limits:
+  max-bots: 1000   # Global cap (0 = unlimited)
 ```
+
+Monitor live with `/fpp stats` or `/fpp stats --detailed`.
 
 ### 📈 **Optimization Strategies**
 
-**1. AI Optimization:**
-- **Update throttling** — Spread AI calculations across ticks
-- **Distance culling** — Disable AI when no players nearby  
-- **Smart activation** — Only run needed AI systems
-- **Batch processing** — Group similar calculations
-
-**2. Physics Optimization:**
-- **Spatial indexing** — Efficient collision detection
-- **Update limiting** — Control physics calculation frequency
-- **LOD system** — Reduce detail for distant bots
-- **Memory pooling** — Reuse calculation objects
-
-**3. Network Optimization:**
-- **Packet batching** — Group network updates
-- **Update filtering** — Send only necessary changes
-- **Compression** — Optimize packet size
-- **Rate limiting** — Control update frequency
-
-### 🎯 **Monitoring Performance**
-
-**Built-in Diagnostics:**
-```bash
-/fpp stats --detailed       # Comprehensive bot statistics
-/timings report             # Server performance analysis
-```
-
-**Performance Metrics:**
-- **Bot count** — Total active bots
-- **AI load** — Processing time per tick
-- **Physics load** — Collision calculation time
-- **Memory usage** — RAM consumed by bot systems
-- **Network usage** — Packets sent for bot updates
-
----
-
-## 🛠️ **Advanced Configuration**
-
-### 🔧 **Compatibility Mode**
-
-For servers with limited Mannequin support:
-
-```yaml
-compatibility:
-  restricted-mode: true      # Auto-detected
-  disable-bodies: true       # Force disable physical bodies
-  disable-physics: true      # Disable collision system
-  disable-head-ai: true      # Disable head rotation
-```
-
-**Restricted Mode Effects:**
-- **Tab-only bots** — Bots appear in tab list only
-- **No physical presence** — No entities in world
-- **Chat functionality** — Fake chat still works
-- **Swap system** — Player replacement still available
-
-### 🎮 **Advanced Physics**
-
-**Detailed Physics Control:**
-```yaml
-bot-collision:
-  # Advanced collision settings
-  friction: 0.8              # Surface friction coefficient
-  restitution: 0.1           # Bounce factor
-  gravity-factor: 1.0        # Gravity strength multiplier
-  
-  # Collision layers
-  player-layer: true         # Collision with players
-  entity-layer: false        # Collision with mobs
-  block-layer: true          # Collision with blocks
-  
-  # Performance tuning  
-  spatial-hash-size: 16      # Spatial optimization grid size
-  max-iterations: 10         # Physics solver iterations
-```
-
-### 🧠 **AI Behavior Tuning**
-
-**Head AI Advanced Settings:**
-```yaml
-bot-head-ai:
-  # Targeting behavior
-  player-priority: true      # Prefer players over other targets
-  movement-attraction: 1.5   # Attraction to moving targets
-  look-attraction: 2.0       # Attraction when looked at
-  
-  # Rotation mechanics
-  smoothing: 0.8             # Rotation smoothing factor
-  prediction: true           # Predict player movement
-  max-angle: 90              # Maximum head rotation (degrees)
-  
-  # Performance
-  update-distance: 32        # Maximum tracking distance
-  cpu-budget: 0.5            # Milliseconds per tick budget
-```
+1. **Start small** — Begin with 5–10 bots and increase gradually
+2. **Disable unused systems** — Turn off chunk-loading, head-ai, or physics if not needed
+3. **Tune intervals** — Increase `chunk-loading.update-interval` and `head-ai.turn-speed` thresholds
+4. **Use `/fpp freeze`** — Freeze idle bots to stop their AI ticks
+5. **Monitor TPS** — Use `/fpp stats` to watch for performance impact
 
 ---
 
@@ -562,57 +380,52 @@ bot-head-ai:
 
 ### 🏢 **Server Population Management**
 
-**Scenario:** Maintain active appearance during off-peak hours
+Maintain active appearance during off-peak hours:
 ```yaml
-# Configuration for population bots
 body:
-  spawn-body: true           # Visible presence in world
-  pushable: false            # Prevent griefing
-  damageable: false          # Immortal population bots
-
+  enabled: true
+  pushable: false    # Prevent griefing
+  damageable: false  # Immortal population bots
 fake-chat:
-  enabled: true              # Create chat activity
-  interval: 600-1800         # Moderate message frequency
-  
-swap-system:
-  enabled: true              # Replace offline players
-  delay: 180                 # Quick replacement
+  enabled: true
+  interval:
+    min: 120
+    max: 600
+swap:
+  enabled: true
+  session: { min: 300, max: 1800 }
+  absence: { min: 30, max: 120 }
 ```
 
-### 🎮 **Minigame NPCs**
+### 🎮 **Minigame Lobby NPCs**
 
-**Scenario:** Create interactive NPCs for game lobbies
+Static, interactive NPCs for game lobbies:
 ```yaml
-# NPC-like behavior
-bot-head-ai:
-  enabled: true              # Acknowledge players
-  range: 5.0                 # Close interaction range
-  
 body:
-  pushable: false            # Static positioning
-  damageable: false          # Immortal NPCs
-  
+  enabled: true
+  pushable: false
+  damageable: false
+head-ai:
+  enabled: true
+  look-range: 5.0
 chunk-loading:
-  enabled: true              # Always loaded
-  radius: 1                  # Minimal impact
+  enabled: true
+  radius: 1
 ```
 
-### 🏰 **Roleplay Characters**
+### 🏰 **Roleplay Town Inhabitants**
 
-**Scenario:** Populate towns with realistic inhabitants
+Realistic townsfolk with chat activity:
 ```yaml
-# Realistic town folk
 fake-chat:
-  enabled: true              # Roleplay conversations
-  chat-format: "&f{prefix}{bot_name}: {message}"
-  
-bot-collision:
-  enabled: true              # Natural movement
-  walk-strength: 0.1         # Gentle displacement
-  
-bot-head-ai:
-  enabled: true              # Social awareness
-  range: 6.0                 # Natural interaction range
+  enabled: true
+  interval: { min: 60, max: 300 }
+  activity-variation: true
+head-ai:
+  enabled: true
+  look-range: 6.0
+body:
+  pushable: true
 ```
 
 ---
@@ -621,31 +434,29 @@ bot-head-ai:
 
 ### ❌ **Common Issues**
 
-**Bots Not Moving/Rotating:**
-- ✅ Check `bot-head-ai.enabled: true`
-- ✅ Verify `body.spawn-body: true`
-- ✅ Ensure players are within range
-- ✅ Check compatibility mode status
+**Bots not rotating heads:**
+- ✅ Check `head-ai.enabled: true`
+- ✅ Verify `head-ai.look-range` covers the player distance
+- ✅ Ensure `body.enabled: true`
 
-**Performance Problems:**
-- ✅ Reduce bot limits in config
-- ✅ Disable unnecessary AI systems
-- ✅ Increase update intervals
+**Performance problems:**
+- ✅ Reduce `limits.max-bots`
+- ✅ Set `chunk-loading.enabled: false`
+- ✅ Increase `chunk-loading.update-interval`
 - ✅ Monitor with `/fpp stats --detailed`
 
-**Physics Not Working:**
-- ✅ Verify `bot-collision.enabled: true`
-- ✅ Check `body.pushable: true`  
-- ✅ Ensure physical bodies are enabled
-- ✅ Test collision ranges and strengths
+**Physics not working:**
+- ✅ Verify `body.pushable: true`
+- ✅ Check `collision.walk-radius` and `collision.walk-strength` values
+- ✅ Ensure physical bodies are enabled (`body.enabled: true`)
 
 ### 🛠️ **Diagnostic Commands**
 
-```bash
-/fpp stats --detailed       # Performance and behavior stats
-/fpp info <botname>         # Individual bot status
-/fpp freeze <botname>       # Test bot responsiveness
-/fpp list --frozen          # Check frozen bot status
+```
+/fpp stats --detailed    # Performance and behavior stats
+/fpp info <botname>      # Individual bot status
+/fpp freeze <botname>    # Pause a specific bot's AI
+/fpp list --frozen       # Check frozen bot status
 ```
 
 ---
@@ -653,11 +464,11 @@ bot-head-ai:
 ## 📚 **Related Documentation**
 
 - **[Skin System](Skin-System.md)** — Bot visual appearance
-- **[Fake Chat](Fake-Chat.md)** — Chat AI configuration  
-- **[Swap System](Swap-System.md)** — Player replacement details
-- **[Configuration](Configuration.md)** — All behavior settings
-- **[Performance Guide](FAQ.md#performance-issues)** — Optimization tips
+- **[Fake Chat](Fake-Chat.md)** — Chat AI configuration
+- **[Swap System](Swap-System.md)** — Session rotation details
+- **[Configuration](Configuration.md)** — All behaviour settings
+- **[FAQ](FAQ.md#performance-issues)** — Optimization tips
 
 ---
 
-**🤖 Master bot behavior to create the most realistic and engaging fake players!**
+**🤖 Master bot behaviour to create the most realistic fake players!**

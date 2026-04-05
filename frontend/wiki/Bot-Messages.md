@@ -13,7 +13,7 @@ This file is loaded at startup and reloaded on `/fpp reload`.
 
 ## File Format
 
-`bot-messages.yml` is a plain YAML list:
+`bot-messages.yml` is a YAML file with multiple named pools:
 
 ```yaml
 messages:
@@ -22,10 +22,28 @@ messages:
   - "anyone online?"
   - "good morning {random_player}"
   - "lol"
-  - "this server is great"
-  - "gg"
-  # ...1000 messages total in the default file
+  # ...
+
+# Reactions when a real player joins (used by event-triggers.on-player-join)
+join-reactions:
+  - "hey {random_player}!"
+  - "welcome back {random_player}"
+  - "oh nice, {random_player} is on"
+
+# Reactions when an entity dies (used by event-triggers.on-death)
+death-reactions:
+  - "rip"
+  - "oof"
+  - "F"
+
+# Reactions when a real player leaves (used by event-triggers.on-player-leave)
+leave-reactions:
+  - "bye {random_player}"
+  - "cya"
+  - "see ya"
 ```
+
+The `messages` pool is used for the regular timed fake chat. All other pools feed the event-trigger system (see [Fake Chat](Fake-Chat.md#event-triggers) for configuration).
 
 ---
 

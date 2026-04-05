@@ -1,7 +1,25 @@
 # 📋 Changelog
 
 > **Full version history for Fake Player Plugin**  
-> Latest version: **v1.5.8** · Released: 2026-04-03
+> Latest version: **v1.5.10** · Released: 2026-04-05
+
+---
+
+## v1.5.10 *(2026-04-05)*
+
+### 🔄 `/fpp swap` Toggle Fix
+- Running `/fpp swap` with no arguments now toggles swap on/off — exactly like `/fpp chat`
+- `swap-enabled` and `swap-disabled` messages redesigned to match the chat toggle style (`session rotation has been enabled/disabled`)
+- `swap-status-on` / `swap-status-off` now follow the same `is enabled / is disabled` pattern as chat status messages
+
+### 💬 Bot Chat Interval Fix
+- Bot chat loops are now restarted on `/fpp reload` so changes to `fake-chat.interval.min/max`, `fake-chat.chance`, and `fake-chat.stagger-interval` take effect **immediately** instead of waiting for each bot's old queued task to naturally expire
+- `/fpp reload` output now shows the new interval range as confirmation
+
+### 🛠️ Language & Compatibility
+- `Biome.name()` deprecated call replaced with `Biome.getKey().getKey()` — compatible with Paper 1.22+
+- `sync-usage` and `swap-now-usage` messages now end with a period, matching the rest of the file
+- Startup banner now shows **Bot swap** status in the Features section
 
 ---
 

@@ -91,8 +91,6 @@ public final class FppMetrics {
                     (Callable<Long>) () -> Config.spawnBody() ? 1L : 0L));
             factory = addMetric(factory, numberMethod.invoke(null, "fake_chat_enabled",
                     (Callable<Long>) () -> Config.fakeChatEnabled() ? 1L : 0L));
-            factory = addMetric(factory, numberMethod.invoke(null, "swap_enabled",
-                    (Callable<Long>) () -> Config.swapEnabled() ? 1L : 0L));
             factory = addMetric(factory, numberMethod.invoke(null, "chunk_loading_enabled",
                     (Callable<Long>) () -> Config.chunkLoadingEnabled() ? 1L : 0L));
             factory = addMetric(factory, stringMethod.invoke(null, "database_type",

@@ -236,8 +236,8 @@ public final class FppLogger {
      * @param bodyEnabled      whether physical bodies are spawned
      * @param persistEnabled   whether bot persistence is on
      * @param luckPermsFound   whether LuckPerms is installed
-     * @param swapEnabled      whether bot swap/rotation is on
      * @param fakeChatEnable   whether fake chat is on
+     * @param swapEnable       whether bot session rotation (swap) is on
      * @param chunkLoading     whether chunk loading is on
      * @param maxBots          global bot limit (0 = unlimited)
      * @param metricsActive    whether FastStats metrics are running
@@ -255,8 +255,8 @@ public final class FppLogger {
             boolean bodyEnabled,
             boolean persistEnabled,
             boolean luckPermsFound,
-            boolean swapEnabled,
             boolean fakeChatEnable,
+            boolean swapEnable,
             boolean chunkLoading,
             int     maxBots,
             boolean metricsActive,
@@ -277,8 +277,8 @@ public final class FppLogger {
         stateRow(bodyEnabled ? RowState.OK : RowState.OFF, "Physical bodies", onOff(bodyEnabled));
         stateRow(persistEnabled ? RowState.OK : RowState.OFF, "Persistence", onOff(persistEnabled));
         stateRow(chunkLoading ? RowState.OK : RowState.OFF, "Chunk loading", onOff(chunkLoading));
-        stateRow(swapEnabled ? RowState.OK : RowState.OFF, "Swap AI", onOff(swapEnabled));
         stateRow(fakeChatEnable ? RowState.OK : RowState.OFF, "Fake chat", onOff(fakeChatEnable));
+        stateRow(swapEnable ? RowState.OK : RowState.OFF, "Bot swap", onOff(swapEnable));
 
         section("Integrations");
         stateRow(luckPermsFound ? RowState.OK : RowState.OFF, "LuckPerms", onOff(luckPermsFound));

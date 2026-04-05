@@ -7,7 +7,6 @@ import me.bill.fakePlayerPlugin.config.Config;
 import me.bill.fakePlayerPlugin.database.DatabaseManager;
 import me.bill.fakePlayerPlugin.fakeplayer.BotChatAI;
 import me.bill.fakePlayerPlugin.fakeplayer.BotPersistence;
-import me.bill.fakePlayerPlugin.fakeplayer.BotSwapAI;
 import me.bill.fakePlayerPlugin.fakeplayer.ChunkLoader;
 import me.bill.fakePlayerPlugin.fakeplayer.FakePlayerManager;
 import me.bill.fakePlayerPlugin.lang.Lang;
@@ -41,11 +40,12 @@ public final class FakePlayerPlugin extends JavaPlugin {
     private ChunkLoader       chunkLoader;
     private DatabaseManager   databaseManager;
     private BotPersistence    botPersistence;
-    private BotSwapAI         botSwapAI;
     private FppMetrics        fppMetrics;
     private TabListManager    tabListManager;
     private BotTabTeam        botTabTeam;
     private VelocityChannel   velocityChannel;
+    private BotChatAI         botChatAI;
+    private me.bill.fakePlayerPlugin.fakeplayer.BotSwapAI botSwapAI;
     private me.bill.fakePlayerPlugin.fakeplayer.RemoteBotCache remoteBotCache;
     private me.bill.fakePlayerPlugin.sync.ConfigSyncManager configSyncManager;
 
@@ -165,8 +165,6 @@ public final class FakePlayerPlugin extends JavaPlugin {
         botPersistence = new BotPersistence(this);
         fakePlayerManager.setBotPersistence(botPersistence);
 
-        botSwapAI = new BotSwapAI(this, fakePlayerManager);
-        fakePlayerManager.setSwapAI(botSwapAI);
 
         // ── Commands ──────────────────────────────────────────────────────────
         commandManager = new CommandManager(this);
@@ -176,7 +174,6 @@ public final class FakePlayerPlugin extends JavaPlugin {
         commandManager.register(new TphCommand(fakePlayerManager));
         commandManager.register(new TpCommand(fakePlayerManager));
         commandManager.register(new ChatCommand(this));
-        commandManager.register(new SwapCommand(this));
         commandManager.register(new ReloadCommand(this));
         commandManager.register(new InfoCommand(databaseManager, fakePlayerManager));
         commandManager.register(new MigrateCommand(this));
@@ -186,6 +183,7 @@ public final class FakePlayerPlugin extends JavaPlugin {
         commandManager.register(new RankCommand(this, fakePlayerManager));
         commandManager.register(new AlertCommand(this));
         commandManager.register(new SyncCommand(this));
+        commandManager.register(new SwapCommand(this, fakePlayerManager));
         Config.debugStartup("Commands registered: " + commandManager.getCommands().size() + " total.");
 
         var fppCmd = getCommand("fpp");
@@ -204,7 +202,9 @@ public final class FakePlayerPlugin extends JavaPlugin {
         getServer().getPluginManager().registerEvents(new FakePlayerKickListener(fakePlayerManager), this);
         getServer().getPluginManager().registerEvents(new me.bill.fakePlayerPlugin.listener.BotCommandBlocker(), this);
         getServer().getPluginManager().registerEvents(new me.bill.fakePlayerPlugin.listener.BotSpawnProtectionListener(this), this);
-        new BotChatAI(this, fakePlayerManager);
+        botChatAI = new BotChatAI(this, fakePlayerManager);
+        botSwapAI = new me.bill.fakePlayerPlugin.fakeplayer.BotSwapAI(this, fakePlayerManager);
+        fakePlayerManager.setBotSwapAI(botSwapAI);
 
         // ── Plugin messaging (Velocity / BungeeCord) ─────────────────────────
         // Registers fpp:main for inbound delivery and BungeeCord for outbound
@@ -298,7 +298,7 @@ public final class FakePlayerPlugin extends JavaPlugin {
                 ? "disabled"
                 : (dbOk ? dbLabel : dbLabel + " (failed)");
 
-        String skinLabel = "disabled";
+        String skinLabel = Config.skinMode();
 
         boolean effectiveSpawnBody    = Config.spawnBody();
         boolean effectiveChunkLoading = Config.chunkLoadingEnabled();
@@ -320,8 +320,8 @@ public final class FakePlayerPlugin extends JavaPlugin {
                 effectiveSpawnBody,
                 Config.persistOnRestart(),
                 luckPermsInstalled,
-                Config.swapEnabled(),
                 Config.fakeChatEnabled(),
+                Config.swapEnabled(),
                 effectiveChunkLoading,
                 Config.maxBots(),
                 fppMetrics.isActive(),
@@ -352,7 +352,9 @@ public final class FakePlayerPlugin extends JavaPlugin {
         }
 
         if (chunkLoader  != null) chunkLoader.releaseAll();
-        // Cancel swap timers before sync removal to prevent ghost rejoin tasks
+        // Cancel all pending BotChatAI tasks
+        if (botChatAI    != null) botChatAI.cancelAll();
+        // Cancel all pending BotSwapAI tasks
         if (botSwapAI    != null) botSwapAI.cancelAll();
         // Unsubscribe from LP events to prevent memory leaks (only if LP was loaded)
         if (luckPermsAvailable) {
@@ -394,6 +396,10 @@ public final class FakePlayerPlugin extends JavaPlugin {
     public BotTabTeam        getBotTabTeam()         { return botTabTeam; }
     /** Returns the Velocity plugin-messaging channel handler, or {@code null} if not yet initialised. */
     public VelocityChannel   getVelocityChannel()   { return velocityChannel; }
+    /** Returns the BotChatAI instance, or {@code null} if not yet initialised. */
+    public BotChatAI         getBotChatAI()          { return botChatAI; }
+    /** Returns the BotSwapAI instance, or {@code null} if not yet initialised. */
+    public me.bill.fakePlayerPlugin.fakeplayer.BotSwapAI getBotSwapAI() { return botSwapAI; }
     /** Returns the cache of bot entries received from other servers in the proxy network. Never null. */
     public me.bill.fakePlayerPlugin.fakeplayer.RemoteBotCache getRemoteBotCache() { return remoteBotCache; }
     /** Returns the ConfigSyncManager, or {@code null} if not in NETWORK mode or database unavailable. */

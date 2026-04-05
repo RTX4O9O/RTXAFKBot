@@ -2,7 +2,7 @@
 
 [SIZE=5][I]Spawn realistic fake players on your Paper server — with tab list presence, server list count, join/leave messages, in-world bodies, guaranteed skins, chunk loading, bot swap/rotation, fake chat, LuckPerms integration, proxy network support, and full hot-reload.[/I][/SIZE]
 
-[SIZE=4][B]Version:[/B] 1.5.8  [B]Minecraft:[/B] 1.21.x  [B]Platform:[/B] Paper  [B]Java:[/B] 21+[/SIZE]
+[SIZE=4][B]Version:[/B] 1.5.10  [B]Minecraft:[/B] 1.21.x  [B]Platform:[/B] Paper  [B]Java:[/B] 21+[/SIZE]
 
 [URL='https://modrinth.com/plugin/fake-player-plugin-(fpp)'][B][COLOR=#00AF5C]⬇ Download on Modrinth[/COLOR][/B][/URL]  [URL='https://www.spigotmc.org/resources/fake-player-plugin-fpp.133572/'][B][COLOR=#FF6B35]⬇ SpigotMC[/COLOR][/B][/URL]  [URL='https://hangar.papermc.io/Pepe-tf/FakePlayerPlugin'][B][COLOR=#00BFD8]⬇ PaperMC Hangar[/COLOR][/B][/URL]  [URL='https://builtbybit.com/resources/fake-player-plugin.98704/'][B][COLOR=#A855F7]⬇ BuiltByBit[/COLOR][/B][/URL]
 [URL='https://discord.gg/QSN7f67nkJ'][B][COLOR=#5865F2]💬 Join Discord[/COLOR][/B][/URL]  [URL='https://fakeplayerplugin.xyz'][B][COLOR=#7B8EF0]📖 Wiki[/COLOR][/B][/URL]  [URL='https://ko-fi.com/fakeplayerplugin'][B][COLOR=#FF5E5B]☕ Support on Ko-fi[/COLOR][/B][/URL]
@@ -21,7 +21,8 @@ FPP adds fake players to your server that look and behave like real ones:
 [*]Always have a [B]real skin[/B] (guaranteed fallback chain — never Steve/Alex unless you want it)
 [*][B]Load chunks[/B] around them exactly like a real player
 [*][B]Rotate their head[/B] to face nearby players
-[*][B]Send fake chat messages[/B] from a configurable message pool (with LP prefix/suffix support)
+[*][B]Swim automatically[/B] in water and lava — mimics a real player holding spacebar
+[*][B]Send fake chat messages[/B] from a configurable message pool (with LP prefix/suffix support, typing delays, burst messages, mention replies, and event reactions)
 [*][B]Swap in and out[/B] automatically with fresh names and personalities
 [*][B]Persist across restarts[/B] — they come back where they left off
 [*][B]Freeze[/B] any bot in place with [FONT=monospace]/fpp freeze[/FONT]
@@ -172,9 +173,10 @@ Located at [FONT=monospace]plugins/FakePlayerPlugin/config.yml[/FONT]. Run [FONT
 [TR][TD][FONT=monospace]death[/FONT][/TD][TD]Respawn on death, respawn delay, item drop suppression[/TD][/TR]
 [TR][TD][FONT=monospace]chunk-loading[/FONT][/TD][TD]Radius, update interval[/TD][/TR]
 [TR][TD][FONT=monospace]head-ai[/FONT][/TD][TD]Enable/disable, look range, turn speed[/TD][/TR]
+[TR][TD][FONT=monospace]swim-ai[/FONT][/TD][TD]Automatic swimming in water/lava (enabled, default true)[/TD][/TR]
 [TR][TD][FONT=monospace]collision[/FONT][/TD][TD]Push physics — walk strength, hit strength, bot separation[/TD][/TR]
 [TR][TD][FONT=monospace]swap[/FONT][/TD][TD]Auto rotation — session length, farewell/greeting chat, AFK simulation[/TD][/TR]
-[TR][TD][FONT=monospace]fake-chat[/FONT][/TD][TD]Enable, chance, interval, chat-format ({prefix}/{bot_name}/{suffix}/{message})[/TD][/TR]
+[TR][TD][FONT=monospace]fake-chat[/FONT][/TD][TD]Enable, chance, interval, typing delays, burst messages, mention replies, event reactions, chat-format ({prefix}/{bot_name}/{suffix}/{message})[/TD][/TR]
 [TR][TD][FONT=monospace]tab-list[/FONT][/TD][TD]Show/hide bots in the player tab list[/TD][/TR]
 [TR][TD][FONT=monospace]config-sync[/FONT][/TD][TD]Cross-server config push/pull mode (DISABLED/MANUAL/AUTO_PULL/AUTO_PUSH)[/TD][/TR]
 [TR][TD][FONT=monospace]database[/FONT][/TD][TD]mode (LOCAL/NETWORK), server-id, SQLite (default) or MySQL[/TD][/TR]
@@ -394,6 +396,45 @@ Placeholders: [FONT=monospace]{prefix}[/FONT] (LP prefix), [FONT=monospace]{bot_
 [HR][/HR]
 
 [SIZE=6][B]📖 Changelog[/B][/SIZE]
+
+[SIZE=5][B]v1.5.10[/B][/SIZE] [I](2026-04-05)[/I]
+
+[B]/fpp swap Toggle Fix[/B]
+[LIST]
+[*]Running [FONT=monospace]/fpp swap[/FONT] with no arguments now toggles swap on/off — exactly like [FONT=monospace]/fpp chat[/FONT]
+[*]swap-enabled and swap-disabled messages redesigned to match chat toggle style ("session rotation has been enabled/disabled")
+[*]swap-status-on / swap-status-off now follow the same "is enabled / is disabled" pattern as chat status messages
+[/LIST]
+
+[B]Bot Chat Interval Fix[/B]
+[LIST]
+[*]Bot chat loops are now restarted on [FONT=monospace]/fpp reload[/FONT] — changes to interval.min/max, chance, and stagger-interval take effect immediately instead of waiting for old scheduled tasks to expire
+[*]/fpp reload output shows the new interval range as confirmation
+[/LIST]
+
+[B]Fake Chat Realism Enhancements[/B]
+[LIST]
+[*]typing-delay — simulates a 0–2.5 s typing pause before each message
+[*]burst-chance / burst-delay — bots occasionally send a quick follow-up message
+[*]reply-to-mentions / mention-reply-chance / reply-delay — bots can reply when a player says their name in chat
+[*]activity-variation — random per-bot chat frequency tier (quiet/normal/active/very-active)
+[*]history-size — bots avoid repeating their own recent messages
+[*]remote-format — MiniMessage format for bodyless / proxy-remote bot broadcasts
+[/LIST]
+
+[B]Swim AI[/B]
+[LIST]
+[*]New swim-ai.enabled config key (default true) — bots automatically swim upward when submerged in water or lava
+[*]Set to false to let bots sink instead
+[/LIST]
+
+[B]Language & Compatibility[/B]
+[LIST]
+[*]Biome.name() deprecated call replaced with Biome.getKey().getKey() — compatible with Paper 1.22+
+[*]sync-usage and swap-now-usage messages now end with a period for consistency
+[*]Startup banner now shows Bot swap status in the Features section
+[*]Startup banner now shows actual Skin mode (auto/custom/off) instead of "disabled"
+[/LIST]
 
 [SIZE=5][B]v1.5.8[/B][/SIZE] [I](2026-04-03)[/I]
 
@@ -624,6 +665,6 @@ Thank you for using Fake Player Plugin. Without you, it wouldn't be where it is 
 
 [HR][/HR]
 
-[CENTER][I]Built for Paper 1.21.x · Java 21 · FPP v1.5.6[/I]
+[CENTER][I]Built for Paper 1.21.x · Java 21 · FPP v1.5.10[/I]
 
 [URL='https://modrinth.com/plugin/fake-player-plugin-(fpp)']Modrinth[/URL]  [URL='https://www.spigotmc.org/resources/fake-player-plugin-fpp.133572/']SpigotMC[/URL]  [URL='https://hangar.papermc.io/Pepe-tf/FakePlayerPlugin']PaperMC[/URL]  [URL='https://builtbybit.com/resources/fake-player-plugin.98704/']BuiltByBit[/URL]  [URL='https://fakeplayerplugin.xyz']Wiki[/URL][/CENTER]

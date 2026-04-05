@@ -1,7 +1,7 @@
 # 🎮 Fake Player Plugin — Wiki
 
 > **The Ultimate Bot Spoofing Plugin for Paper 1.21+**  
-> **Version:** 1.5.8 · **Platform:** Paper 1.21+ · **Author:** Bill_Hub
+> **Version:** 1.5.10 · **Platform:** Paper 1.21+ · **Author:** Bill_Hub
 
 ---
 
@@ -111,43 +111,38 @@
 - **Whitelist Support** — Protect VIP players
 
 ### ⚙️ **Configuration**
-- **37 Config Versions** — Automatic migration system
+- **41 Config Versions** — Automatic migration system
 - **Hot Reload** — Change settings without restart
 - **Backup System** — Automatic config backups
 - **Validation** — Prevents invalid configurations
 
 ---
 
-## 🆕 What's New in v1.5.8
+## 🆕 What's New in v1.5.10
 
-### 🔧 **Ghost Player / "Anonymous User" Fix**
+### 🔄 **`/fpp swap` Toggle Fix**
+- Running `/fpp swap` bare now **toggles swap on/off** — exactly like `/fpp chat`
+- Toggle messages redesigned to be consistent: `session rotation has been enabled/disabled`
+- Status messages (`swap status`) follow the same `is enabled / is disabled` pattern
 
-**FakeConnection Subclass**
-- 🚫 Eliminated the phantom **"Anonymous User"** entry with UUID `0` that appeared in the tab list whenever a bot connected
-- Replaced the old reflection-based `Connection` injection with a clean `FakeConnection` subclass that overrides `send()` as proper no-ops
-- Eliminated `NullPointerException` / `ClassCastException` spam in server logs from bot connection handling
+### 💬 **Bot Chat Interval — Live Reload Fix**
+- Changing `fake-chat.interval`, `fake-chat.chance`, or `fake-chat.stagger-interval` and running `/fpp reload` now takes effect **immediately**
+- Previously bots kept the old (longer) delay until their current scheduled task naturally expired
+- `/fpp reload` output now confirms the new interval range
 
-### 📊 **Placeholder Accuracy & New Proxy Placeholders**
+### 🤖 **Fake Chat Realism Enhancements**
+- `typing-delay` — bots simulate a typing pause before sending messages
+- `burst-chance` / `burst-delay` — occasional quick follow-up messages
+- `reply-to-mentions` — bots reply when a player says their name in chat
+- `activity-variation` — each bot gets a random chat frequency tier
+- `history-size` — bots avoid repeating their recent messages
 
-**`%fpp_real%` / `%fpp_total%` Accuracy**
-- `%fpp_real%` now correctly subtracts the bot count — bots go through `placeNewPlayer()` and appear in `Bukkit.getOnlinePlayers()`
-- `%fpp_real_<world>%` similarly excludes bots from per-world real-player counts
-- `%fpp_total%` fixed to avoid double-counting
+### 🏊 **Swim AI**
+- New `swim-ai.enabled` config key — bots automatically swim in water and lava
 
-**New Proxy-Aware Placeholders (29+ total)**
-- `%fpp_local_count%` — bots on this server only
-- `%fpp_network_count%` — bots on other proxy servers (NETWORK mode)
-- `%fpp_network_names%` — comma-separated names from remote servers
-- `%fpp_count%` and `%fpp_names%` now include remote bots in NETWORK mode
-
-### 🌐 **NETWORK Mode `/fpp list` Improvements**
-- `/fpp list` shows `[server-id]` tags for local bots
-- Remote bots from other proxy servers listed in a dedicated section
-- Total counts include both local and remote bots
-
-### 🔐 **LuckPerms ClassLoader Guard**
-- Fixed `NoClassDefFoundError: net/luckperms/api/node/Node` crash on servers without LuckPerms
-- All LP-dependent code now properly gated — no LP classes loaded unless LP is present
+### 🛠️ **Compatibility & Polish**
+- `Biome.name()` deprecation fixed — now uses `Biome.getKey().getKey()`, compatible with Paper 1.22+
+- Startup banner now shows **Bot swap** and correct **Skin mode** in the Features section
 
 ---
 

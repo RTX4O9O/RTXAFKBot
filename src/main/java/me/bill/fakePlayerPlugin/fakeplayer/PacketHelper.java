@@ -698,6 +698,56 @@ public final class PacketHelper {
         } catch (Exception ignored) {}
     }
 
+    /**
+     * Sends a main-hand swing animation (animation ID 0) for {@code fp} to {@code receiver}.
+     * Broadcasts a realistic punch visual each time the PVP bot attacks.
+     */
+    public static void sendSwingArm(Player receiver, FakePlayer fp) {
+        if (!ensureReady()) return;
+        try {
+            Object nms = getHandle(receiver);
+            ClassLoader cl = nms.getClass().getClassLoader();
+            Class<?> animClass = cl.loadClass("net.minecraft.network.protocol.game.ClientboundAnimatePacket");
+            for (Constructor<?> c : animClass.getDeclaredConstructors()) {
+                c.setAccessible(true);
+                Class<?>[] pt = c.getParameterTypes();
+                if (pt.length == 2 && pt[0] == int.class && pt[1] == int.class) {
+                    sendPacket(nms, c.newInstance(fp.getEntityId(), 0)); // 0 = SWING_MAIN_ARM
+                    return;
+                }
+            }
+        } catch (Exception ignored) {}
+    }
+
+    /**
+     * Sends a food eating event (entity event ID 9 = LIVING_EAT_FOOD) for {@code fp} to {@code receiver}.
+     * This shows the eating animation (bob + nom nom) to nearby players.
+     * Call every few ticks while the bot is eating.
+     */
+    public static void sendEatAnimation(Player receiver, FakePlayer fp) {
+        if (!ensureReady()) return;
+        try {
+            Object nms = getHandle(receiver);
+            ClassLoader cl = nms.getClass().getClassLoader();
+            // ClientboundEntityEventPacket(Entity entity, byte eventId)
+            // Event ID 9 = LIVING_EAT_FOOD — triggers the eating arm animation
+            Class<?> entityEventClass = cl.loadClass(
+                "net.minecraft.network.protocol.game.ClientboundEntityEventPacket");
+            // Find the NMS entity for the bot
+            Player botPlayer = fp.getPlayer();
+            if (botPlayer == null) return;
+            Object botNms = getHandle(botPlayer);
+            for (java.lang.reflect.Constructor<?> c : entityEventClass.getDeclaredConstructors()) {
+                c.setAccessible(true);
+                Class<?>[] pt = c.getParameterTypes();
+                if (pt.length == 2 && pt[1] == byte.class) {
+                    sendPacket(nms, c.newInstance(botNms, (byte) 9));
+                    return;
+                }
+            }
+        } catch (Exception ignored) {}
+    }
+
     public static void sendRotation(Player receiver, FakePlayer fp, float yaw, float pitch, float headYaw) {
         if (!ensureReady() || moveEntityRotPacketClass == null || rotateHeadPacketClass == null) return;
         try {

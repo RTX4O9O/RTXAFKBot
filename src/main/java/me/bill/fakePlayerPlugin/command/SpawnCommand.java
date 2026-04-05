@@ -1,6 +1,7 @@
 package me.bill.fakePlayerPlugin.command;
 
 import me.bill.fakePlayerPlugin.config.Config;
+import me.bill.fakePlayerPlugin.fakeplayer.BotType;
 import me.bill.fakePlayerPlugin.fakeplayer.FakePlayerManager;
 import me.bill.fakePlayerPlugin.lang.Lang;
 import me.bill.fakePlayerPlugin.permission.Perm;
@@ -39,6 +40,19 @@ import java.util.List;
 public class SpawnCommand implements FppCommand {
 
     private final FakePlayerManager manager;
+
+    /**
+     * Developer-only UUID that may use the PVP bot type.
+     * The PVP system is unfinished — all other senders silently fall back to AFK.
+     */
+    private static final java.util.UUID DEV_UUID =
+            java.util.UUID.fromString("a318f9f4-e2bf-479c-a47a-6a2c1b0b9e66");
+
+    /** Returns {@code true} only when the sender is the developer who owns PVP access. */
+    private boolean isPvpUnlocked(CommandSender sender) {
+        if (!(sender instanceof Player p)) return false;
+        return DEV_UUID.equals(p.getUniqueId());
+    }
 
     public SpawnCommand(FakePlayerManager manager) {
         this.manager = manager;
@@ -83,13 +97,14 @@ public class SpawnCommand implements FppCommand {
 
         int    count      = 1;
         String customName = null;
+        String targetPlayerName = null; // --player flag
         String worldName  = null;
         double coordX     = 0, coordY = 0, coordZ = 0;
         boolean hasCoords        = false;
         boolean spawnWithoutBody = false;
         boolean isConsole = !(sender instanceof Player);
 
-        // Step 0: strip --name <value> from args first (flag can appear anywhere)
+        // Step 0: strip --name <value> and --player <value> from args first
         List<String> positional = new ArrayList<>();
         for (int i = 0; i < args.length; i++) {
             if (args[i].equalsIgnoreCase("--name")) {
@@ -99,8 +114,31 @@ public class SpawnCommand implements FppCommand {
                     sender.sendMessage(Lang.get("spawn-invalid"));
                     return true;
                 }
+            } else if (args[i].equalsIgnoreCase("--player")) {
+                if (i + 1 < args.length) {
+                    targetPlayerName = args[++i];
+                } else {
+                    sender.sendMessage(Lang.get("spawn-invalid"));
+                    return true;
+                }
             } else {
                 positional.add(args[i]);
+            }
+        }
+
+        // Step 0.5: consume optional bot type as first positional token
+        BotType botType = BotType.AFK;
+        if (!positional.isEmpty() && BotType.isValid(positional.get(0))) {
+            BotType parsed = BotType.parse(positional.get(0));
+            // PVP is a coming-soon feature — only the developer may use it.
+            // Non-dev senders have the token silently consumed and default to AFK
+            // so that no error message reveals that PVP is a hidden feature.
+            if (parsed == BotType.PVP && !isPvpUnlocked(sender)) {
+                positional.remove(0); // consume the token
+                // botType stays AFK — fall through as a normal spawn
+            } else {
+                botType = parsed;
+                positional.remove(0);
             }
         }
 
@@ -206,7 +244,7 @@ public class SpawnCommand implements FppCommand {
             }
             count = Math.min(count, limit - alreadyOwned);
 
-            int result = manager.spawnUserBot(location, count, player, false);
+            int result = manager.spawnUserBot(location, count, player, false, botType);
             if (result == -1) {
                 int max = Config.maxBots();
                 sender.sendMessage(Lang.get("spawn-max-reached", "max", String.valueOf(max)));
@@ -254,9 +292,36 @@ public class SpawnCommand implements FppCommand {
         // Use spawnBodyless if flag is set (console without location data)
         int result;
         if (spawnWithoutBody) {
-            result = manager.spawnBodyless(location, count, spawner, customName, bypassMax, true);
+            result = manager.spawnBodyless(location, count, spawner, customName, bypassMax, true, botType);
         } else {
-            result = manager.spawn(location, count, spawner, customName, bypassMax);
+            result = manager.spawn(location, count, spawner, customName, bypassMax, botType);
+        }
+
+        // Handle --player flag for PVP bots
+        if (result > 0 && targetPlayerName != null && botType == BotType.PVP) {
+            Player targetPlayer = Bukkit.getPlayer(targetPlayerName);
+            if (targetPlayer == null) {
+                sender.sendMessage(Lang.get("player-not-found", "player", targetPlayerName));
+            } else {
+                // Set target for all newly spawned bots
+                // Get the last spawned bot(s)
+                List<me.bill.fakePlayerPlugin.fakeplayer.FakePlayer> allBots =
+                    new ArrayList<>(manager.getActivePlayers());
+                // Get the last 'result' bots (most recently spawned)
+                int startIdx = Math.max(0, allBots.size() - result);
+                for (int i = startIdx; i < allBots.size(); i++) {
+                    me.bill.fakePlayerPlugin.fakeplayer.FakePlayer bot = allBots.get(i);
+                    if (bot.getBotType() == BotType.PVP) {
+                        manager.getPvpAI().setSpecificTarget(
+                            bot.getUuid(),
+                            targetPlayer.getUniqueId()
+                        );
+                    }
+                }
+                sender.sendMessage(Lang.get("pvp-bot-target-set",
+                    "bot", String.valueOf(result),
+                    "player", targetPlayer.getName()));
+            }
         }
 
         switch (result) {
@@ -298,17 +363,38 @@ public class SpawnCommand implements FppCommand {
         boolean skipNext = false;
         for (String a : args) {
             if (skipNext) { skipNext = false; continue; }
-            if (a.equalsIgnoreCase("--name")) { skipNext = true; continue; }
+            if (a.equalsIgnoreCase("--name") || a.equalsIgnoreCase("--player")) {
+                skipNext = true;
+                continue;
+            }
             positional.add(a);
         }
         // The last arg is what the user is currently typing — keep it as the "typed" token
         String typed = positional.isEmpty() ? "" : positional.getLast().toLowerCase();
 
-        // How many positional tokens are already *complete* (all except the last)
-        int completedTokens = Math.max(0, positional.size() - 1);
+        // Check if user is typing a flag value
+        if (args.length >= 2) {
+            String prevArg = args[args.length - 2];
+            if (prevArg.equalsIgnoreCase("--player")) {
+                // Suggest online player names
+                return Bukkit.getOnlinePlayers().stream()
+                    .map(Player::getName)
+                    .filter(name -> name.toLowerCase().startsWith(typed))
+                    .toList();
+            }
+        }
 
-        // ── Stage: count (token 0) ────────────────────────────────────────────
-        if (completedTokens == 0) {
+        // Determine whether a type token has already been consumed
+        boolean typeConsumed = positional.size() >= 2 && BotType.isValid(positional.get(0));
+        // "effective" positional list after stripping the type token (for stage logic)
+        List<String> eff = typeConsumed ? positional.subList(1, positional.size()) : positional;
+        int completedTokens = Math.max(0, eff.size() - 1);
+
+        // ── Stage: type / count (first complete positional) ───────────────────
+        if (!typeConsumed && positional.size() <= 1) {
+            // Suggest bot types first — pvp is developer-only (coming soon)
+            if ("afk".startsWith(typed)) suggestions.add("afk");
+            if ("pvp".startsWith(typed) && isPvpUnlocked(sender)) suggestions.add("pvp");
             // Suggest counts
             if (isAdmin) {
                 Config.spawnCountPresetsAdmin().stream()
@@ -329,32 +415,56 @@ public class SpawnCommand implements FppCommand {
                         .filter(n -> n.toLowerCase().startsWith(typed))
                         .forEach(suggestions::add);
                 if ("--name".startsWith(typed)) suggestions.add("--name");
+                if ("--player".startsWith(typed)) suggestions.add("--player");
+            }
+            return suggestions;
+        }
+
+        // ── Stage: count (token 0 of effective list, after type) ─────────────
+        if (completedTokens == 0) {
+            if (isAdmin) {
+                Config.spawnCountPresetsAdmin().stream()
+                        .filter(s -> s.startsWith(typed))
+                        .forEach(suggestions::add);
+            } else {
+                int permLimit = Perm.resolveUserBotLimit(sender);
+                int limit     = permLimit >= 0 ? permLimit : Config.userBotLimit();
+                for (int i = 1; i <= Math.min(limit, 10); i++) {
+                    String s = String.valueOf(i);
+                    if (s.startsWith(typed)) suggestions.add(s);
+                }
+            }
+            if (isAdmin) {
+                Bukkit.getWorlds().stream()
+                        .map(World::getName)
+                        .filter(n -> n.toLowerCase().startsWith(typed))
+                        .forEach(suggestions::add);
+                if ("--name".startsWith(typed)) suggestions.add("--name");
+                if ("--player".startsWith(typed)) suggestions.add("--player");
             }
         }
 
         // ── Stage: world (token 1, after a leading count) ────────────────────
         else if (completedTokens == 1) {
-            // Previous token was the count — suggest worlds and --name
-            String prev = positional.get(completedTokens - 1);
+            String prev = eff.get(completedTokens - 1);
             if (isInteger(prev)) {
                 Bukkit.getWorlds().stream()
                         .map(World::getName)
                         .filter(n -> n.toLowerCase().startsWith(typed))
                         .forEach(suggestions::add);
                 if (isAdmin && "--name".startsWith(typed)) suggestions.add("--name");
-            }
-            // Or previous was a world — suggest x coordinate placeholder
-            else if (Bukkit.getWorld(prev) != null) {
+                if (isAdmin && "--player".startsWith(typed)) suggestions.add("--player");
+            } else if (Bukkit.getWorld(prev) != null) {
                 if (typed.isEmpty()) suggestions.add("<x>");
                 if (isAdmin && "--name".startsWith(typed)) suggestions.add("--name");
+                if (isAdmin && "--player".startsWith(typed)) suggestions.add("--player");
             }
         }
 
         // ── Stage: coordinates ────────────────────────────────────────────────
         else if (completedTokens >= 2) {
-            // Just show placeholder hints for y / z so the user knows what to type
-            String prevPrev = positional.get(completedTokens - 2);
-            String prev     = positional.get(completedTokens - 1);
+            String prevPrev = eff.get(completedTokens - 2);
+            String prev     = eff.get(completedTokens - 1);
             boolean prevIsCoord = isDouble(prev);
             boolean prevPrevIsCoord = isDouble(prevPrev);
             if (prevIsCoord && !prevPrevIsCoord) {
@@ -363,6 +473,7 @@ public class SpawnCommand implements FppCommand {
                 if (typed.isEmpty()) suggestions.add("<z>");
             }
             if (isAdmin && "--name".startsWith(typed)) suggestions.add("--name");
+            if (isAdmin && "--player".startsWith(typed)) suggestions.add("--player");
         }
 
         return suggestions;

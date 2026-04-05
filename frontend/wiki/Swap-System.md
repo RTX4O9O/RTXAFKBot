@@ -21,19 +21,24 @@ This loop repeats indefinitely, creating natural-looking join/leave activity.
 ## Enabling the Swap System
 
 ```yaml
-fake-player:
-  swap:
-    enabled: false
+swap:
+  enabled: false
 ```
 
-Set to `true` to enable, or toggle live with:
+Set to `true` in `config.yml`, or control live with:
+
 ```
+/fpp swap              ← bare command toggles on/off (like /fpp chat)
 /fpp swap on
 /fpp swap off
 /fpp swap status
+/fpp swap now <bot>    ← immediately trigger a single bot's swap
+/fpp swap list         ← list scheduled bots and their personalities
 ```
 
-The command writes the change to `config.yml` immediately.
+The command writes the change to `config.yml` immediately — it survives restarts.
+
+> **Toggle behaviour (v1.5.10+):** Running `/fpp swap` with no arguments flips the current state exactly like `/fpp chat` — no need to type `on` or `off`.
 
 **Required permission:** `fpp.swap`
 
@@ -42,25 +47,21 @@ The command writes the change to `config.yml` immediately.
 ## Configuration
 
 ```yaml
-fake-player:
-  swap:
-    enabled: false
+swap:
+  enabled: false              # Master toggle — false = bots never swap out
 
-    session-min: 120      # seconds — minimum session length before a bot swaps
-    session-max: 600      # seconds — maximum session length
+  session:
+    min: 60                   # Minimum session duration in seconds (1 min)
+    max: 300                  # Maximum session duration in seconds (5 min)
 
-    rejoin-delay-min: 5   # seconds between a bot leaving and rejoining
-    rejoin-delay-max: 45
+  absence:
+    min: 30                   # Minimum offline time in seconds (30 s)
+    max: 120                  # Maximum offline time in seconds (2 min)
 
-    jitter: 30            # ±seconds of extra randomness per bot (prevents simultaneous swaps)
-
-    reconnect-chance: 0.15   # 0.0–1.0 — chance the bot keeps its same name on rejoin
-    afk-kick-chance: 5       # 0–100 — % chance the rejoin gap is extended by 1–3 extra minutes
-
-    farewell-chat: true    # send a chat message before leaving (requires fake-chat.enabled)
-    greeting-chat: true    # send a chat message after rejoining (requires fake-chat.enabled)
-
-    time-of-day-bias: true  # scale session lengths by server time of day
+  max-swapped-out: 0          # Max bots offline simultaneously (0 = unlimited)
+  farewell-chat: true         # Bots say goodbye before leaving
+  greeting-chat: true         # Bots say hi when rejoining
+  same-name-on-rejoin: true   # Reuse the same name if available on rejoin
 ```
 
 ---
@@ -71,68 +72,34 @@ fake-player:
 
 | Setting | Description |
 |---------|-------------|
-| `session-min` | Minimum time (seconds) a bot stays before swapping. |
-| `session-max` | Maximum time (seconds) a bot stays before swapping. |
-| `jitter` | ±Seconds of extra randomness added per-bot. Prevents all bots swapping at the same moment. |
+| `session.min` | Minimum time (seconds) a bot stays before swapping. |
+| `session.max` | Maximum time (seconds) a bot stays before swapping. |
 
-The actual session length = random value in `[min, max]` × personality modifier ± jitter.
+The actual session length is a random value in `[session.min, session.max]`, then scaled by the bot's personality multiplier.
 
 ---
 
 ### Personality Archetypes
 
-Each bot is randomly assigned one of three personality types when it spawns:
+Each bot is randomly assigned one of five personality types when swap starts:
 
-| Archetype | Probability | Session Modifier | Description |
-|-----------|------------|-----------------|-------------|
-| **VISITOR** | 25% | 30–60% of range | Quick popper — joins briefly then leaves |
-| **REGULAR** | 50% | 80–120% of range | Typical player — stays a normal session |
-| **LURKER** | 25% | 150–250% of range | Long-term sitter — stays for extended periods |
-
-Example with `session-min: 120` and `session-max: 600`:
-
-| Archetype | Effective Range |
-|-----------|---------------|
-| VISITOR | ~36–360 seconds |
-| REGULAR | ~96–720 seconds |
-| LURKER | ~180–1500 seconds |
+| Archetype | Session Modifier | Description |
+|-----------|-----------------|-------------|
+| **quiet** | 2.0× | Long-term sitter — stays extended periods |
+| **passive** | 1.4× | Below-average activity |
+| **normal** | 1.0× | Typical player session |
+| **active** | 0.7× | Chats and leaves more often |
+| **chatty** | 0.5× | Quick popper — joins briefly, leaves fast |
 
 ---
 
-### Rejoin Delay
+### Absence (Offline) Delay
 
 | Setting | Description |
 |---------|-------------|
-| `rejoin-delay-min` | Minimum gap in seconds between the bot leaving and rejoining. |
-| `rejoin-delay-max` | Maximum gap in seconds between the bot leaving and rejoining. |
-| `afk-kick-chance` | Percent chance (0–100) the rejoin gap is extended by 1–3 extra minutes. Simulates an AFK kick. |
-
----
-
-### Reconnect Chance
-
-```yaml
-reconnect-chance: 0.15
-```
-
-Probability (0.0–1.0) that the rejoining bot **keeps the same name** instead of getting a new one.  
-`0.15` = 15% chance of a same-name reconnect — simulates a brief disconnect and reconnect.
-
----
-
-### Time-of-Day Bias
-
-```yaml
-time-of-day-bias: true
-```
-
-Scales session durations based on the server's real-world local time:
-
-| Time of Day | Modifier | Rationale |
-|-------------|---------|-----------|
-| Peak (18:00–22:00) | Up to 1.4× longer | Evening — more players online |
-| Off-peak (01:00–05:00) | Down to 0.5× shorter | Late night — fewer active players |
-| Other hours | 1.0× (no change) | Normal behaviour |
+| `absence.min` | Minimum seconds between the bot leaving and rejoining. |
+| `absence.max` | Maximum seconds between the bot leaving and rejoining. |
+| `max-swapped-out` | Cap on how many bots can be offline at the same time (`0` = no cap). |
 
 ---
 
@@ -145,7 +112,7 @@ greeting-chat: true    # requires fake-chat.enabled: true
 
 When `farewell-chat: true`, the bot sends a natural farewell message from `bot-messages.yml` before leaving (e.g. "gtg", "bbl", "bye").
 
-When `greeting-chat: true`, the replacement bot sends a greeting shortly after joining (e.g. "hey", "back", "what did I miss?").
+When `greeting-chat: true`, the bot sends a greeting shortly after rejoining (e.g. "hey", "back", "what did I miss?").
 
 Both require `fake-chat.enabled: true` in config.
 
@@ -153,26 +120,25 @@ Both require `fake-chat.enabled: true` in config.
 
 ## Interaction with Persistence
 
-When `persist-on-restart: true`, bots that were mid-session when the server shut down **rejoin after restart** at their last position, and their session timer restarts fresh. They are not considered "swapped" by the restart.
+When `persistence.enabled: true`, bots that were mid-session when the server shut down **rejoin after restart** at their last position, and their session timer restarts fresh. They are not considered "swapped" by the restart.
 
 ---
 
 ## Example Setup — Active Server Simulation
 
 ```yaml
-fake-player:
-  swap:
-    enabled: true
-    session-min: 300      # 5 minutes minimum
-    session-max: 1800     # 30 minutes maximum
-    rejoin-delay-min: 30
-    rejoin-delay-max: 120
-    jitter: 60
-    reconnect-chance: 0.10
-    afk-kick-chance: 10
-    farewell-chat: true
-    greeting-chat: true
-    time-of-day-bias: true
+swap:
+  enabled: true
+  session:
+    min: 300      # 5 minutes minimum
+    max: 1800     # 30 minutes maximum
+  absence:
+    min: 30
+    max: 120
+  max-swapped-out: 0
+  farewell-chat: true
+  greeting-chat: true
+  same-name-on-rejoin: true
 
 fake-chat:
   enabled: true

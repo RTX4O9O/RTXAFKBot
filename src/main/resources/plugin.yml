@@ -1,5 +1,5 @@
 name: FakePlayerPlugin
-version: '1.5.8'
+version: '1.5.10'
 main: me.bill.fakePlayerPlugin.FakePlayerPlugin
 api-version: '1.21'
 authors: [ El_Pepes ]
@@ -49,7 +49,6 @@ permissions:
       fpp.delete.all:       true
       fpp.list:             true
       fpp.chat:             true
-      fpp.swap:             true
       fpp.reload:           true
       fpp.info:             true
       fpp.tp:               true
@@ -62,6 +61,7 @@ permissions:
       fpp.rank:             true
       fpp.alert:            true
       fpp.sync:             true
+      fpp.swap:             true
       fpp.user.*:           true
 
   # ── User wildcard ──────────────────────────────────────────────────────────
@@ -72,7 +72,7 @@ permissions:
     description: >
       Grants all user-facing FPP commands to regular players (default: everyone).
       Includes: spawn (1-bot limit), /fpp tph, /fpp info (own bots only).
-      Does NOT include admin commands (delete, reload, swap, chat, list, full-info, tp).
+      Does NOT include admin commands (delete, reload, chat, list, full-info, tp).
     default: true
     children:
       fpp.user.spawn: true
@@ -188,11 +188,6 @@ permissions:
     description: Toggle bot fake-chat on/off with /fpp chat [on|off|status].
     default: op
 
-  # ── Swap ──────────────────────────────────────────────────────────────────
-  fpp.swap:
-    description: Toggle the bot swap/rotation system with /fpp swap [on|off|status].
-    default: op
-
   # ── Reload ────────────────────────────────────────────────────────────────
   fpp.reload:
     description: Hot-reload all plugin config with /fpp reload. Restrict to trusted admins.
@@ -283,6 +278,18 @@ permissions:
   fpp.sync:
     description: >
       Sync config files across network with /fpp sync <push|pull|status|check> [file].
+      Requires NETWORK mode and MySQL connection.
+      Subcommands: push <file|all>, pull <file|all>, check <file|all>, status.
+    default: op
+
+  # ── Swap (Session Rotation) ────────────────────────────────────────────
+  fpp.swap:
+    description: >
+      Control bot session rotation (swap in/out) with /fpp swap.
+      When enabled, AFK bots periodically leave and rejoin the server,
+      mimicking real player behaviour with random session + absence durations.
+      Subcommands: on, off, status, now <bot>, list.
+    default: op
       Push or pull config.yml, bot-names.yml, bot-messages.yml, and language files
       to/from the MySQL database. Requires NETWORK mode and config-sync.mode to be enabled.
       Automatically creates backups before any pull operation.
