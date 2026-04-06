@@ -80,13 +80,9 @@ delete-random-success: "{prefix}<#0079FF>{count}</#0079FF> <gray>ʀᴀɴᴅᴏ�
 list-none:   "  <gray>ɴᴏ ʙᴏᴛꜱ ᴀʀᴇ ᴄᴜʀʀᴇɴᴛʟʏ ᴀᴄᴛɪᴠᴇ."
 
 # ── Bot broadcast messages ────────────────────────────────────────────────────
-# {name}   — bot display name
-# {killer} — killer player name  (bot-kill only)
-bot-join:  "<yellow>{name} joined the game"
-bot-leave: "<yellow>{name} left the game"
-bot-kill:  "<gray>{killer} <white>slain <gray>{name}"
-
-
+# {name} — bot display name (colours preserved — do not wrap in MiniMessage tags)
+bot-join:  "{prefix}{name} <gray>ᴊᴏɪɴᴇᴅ ᴛʜᴇ ɢᴀᴍᴇ<gray>."
+bot-leave: "{prefix}{name} <gray>ʟᴇꜰᴛ ᴛʜᴇ ɢᴀᴍᴇ<gray>."
 
 # ── Fake chat ─────────────────────────────────────────────────────────────────
 chat-enabled:    "{prefix}<#0079FF>ꜰᴀᴋᴇ ᴄʜᴀᴛ</#0079FF> <gray>ʜᴀꜱ ʙᴇᴇɴ <white>ᴇɴᴀʙʟᴇᴅ<gray>."
@@ -145,6 +141,14 @@ update-available:  "<dark_gray><st>━━━━━━━━━</st> <bold><#0079
 update-beta:       "<dark_gray><st>━━━━━━━━━</st> <bold><#FF9500>ʙᴇᴛᴀ ᴠᴇʀꜱɪᴏɴ</#FF9500></bold> <dark_gray><st>━━━━━━━━━</st>\n  <gray>Running   <dark_gray>: <#FF9500>v{current}</#FF9500> <dark_gray>(<#FF9500>ʙᴇᴛᴀ</#FF9500><dark_gray>)\n  <gray>Stable    <dark_gray>: <#0079FF>v{latest}</#0079FF>\n  <gray>Download  <dark_gray>: <click:open_url:'https://modrinth.com/plugin/fake-player-plugin-(fpp)'><#0079FF><underlined>Modrinth</underlined></#0079FF></click><gray>, <click:open_url:'https://www.spigotmc.org/resources/fake-player-plugin-fpp.133572/'><#0079FF><underlined>SpigotMC</underlined></#0079FF></click><gray>, <click:open_url:'https://hangar.papermc.io/Pepe-tf/FakePlayerPlugin'><#0079FF><underlined>PaperMC</underlined></#0079FF></click><gray>, <click:open_url:'https://builtbybit.com/resources/fake-player-plugin.98704/'><#0079FF><underlined>BuiltByBit</underlined></#0079FF></click>\n<dark_gray><st>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</st>"
 update-up-to-date: "{prefix}<#66CC66>ᴘʟᴜɢɪɴ ɪꜱ ᴜᴘ ᴛᴏ ᴅᴀᴛᴇ</#66CC66> <dark_gray>(<#0079FF>v{current}</#0079FF><dark_gray>)"
 update-failed:     "{prefix}<gray>ᴄᴏᴜʟᴅ ɴᴏᴛ ᴄʜᴇᴄᴋ ꜰᴏʀ ᴜᴘᴅᴀᴛᴇꜱ."
+
+
+# ── Version compatibility warning ─────────────────────────────────────────────
+# {version} — the detected Minecraft version string, e.g. "1.22.0"
+# Shown to any sender who tries a /fpp sub-command on an unsupported server version.
+version-unsupported: "{prefix}<red>FakePlayerPlugin is <bold>ɴᴏᴛ ꜱᴜᴘᴘᴏʀᴛᴇᴅ</bold> on <white>MC {version}<red>. All commands are disabled. <click:open_url:'https://discord.gg/RfjEJDG2TM'><#0079FF><underlined>Discord</underlined></#0079FF></click>"
+# Shown to ops/admins on join and scheduled as a persistent join-notification while the server runs an unsupported version.
+version-unsupported-admin: "<dark_gray><st>━━━━━━━━━</st> <bold><red>⚠ ᴜɴꜱᴜᴘᴘᴏʀᴛᴇᴅ ᴠᴇʀꜱɪᴏɴ ⚠</red></bold> <dark_gray><st>━━━━━━━━━</st>\n  <red>FakePlayerPlugin is <bold>ɴᴏᴛ ꜱᴜᴘᴘᴏʀᴛᴇᴅ</bold> on <white>MC {version}<red>. (Supported: up to <white>MC 1.21.11<red>)\n  <gray>All /fpp commands have been disabled until an update is released.\n  <gray>If you think this is a bug, contact us: <click:open_url:'https://discord.gg/RfjEJDG2TM'><#0079FF><underlined>Discord</underlined></#0079FF></click><gray>.\n<dark_gray><st>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</st>"
 
 
 # ── Freeze ────────────────────────────────────────────────────────────────────

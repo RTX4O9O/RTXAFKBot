@@ -87,8 +87,15 @@ public final class LuckPermsHelper {
                         UUID uuid = event.getUser().getUniqueId();
                         FakePlayer fp = manager.getByUuid(uuid);
                         if (fp == null) return; // not one of our bots
-                        // Sync the group field and refresh display on main thread
-                        String newGroup = event.getUser().getPrimaryGroup();
+                        // getPrimaryGroup() throws NPE internally when LP hasn't assigned
+                        // a primary group yet (brand-new user with no nodes).
+                        String newGroup;
+                        try {
+                            newGroup = event.getUser().getPrimaryGroup();
+                        } catch (NullPointerException ignored) {
+                            newGroup = null;
+                        }
+                        if (newGroup == null) newGroup = "default";
                         fp.setLuckpermsGroup(newGroup);
                         Bukkit.getScheduler().runTask(plugin,
                                 () -> manager.refreshLpDisplayName(fp));

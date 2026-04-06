@@ -23,13 +23,13 @@ import java.util.List;
  *       {@code --name} flag ({@code fpp.spawn.name}), spawning multiple at once
  *       ({@code fpp.spawn.multiple}). Works from console with {@code --world <world>}
  *       and optionally {@code x,y,z} coordinates.</li>
- *   <li><b>Console</b> — from console, use:
+ *   <li><b>Console</b> — spawns bots with a physical body at the world spawn (or provided
+ *       coordinates), exactly like a player-issued {@code /fpp spawn}:
  *       <ul>
- *         <li>{@code /fpp spawn 5} — spawns without body (tab-list only)</li>
- *         <li>{@code /fpp spawn 5 world} — spawns at world spawn location with body</li>
- *         <li>{@code /fpp spawn 5 world 100,64,200} — spawns at specific location with body</li>
- *       </ul>
- *       If no world is specified from console, bot spawns without physical body.</li>
+ *         <li>{@code /fpp spawn 5}                     — 5 bots at default world spawn</li>
+ *         <li>{@code /fpp spawn 5 world}               — 5 bots at world spawn</li>
+ *         <li>{@code /fpp spawn 5 world 100,64,200}    — 5 bots at exact coords</li>
+ *       </ul></li>
  *   <li><b>User</b> ({@code fpp.user.spawn}) — limited by personal bot limit resolved
  *       from {@code fpp.bot.<n>} permission nodes; falls back to
  *       {@code limits.user-bot-limit} in config. Subject to spawn cooldown unless
@@ -101,7 +101,6 @@ public class SpawnCommand implements FppCommand {
         String worldName  = null;
         double coordX     = 0, coordY = 0, coordZ = 0;
         boolean hasCoords        = false;
-        boolean spawnWithoutBody = false;
         boolean isConsole = !(sender instanceof Player);
 
         // Step 0: strip --name <value> and --player <value> from args first
@@ -192,10 +191,6 @@ public class SpawnCommand implements FppCommand {
             if (trailing > 0) count = trailing;
         }
 
-        // Console with no world → bodyless
-        if (isConsole && worldName == null) {
-            spawnWithoutBody = true;
-        }
 
         // ── Resolve spawn location ─────────────────────────────────────────────
         Location location;
@@ -289,13 +284,8 @@ public class SpawnCommand implements FppCommand {
         boolean bypassMax = Perm.has(sender, Perm.BYPASS_MAX);
         Player  spawner   = (sender instanceof Player p) ? p : null;
 
-        // Use spawnBodyless if flag is set (console without location data)
-        int result;
-        if (spawnWithoutBody) {
-            result = manager.spawnBodyless(location, count, spawner, customName, bypassMax, true, botType);
-        } else {
-            result = manager.spawn(location, count, spawner, customName, bypassMax, botType);
-        }
+        // Always spawn with a full body — bodyless mode is not available.
+        int result = manager.spawn(location, count, spawner, customName, bypassMax, botType);
 
         // Handle --player flag for PVP bots
         if (result > 0 && targetPlayerName != null && botType == BotType.PVP) {

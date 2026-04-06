@@ -304,8 +304,23 @@ public final class BotSwapAI {
             sendBotChat(fp, randomFrom(FAREWELLS));
         }
 
-        // 2. Natural "packing up" pause (1–5 s) so farewell message lands before leave notification
-        long preDeleteDelay = 20L + ThreadLocalRandom.current().nextInt(80);
+        // 2. Natural "packing up" pause (1–5 s) so farewell message lands before leave notification,
+        //    PLUS the configured leave-delay so the body disappears at the right time.
+        //    manager.delete() no longer applies the leave-delay itself (to avoid affecting manual
+        //    despawns and combat-death despawns), so we absorb it here instead.
+        int leaveMin = Config.leaveDelayMin();
+        int leaveMax = Math.max(leaveMin, Config.leaveDelayMax());
+        long leaveDelayTicks;
+        if (leaveMax <= 0) {
+            leaveDelayTicks = 0L;
+        } else {
+            int spread = leaveMax - leaveMin;
+            int ticks = leaveMin + (spread > 0
+                    ? ThreadLocalRandom.current().nextInt(spread + 1)
+                    : 0);
+            leaveDelayTicks = Math.max(1L, (long) ticks);
+        }
+        long preDeleteDelay = 20L + ThreadLocalRandom.current().nextInt(80) + leaveDelayTicks;
 
         // Track this task so cancelAll() / cancel() can stop it while it is pending.
         int packingId = Bukkit.getScheduler().runTaskLater(plugin, () -> {

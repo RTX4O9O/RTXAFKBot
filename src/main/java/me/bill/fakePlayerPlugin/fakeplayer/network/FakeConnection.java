@@ -2,6 +2,7 @@ package me.bill.fakePlayerPlugin.fakeplayer.network;
 
 import io.netty.channel.ChannelFutureListener;
 import net.minecraft.network.Connection;
+import net.minecraft.network.PacketSendListener;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.PacketFlow;
 import org.jetbrains.annotations.NotNull;
@@ -28,6 +29,14 @@ import java.net.InetSocketAddress;
  * with UUID 0000…0000 visible in server player-list tools.
  *
  * <p>Overriding {@code send()} as a no-op here prevents those side-effects entirely.
+ * Two callback-type families are covered to span all supported server versions:
+ * {@code ChannelFutureListener} (1.21.6–1.21.11, the compile target) and
+ * {@code PacketSendListener} (1.20.x–1.21.5 and 26.1.1+, where Mojang reversed the
+ * callback type).  The {@code PacketSendListener} variants intentionally omit
+ * {@code @Override} so the file compiles cleanly against the 1.21.11 jar even though
+ * that version's {@code Connection} does not expose {@code send(Packet, PacketSendListener)}
+ * as an overridable method; Java's runtime dispatch uses name + parameter types and
+ * does not require the annotation for the override to take effect.
  * The {@link FakeServerGamePacketListenerImpl} layer (injected after
  * {@code placeNewPlayer()}) handles knockback and also discards all subsequent
  * outbound packets — so bots never receive any network traffic.
@@ -67,11 +76,19 @@ public final class FakeConnection extends Connection {
     }
 
     // ── No-op send() overloads ─────────────────────────────────────────────────
-    // Overriding these prevents vanilla Connection.send()'s side-effects
-    // (protocol-state updates, pending-ack queues, callback notifications) from
-    // running during placeNewPlayer(), which is what creates the "Anonymous User"
-    // ghost entry.  The FakeServerGamePacketListenerImpl layer (injected after
-    // placeNewPlayer()) handles knockback independently via its own send() override.
+    // These prevent vanilla Connection.send()'s side-effects (protocol-state updates,
+    // pending-ack queues, callback notifications) from running during placeNewPlayer(),
+    // which is what creates the phantom "Anonymous User" / UUID-0 ghost entry.
+    //
+    // Two families of overloads must be covered because Mojang changed the callback type
+    // across Minecraft versions:
+    //
+    //   • 1.20.x – 1.21.5  → Connection.send(Packet, PacketSendListener)
+    //   • 1.21.6 – 1.21.11 → Connection.send(Packet, ChannelFutureListener)  [current compile target]
+    //   • 26.1.1+           → Connection.send(Packet, PacketSendListener)   [reverted]
+    //
+    // The FakeServerGamePacketListenerImpl layer (injected after placeNewPlayer()) handles
+    // knockback independently via its own send(Packet) override.
 
     @Override
     public void send(@NotNull Packet<?> packet) {
@@ -80,12 +97,27 @@ public final class FakeConnection extends Connection {
 
     @Override
     public void send(@NotNull Packet<?> packet, @Nullable ChannelFutureListener listener) {
-        // no-op
+        // no-op: covers 1.21.6–1.21.11 where Connection.send() uses ChannelFutureListener
     }
 
     @Override
     public void send(@NotNull Packet<?> packet, @Nullable ChannelFutureListener listener, boolean flush) {
-        // no-op
+        // no-op: covers 1.21.6–1.21.11 (3-arg flush variant)
+    }
+
+    // ── PacketSendListener variants (pre-1.21.6 and 26.1.1+) ──────────────────
+    // @Override intentionally omitted: Connection.send(Packet, PacketSendListener) does
+    // not exist in the 1.21.11 compile target, so the annotation would cause a compile
+    // error there.  Java's dynamic dispatch uses method name + parameter types — not the
+    // @Override annotation — so these methods correctly override the parent at runtime on
+    // any server version where Connection exposes a PacketSendListener-based send().
+
+    public void send(@NotNull Packet<?> packet, @Nullable PacketSendListener listener) {
+        // no-op: covers 1.20.x–1.21.5 and 26.1.1+ where Connection.send() uses PacketSendListener
+    }
+
+    public void send(@NotNull Packet<?> packet, @Nullable PacketSendListener listener, boolean flush) {
+        // no-op: covers any version that adds a 3-arg PacketSendListener flush variant
     }
 }
 

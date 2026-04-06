@@ -217,7 +217,7 @@ combat:
 ```yaml
 death:
   respawn-on-death: false   # Respawn bot instead of removing it on death
-  respawn-delay: 60         # Ticks before respawn (60 = 3 seconds)
+  respawn-delay: 60         # Ticks before respawn — 20 ticks = 1 second  (60 = 3 s · 100 = 5 s)
   suppress-drops: true      # Prevent item drops on death
 ```
 

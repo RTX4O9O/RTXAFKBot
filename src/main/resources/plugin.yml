@@ -1,11 +1,11 @@
 name: FakePlayerPlugin
-version: '1.5.12'
+version: '1.5.15'
 main: me.bill.fakePlayerPlugin.FakePlayerPlugin
 api-version: '1.21'
 authors: [ El_Pepes ]
 description: "Advanced Fake Player Spoofer for Paper 1.21+"
 website: "https://modrinth.com/plugin/fake-player-plugin-(fpp)"
-softdepend: [ PlaceholderAPI, LuckPerms ]
+softdepend: [ PlaceholderAPI, LuckPerms, WorldGuard ]
 
 commands:
   fpp:

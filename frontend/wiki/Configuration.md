@@ -204,12 +204,13 @@ persistence:
 
 ```yaml
 join-delay:
-  min: 0    # ticks
-  max: 1    # ticks
+  min: 0    # ticks  (20 ticks = 1 second)
+  max: 1    # ticks  (e.g. 40 = 2 s, 100 = 5 s)
 ```
 
-When spawning multiple bots, each bot waits a random number of ticks (between `min` and `max`) before appearing.  
-`20 ticks = 1 second`. Set both to `0` for instant simultaneous spawning.
+When spawning multiple bots, each bot waits a random number of **ticks** (between `min` and `max`) before appearing.  
+**20 ticks = 1 second.** Set both to `0` for instant simultaneous spawning.  
+Quick reference: `0 = instant · 20 = 1 s · 40 = 2 s · 100 = 5 s · 200 = 10 s`
 
 This makes batch spawns look like natural player joins rather than a single-frame flood.
 
@@ -219,12 +220,13 @@ This makes batch spawns look like natural player joins rather than a single-fram
 
 ```yaml
 leave-delay:
-  min: 0    # ticks
-  max: 1    # ticks
+  min: 0    # ticks  (20 ticks = 1 second)
+  max: 1    # ticks  (e.g. 40 = 2 s, 100 = 5 s)
 ```
 
 Same concept as join delay, applied when removing multiple bots (`/fpp despawn all`).  
-Each bot's leave message and entity removal are staggered by a random delay in this range.
+Each bot's leave message and entity removal are staggered by a random delay in this range.  
+Values are in **ticks** — `20 ticks = 1 second`.
 
 ---
 
@@ -255,7 +257,7 @@ death:
 | Option | Description |
 |--------|-------------|
 | `respawn-on-death` | `true` → bot respawns at its last known location after dying. `false` → bot leaves the server permanently on death. |
-| `respawn-delay` | Ticks to wait before respawning (20 = 1 second). Only used when `respawn-on-death: true`. |
+| `respawn-delay` | **Ticks** to wait before respawning — `20 ticks = 1 second` (e.g. `15 = 0.75 s`, `60 = 3 s`, `100 = 5 s`). Only used when `respawn-on-death: true`. |
 | `suppress-drops` | Prevent item drops when a bot dies. Recommended to keep `true`. |
 
 ---
@@ -292,7 +294,7 @@ chunk-loading:
 |--------|-------------|
 | `enabled` | Keep chunks loaded around each bot like a real player. Mobs spawn, redstone ticks, and crops grow. |
 | `radius` | Chunk radius to keep loaded. `0` = match server simulation-distance. |
-| `update-interval` | Ticks between position checks (20 = 1 s). |
+| `update-interval` | How often bot positions are re-checked, in **ticks** (`20 ticks = 1 second`). Lower = more responsive, higher = less overhead. |
 
 ---
 
@@ -356,12 +358,12 @@ swap:
   enabled: false
 
   session:
-    min: 60    # Minimum session duration in seconds
-    max: 300   # Maximum session duration in seconds
+    min: 60    # Minimum session duration in seconds (e.g. 60 = 1 min, 300 = 5 min)
+    max: 300   # Maximum session duration in seconds (e.g. 300 = 5 min, 1800 = 30 min)
 
   absence:
-    min: 30    # Minimum offline time in seconds
-    max: 120   # Maximum offline time in seconds
+    min: 30    # Minimum offline time in seconds (e.g. 30 = 30 s, 120 = 2 min)
+    max: 120   # Maximum offline time in seconds (e.g. 120 = 2 min, 600 = 10 min)
 
   max-swapped-out: 0        # Max bots offline simultaneously (0 = unlimited)
   farewell-chat: true       # Bots say goodbye before leaving

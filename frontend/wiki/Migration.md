@@ -1,6 +1,6 @@
 # ᴍɪɢʀᴀᴛɪᴏɴ & ʙᴀᴄᴋᴜᴘꜱ
 
-> **Version:** 1.5.10 · **Platform:** Paper 1.21+
+> **Version:** 1.5.15  **Platform:** Paper 1.21+
 
 This page covers the **automatic config migration system**, **manual backup tools**, and **database migration utilities** built into FPP since v1.1.4. These features ensure you never lose your config or bot session data when updating the plugin.
 
@@ -280,6 +280,10 @@ If something goes wrong after an update, you can restore from a backup:
 | 39 | 1.5.10 | Removed `fake-chat.chat-format` — bots now send via `Player.chat()` (real pipeline) |
 | 40 | 1.5.10 | Added fake-chat realism keys: `typing-delay`, `burst-chance`, `burst-delay`, `reply-to-mentions`, `mention-reply-chance`, `reply-delay`, `stagger-interval`, `activity-variation`, `history-size` |
 | **41** | **1.5.10** | Added `logging.debug.chat`, `fake-chat.remote-format`, `fake-chat.event-triggers` (on-player-join, on-death, on-player-leave), `fake-chat.keyword-reactions` |
+| 42 | 1.5.12 | Added `peak-hours` section with schedule, day-overrides, stagger-seconds, timezone |
+| 43 | 1.5.12 | Added `peak-hours.min-online`, `peak-hours.notify-transitions` |
+| 44 | 1.5.12 | Removed `peak-hours.auto-enable-swap` |
+| **45** | **1.5.15** | Config version stamp update — no structural key changes; timing comments clarified throughout (ticks vs seconds with conversion examples) |
 
 ## Troubleshooting
 

@@ -50,7 +50,7 @@
 ### Step 2: **Install FPP**
 
 1. **Download FPP** from [Modrinth](https://modrinth.com/plugin/fake-player-plugin-(fpp))
-2. **Place** `fpp-1.5.12.jar` in your `plugins/` folder
+2. **Place** `fpp-1.5.15.jar` in your `plugins/` folder
 3. **Verify** your plugins folder:
 
 ```
@@ -58,7 +58,7 @@
 ├── 📦 packetevents-spigot-2.x.x.jar
 ├── 📦 PlaceholderAPI-2.11.6.jar (optional)
 ├── 📦 LuckPerms-Bukkit-5.5.x.jar (optional)
-└── 📦 fpp-1.5.12.jar
+└── 📦 fpp-1.5.15.jar
 ```
 
 ### Step 3: **First Launch**
@@ -68,11 +68,11 @@
 
 ```
 [FPP] ══════════════════════════════════════════════════
-[FPP]   FakePlayerPlugin v1.5.12
+[FPP]   FakePlayerPlugin v1.5.15
 [FPP] ──────────────────────────────────────────────────
 [FPP] ── Runtime ─────────────────────────────────────────
 [FPP]   [+] Database ........ SQLite (local)
-[FPP]   Config version ...... v44 ✔
+[FPP]   Config version ...... v45 ✔
 [FPP] ── Features ────────────────────────────────────────
 [FPP]   [+] Physical bodies . enabled
 [FPP]   [+] Persistence ..... enabled

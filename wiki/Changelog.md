@@ -1,7 +1,23 @@
 # 📋 Changelog
 
 > **Full version history for Fake Player Plugin**  
-> Latest version: **v1.5.12** · Released: 2026-04-05
+> Latest version: **v1.5.15** · Released: 2026-04-06
+
+---
+
+## v1.5.15 *(2026-04-06)*
+
+### 📝 Config Clarity Improvements
+- All timing-related values in `config.yml` now clearly state their unit (ticks or seconds) with human-readable conversion examples
+- `join-delay` / `leave-delay` section header updated to *"Values are in TICKS — 20 ticks = 1 second"* with a quick-reference line; `min`/`max` keys now carry inline tick-unit comments
+- `death.respawn-delay` comment now shows seconds equivalents: `15 = 0.75 s · 60 = 3 s · 100 = 5 s`
+- `chunk-loading.update-interval` comment clarified: *"in ticks (20 ticks = 1 second). Lower = more responsive, higher = less overhead."*
+- `swap.session` / `swap.absence` inline comments updated with real-world time examples (e.g. `60 = 1 min`, `300 = 5 min`)
+
+### 🔧 Build Pipeline Fixes
+- ProGuard: removed `**.yml` from `-adaptresourcefilecontents` — prevents charset corruption of `plugin.yml` and language files on Windows builds
+- ProGuard: removed `-dontpreverify` — `StackMapTable` attributes preserved; obfuscated jar passes JVM verifier without `VerifyError`
+- ProGuard: MySQL / SQLite shaded classes excluded from preverification to prevent `IncompleteClassHierarchyException`; merged back verbatim into final jar
 
 ---
 

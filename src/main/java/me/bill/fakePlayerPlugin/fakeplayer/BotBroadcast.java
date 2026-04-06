@@ -75,7 +75,24 @@ public final class BotBroadcast {
     // ── Public API ────────────────────────────────────────────────────────────
 
     /**
+     * Builds the join {@link Component} from {@code bot-join} in {@code en.yml}.
+     * Does not check {@code Config.joinMessage()} — callers must guard that.
+     */
+    public static Component joinComponent(FakePlayer fp) {
+        return buildMessage("bot-join", fp.getDisplayName());
+    }
+
+    /**
+     * Builds the leave {@link Component} from {@code bot-leave} in {@code en.yml}.
+     * Does not check {@code Config.leaveMessage()} — callers must guard that.
+     */
+    public static Component leaveComponent(String displayName) {
+        return buildMessage("bot-leave", displayName);
+    }
+
+    /**
      * Broadcasts a join message if {@code messages.join-message} is enabled.
+     * Used for bodyless bots (no {@code PlayerJoinEvent} fires for them).
      */
     public static void broadcastJoin(FakePlayer fp) {
         if (!Config.joinMessage()) return;

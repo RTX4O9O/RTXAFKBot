@@ -12,6 +12,8 @@ import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import io.papermc.paper.event.player.AsyncChatEvent;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
+import org.bukkit.Sound;
+import org.bukkit.SoundCategory;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -25,6 +27,8 @@ import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemFlag;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.inventory.meta.SkullMeta;
+import com.destroystokyo.paper.profile.PlayerProfile;
 
 import java.util.*;
 
@@ -51,26 +55,40 @@ import java.util.*;
 public final class SettingGui implements Listener {
 
     // ── Colour palette ────────────────────────────────────────────────────────
-    private static final TextColor ACCENT       = TextColor.fromHexString("#0079FF");
-    private static final TextColor ON_GREEN     = TextColor.fromHexString("#66CC66");
-    private static final TextColor OFF_RED      = NamedTextColor.RED;
-    private static final TextColor VALUE_YELLOW = TextColor.fromHexString("#FFDD57");
-    private static final TextColor YELLOW       = NamedTextColor.YELLOW;
-    private static final TextColor GRAY         = NamedTextColor.GRAY;
-    private static final TextColor DARK_GRAY    = NamedTextColor.DARK_GRAY;
-    private static final TextColor WHITE        = NamedTextColor.WHITE;
+    private static final TextColor ACCENT         = TextColor.fromHexString("#0079FF");
+    private static final TextColor ON_GREEN       = TextColor.fromHexString("#66CC66");
+    private static final TextColor OFF_RED        = NamedTextColor.RED;
+    private static final TextColor VALUE_YELLOW   = TextColor.fromHexString("#FFDD57");
+    private static final TextColor YELLOW         = NamedTextColor.YELLOW;
+    private static final TextColor GRAY           = NamedTextColor.GRAY;
+    private static final TextColor DARK_GRAY      = NamedTextColor.DARK_GRAY;
+    private static final TextColor WHITE          = NamedTextColor.WHITE;
+    private static final TextColor COMING_SOON_COLOR = TextColor.fromHexString("#FFA500");
 
     // ── GUI geometry ──────────────────────────────────────────────────────────
     private static final int SIZE              = 27;
     private static final int SETTINGS_PER_PAGE = 18;
     private static final int SLOT_RESET        = 18;
-    private static final int SLOT_CLOSE        = 26;
+    private static final int SLOT_NAV_PREV     = 19;   // ← Prev page (replaces filler)
+    private static final int SLOT_NAV_NEXT     = 26;   // → Next page (replaces old close)
     private static final int[] CAT_SLOTS       = { 20, 21, 22, 23, 24, 25 };
+
+    // ── Owner skull cache  (Skin System entry icon) ───────────────────────────
+    /** UUID of El_Pepes — the owner whose head is shown on the Skin System entry. */
+    private static final java.util.UUID SKIN_OWNER_UUID =
+            java.util.UUID.fromString("a318f9f4-e2bf-479c-a47a-6a2c1b0b9e66");
+    private static final String SKIN_OWNER_NAME = "El_Pepes";
+    /** Refresh the skull from Mojang at most once every 30 minutes. */
+    private static final long SKULL_TTL_MS = 30L * 60 * 1_000;
+
+    /** Cached player-head ItemStack for the Skin System entry.  Volatile for safe cross-thread writes. */
+    private volatile ItemStack cachedOwnerSkull = null;
+    private volatile long      skullRefreshedAt = 0L;
 
     // ── State ─────────────────────────────────────────────────────────────────
     private final FakePlayerPlugin plugin;
 
-    /** Per-player GUI state: [categoryIndex]. */
+    /** Per-player GUI state: [categoryIndex, pageIndex]. */
     private final Map<UUID, int[]> sessions = new HashMap<>();
 
     /**
@@ -99,7 +117,7 @@ public final class SettingGui implements Listener {
     public SettingGui(FakePlayerPlugin plugin) {
         this.plugin     = plugin;
         this.categories = new Category[]{
-            general(), body(), chat(), swap(), peaks()
+            general(), body(), chat(), swap(), peaks(), pvp()
         };
     }
 
@@ -109,7 +127,7 @@ public final class SettingGui implements Listener {
 
     /** Opens the settings GUI for {@code player} at the General category. */
     public void open(Player player) {
-        sessions.put(player.getUniqueId(), new int[]{ 0 });
+        sessions.put(player.getUniqueId(), new int[]{ 0, 0 });   // [catIdx, pageIdx]
         build(player);
     }
 
@@ -132,29 +150,60 @@ public final class SettingGui implements Listener {
 
         int slot   = event.getSlot();
         int catIdx = state[0];
+        int pageIdx = state[1];
 
-        // ── Close button ──────────────────────────────────────────────────
-        if (slot == SLOT_CLOSE) {
-            player.closeInventory();
-            return;
-        }
         // ── Reset button ──────────────────────────────────────────────────
         if (slot == SLOT_RESET) {
+            playUiClick(player, 0.6f);
             resetCategory(player, catIdx);
+            return;
+        }
+        // ── Prev page button (slot 19) ────────────────────────────────────
+        if (slot == SLOT_NAV_PREV && pageIdx > 0) {
+            playUiClick(player, 1.0f);
+            state[1]--;
+            build(player);
+            return;
+        }
+        // ── Next page button (slot 26) ────────────────────────────────────
+        if (slot == SLOT_NAV_NEXT) {
+            List<SettingEntry> settings = categories[catIdx].settings;
+            if ((pageIdx + 1) * SETTINGS_PER_PAGE < settings.size()) {
+                playUiClick(player, 1.0f);
+                state[1]++;
+                build(player);
+            }
             return;
         }
         // ── Category tabs ─────────────────────────────────────────────────
         for (int i = 0; i < CAT_SLOTS.length; i++) {
             if (slot == CAT_SLOTS[i] && i < categories.length) {
-                state[0] = i; build(player); return;
+                if (i != catIdx) playUiClick(player, 1.3f);
+                state[0] = i;
+                state[1] = 0;   // reset page when switching categories
+                build(player);
+                return;
             }
         }
-        // ── Settings (rows 1 & 2: slots 0-17) ────────────────────────────
+        // ── Settings (rows 1 & 2: slots 0-17, page-aware) ────────────────
         if (slot < 18) {
             List<SettingEntry> settings = categories[catIdx].settings;
-            if (slot >= settings.size()) return;
+            int entryIdx = pageIdx * SETTINGS_PER_PAGE + slot;
+            if (entryIdx >= settings.size()) return;
 
-            SettingEntry entry = settings.get(slot);
+            SettingEntry entry = settings.get(entryIdx);
+
+            // Coming-soon entries: play villager-no sound and deny with actionbar
+            if (entry.type == SettingType.COMING_SOON) {
+                player.playSound(player.getLocation(),
+                        Sound.ENTITY_VILLAGER_NO, SoundCategory.MASTER, 0.8f, 1.0f);
+                player.sendActionBar(Component.empty()
+                    .decoration(TextDecoration.ITALIC, false)
+                    .append(Component.text("⊘ ").color(COMING_SOON_COLOR))
+                    .append(Component.text(entry.label + "  ").color(WHITE).decoration(TextDecoration.BOLD, false))
+                    .append(Component.text("— ᴄᴏᴍɪɴɢ ꜱᴏᴏɴ").color(COMING_SOON_COLOR).decoration(TextDecoration.BOLD, true)));
+                return;
+            }
 
             if (entry.type == SettingType.TOGGLE) {
                 // Toggles flip in-place — no sign editor needed
@@ -163,10 +212,13 @@ public final class SettingGui implements Listener {
                 Config.reload();
                 applyLiveEffect(entry.configKey);
                 String newVal = entry.currentValueString(plugin);
+                // High pitch = turned ON (positive feedback), low pitch = turned OFF
+                playUiClick(player, newVal.startsWith("✔") ? 1.2f : 0.85f);
                 sendActionBarConfirm(player, entry.label, newVal);
                 build(player);
             } else {
                 // Numeric / cycle settings → prompt player to type in chat
+                playUiClick(player, 1.0f);
                 openChatInput(player, entry, state.clone());
             }
         }
@@ -391,7 +443,8 @@ public final class SettingGui implements Listener {
         int[]  state = sessions.get(uuid);
         if (state == null) return;
 
-        int catIdx = state[0];
+        int catIdx  = state[0];
+        int pageIdx = state[1];
         Category cat = categories[catIdx];
 
         GuiHolder holder = new GuiHolder(uuid);
@@ -404,31 +457,35 @@ public final class SettingGui implements Listener {
 
         Inventory inv = Bukkit.createInventory(holder, SIZE, title);
 
-        // Row 1 (slots 0-8): settings 1-9 — empty slots left blank (no filler glass)
+        // ── Settings (rows 1–2, slots 0-17) — page-aware ─────────────────────
         int settingsCount = cat.settings.size();
-        for (int i = 0; i < Math.min(9, settingsCount); i++) {
-            inv.setItem(i, buildSettingItem(cat.settings.get(i)));
+        int startIdx      = pageIdx * SETTINGS_PER_PAGE;
+        int endIdx        = Math.min(startIdx + SETTINGS_PER_PAGE, settingsCount);
+        for (int i = startIdx; i < endIdx; i++) {
+            inv.setItem(i - startIdx, buildSettingItem(cat.settings.get(i)));
         }
 
-        // Row 2 (slots 9-17): settings 10-18 — empty slots left blank (no filler glass)
-        for (int i = 9; i < Math.min(18, settingsCount); i++) {
-            inv.setItem(i, buildSettingItem(cat.settings.get(i)));
-        }
-
-        // Row 3 (slots 18-26): [Reset][Filler][Cat1-6][Filler][Close]
+        // ── Row 3 (slots 18-26): navigation bar ───────────────────────────────
         ItemStack nav = glassFiller(Material.GRAY_STAINED_GLASS_PANE);
         for (int i = 18; i < 27; i++) inv.setItem(i, nav);
 
-        // Reset button (bottom left, slot 18)
+        // Reset button (slot 18)
         inv.setItem(SLOT_RESET, buildResetButton());
 
-        // Category tabs (slots 20-25, shifted 2 spaces right)
+        // Prev page button (slot 19) — only when not on first page
+        if (pageIdx > 0) {
+            inv.setItem(SLOT_NAV_PREV, buildNavButton(false));
+        }
+
+        // Category tabs (slots 20-25)
         for (int i = 0; i < CAT_SLOTS.length && i < categories.length; i++) {
             inv.setItem(CAT_SLOTS[i], buildCategoryTab(i, i == catIdx));
         }
 
-        // Close button (far right, slot 26)
-        inv.setItem(SLOT_CLOSE, buildCloseButton());
+        // Next page button (slot 26) — only when more pages exist
+        if (endIdx < settingsCount) {
+            inv.setItem(SLOT_NAV_NEXT, buildNavButton(true));
+        }
 
         // Mark as rebuild so the InventoryCloseEvent fired by openInventory is ignored
         pendingRebuild.add(uuid);
@@ -442,6 +499,38 @@ public final class SettingGui implements Listener {
     // ═════════════════════════════════════════════════════════════════════════
 
     private ItemStack buildSettingItem(SettingEntry entry) {
+        // ── Coming-soon entries get their own distinct locked look ─────────────
+        if (entry.type == SettingType.COMING_SOON) {
+            // Skin entry: use the owner's real player head instead of a static icon
+            ItemStack item = "skin.guaranteed-skin".equals(entry.configKey)
+                    ? getOwnerSkull()
+                    : new ItemStack(entry.icon);
+            ItemMeta  meta = item.getItemMeta();
+            meta.displayName(Component.empty()
+                .decoration(TextDecoration.ITALIC, false)
+                .append(Component.text("⊘ ").color(COMING_SOON_COLOR))
+                .append(Component.text(entry.label).color(COMING_SOON_COLOR).decoration(TextDecoration.BOLD, true)));
+            List<Component> lore = new ArrayList<>();
+            lore.add(Component.empty());
+            lore.add(Component.empty().decoration(TextDecoration.ITALIC, false)
+                .append(Component.text("ᴠᴀʟᴜᴇ  ").color(DARK_GRAY))
+                .append(Component.text("⚠ ᴄᴏᴍɪɴɢ ꜱᴏᴏɴ").color(COMING_SOON_COLOR).decoration(TextDecoration.BOLD, true)));
+            lore.add(Component.empty());
+            for (String line : entry.description.split("\\\\n|\n")) {
+                if (!line.isBlank()) {
+                    lore.add(Component.empty().decoration(TextDecoration.ITALIC, false)
+                        .append(Component.text(line).color(GRAY)));
+                }
+            }
+            lore.add(Component.empty());
+            lore.add(Component.empty().decoration(TextDecoration.ITALIC, false)
+                .append(Component.text("⊘ ").color(COMING_SOON_COLOR))
+                .append(Component.text("ꜰᴇᴀᴛᴜʀᴇ ᴜɴᴀᴠᴀɪʟᴀʙʟᴇ").color(DARK_GRAY)));
+            meta.lore(lore);
+            item.setItemMeta(meta);
+            return item;
+        }
+
         boolean isToggle = entry.type == SettingType.TOGGLE;
         boolean isOn     = isToggle && plugin.getConfig().getBoolean(entry.configKey, false);
 
@@ -518,15 +607,78 @@ public final class SettingGui implements Listener {
         return item;
     }
 
-    private ItemStack buildCloseButton() {
-        ItemStack item = new ItemStack(Material.BARRIER);
-        ItemMeta  meta = item.getItemMeta();
+    private ItemStack buildNavButton(boolean isNext) {
+        Material  mat   = isNext ? Material.LIME_STAINED_GLASS_PANE : Material.MAGENTA_STAINED_GLASS_PANE;
+        String    label = isNext ? "→  ɴᴇxᴛ ᴘᴀɢᴇ" : "←  ᴘʀᴇᴠ ᴘᴀɢᴇ";
+        TextColor col   = isNext ? ON_GREEN : COMING_SOON_COLOR;
+        ItemStack item  = new ItemStack(mat);
+        ItemMeta  meta  = item.getItemMeta();
         meta.displayName(Component.empty().decoration(TextDecoration.ITALIC, false)
-            .append(Component.text("✕  ᴄʟᴏꜱᴇ").color(OFF_RED).decoration(TextDecoration.BOLD, false)));
+            .append(Component.text(label).color(col).decoration(TextDecoration.BOLD, true)));
         meta.lore(List.of(Component.empty().decoration(TextDecoration.ITALIC, false)
-            .append(Component.text("ᴀʟʟ ᴄʜᴀɴɢᴇꜱ ᴀʀᴇ ꜱᴀᴠᴇᴅ ɪɴꜱᴛᴀɴᴛʟʏ.").color(DARK_GRAY))));
+            .append(Component.text("ᴄʟɪᴄᴋ ᴛᴏ ɢᴏ ᴛᴏ ᴛʜᴇ " + (isNext ? "ɴᴇxᴛ" : "ᴘʀᴇᴠɪᴏᴜꜱ") + " ᴘᴀɢᴇ.").color(DARK_GRAY))));
         item.setItemMeta(meta);
         return item;
+    }
+
+    // ── Owner skull helpers ───────────────────────────────────────────────────
+
+    /**
+     * Returns a player-head {@link ItemStack} for {@value SKIN_OWNER_NAME}.
+     * The result is cached for {@value #SKULL_TTL_MS} ms; when stale a fresh
+     * Mojang profile is fetched asynchronously so the next call gets the
+     * up-to-date skin (handles skin changes automatically).
+     */
+    private ItemStack getOwnerSkull() {
+        long now = System.currentTimeMillis();
+        ItemStack cached = cachedOwnerSkull;
+        if (cached != null && (now - skullRefreshedAt) < SKULL_TTL_MS) {
+            return cached.clone();
+        }
+        // Build immediately from the local offline-player cache (no Mojang round-trip)
+        ItemStack skull = buildSkullSync();
+        cachedOwnerSkull = skull;
+        skullRefreshedAt = now;
+        // Kick off an async Mojang profile update — next render will get the fresh skin
+        scheduleSkullRefresh();
+        return skull.clone();
+    }
+
+    /** Builds the skull synchronously using Bukkit's local profile cache. */
+    private ItemStack buildSkullSync() {
+        ItemStack skull = new ItemStack(Material.PLAYER_HEAD);
+        SkullMeta meta  = (SkullMeta) skull.getItemMeta();
+        if (meta != null) {
+            PlayerProfile profile = Bukkit.createProfile(SKIN_OWNER_UUID, SKIN_OWNER_NAME);
+            meta.setPlayerProfile(profile);
+            skull.setItemMeta(meta);
+        }
+        return skull;
+    }
+
+    /**
+     * Fetches the latest skin textures for {@value SKIN_OWNER_NAME} from Mojang
+     * asynchronously via {@link PlayerProfile#complete(boolean)} and stores
+     * the updated skull in {@link #cachedOwnerSkull}.
+     * Runs off the main thread so there is no server hiccup.
+     */
+    private void scheduleSkullRefresh() {
+        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+            try {
+                PlayerProfile profile = Bukkit.createProfile(SKIN_OWNER_UUID, SKIN_OWNER_NAME);
+                profile.complete(true);   // fetches textures from Mojang if not cached
+                ItemStack skull = new ItemStack(Material.PLAYER_HEAD);
+                SkullMeta meta  = (SkullMeta) skull.getItemMeta();
+                if (meta != null) {
+                    meta.setPlayerProfile(profile);
+                    skull.setItemMeta(meta);
+                }
+                cachedOwnerSkull = skull;
+                skullRefreshedAt = System.currentTimeMillis();
+            } catch (Exception ignored) {
+                // Network unavailable or Mojang rate-limit — keep the old cache
+            }
+        });
     }
 
     private ItemStack buildResetButton() {
@@ -619,6 +771,22 @@ public final class SettingGui implements Listener {
     }
 
     /**
+     * Plays the Minecraft UI button-click sound privately to {@code player}.
+     * {@code pitch} controls the feel:
+     * <ul>
+     *   <li>~1.2 — toggle ON (bright, positive)</li>
+     *   <li>~0.85 — toggle OFF (muted, neutral)</li>
+     *   <li>~1.3 — category tab switch (light tap)</li>
+     *   <li>~1.0 — numeric input prompt (neutral)</li>
+     *   <li>~0.8 — close button</li>
+     *   <li>~0.6 — reset button (heavier)</li>
+     * </ul>
+     */
+    private static void playUiClick(Player player, float pitch) {
+        player.playSound(player.getLocation(), Sound.UI_BUTTON_CLICK, SoundCategory.MASTER, 0.5f, pitch);
+    }
+
+    /**
      * Resets all settings in the specified category to their default values
      * as defined in the JAR's {@code config.yml}.
      */
@@ -680,9 +848,6 @@ public final class SettingGui implements Listener {
                 SettingEntry.toggle("tab-list.enabled",       "ᴛᴀʙ-ʟɪꜱᴛ ᴠɪꜱɪʙɪʟɪᴛʏ",
                     "ᴅɪꜱᴘʟᴀʏ ʙᴏᴛꜱ ᴀꜱ ᴇɴᴛʀɪᴇꜱ\nɪɴ ᴛʜᴇ ᴘʟᴀʏᴇʀ ᴛᴀʙ ʟɪꜱᴛ.",
                     Material.NAME_TAG),
-                SettingEntry.toggle("messages.kill-message",  "ᴋɪʟʟ ᴍᴇꜱꜱᴀɢᴇꜱ",
-                    "ᴀɴɴᴏᴜɴᴄᴇ ɪɴ ᴄʜᴀᴛ ᴡʜᴇɴ ᴀ\nʀᴇᴀʟ ᴘʟᴀʏᴇʀ ᴋɪʟʟꜱ ᴀ ʙᴏᴛ.",
-                    Material.PLAYER_HEAD),
                 SettingEntry.toggle("chunk-loading.enabled",  "ᴄʜᴜɴᴋ ʟᴏᴀᴅɪɴɢ",
                     "ʙᴏᴛꜱ ᴋᴇᴇᴘ ꜱᴜʀʀᴏᴜɴᴅɪɴɢ ᴄʜᴜɴᴋꜱ\nʟᴏᴀᴅᴇᴅ ʟɪᴋᴇ ʀᴇᴀʟ ᴘʟᴀʏᴇʀꜱ.",
                     Material.GRASS_BLOCK),
@@ -719,9 +884,12 @@ public final class SettingGui implements Listener {
             Material.ARMOR_STAND, Material.ARMOR_STAND,
             Material.LIME_STAINED_GLASS_PANE,
             List.of(
-                SettingEntry.toggle("body.enabled",           "ꜱᴘᴀᴡɴ ʙᴏᴅʏ",
-                    "ɢɪᴠᴇ ᴇᴀᴄʜ ʙᴏᴛ ᴀ ᴠɪꜱɪʙʟᴇ ᴘʟᴀʏᴇʀ\nᴇɴᴛɪᴛʏ ɪɴ ᴛʜᴇ ᴡᴏʀʟᴅ.",
+                SettingEntry.comingSoon("body.enabled",           "ꜱᴘᴀᴡɴ ʙᴏᴅʏ",
+                    "ᴀʟʟᴏᴡ ʙᴏᴛꜱ ᴛᴏ ᴇxɪꜱᴛ ᴡɪᴛʜᴏᴜᴛ ᴀ\nᴘʜʏꜱɪᴄᴀʟ ᴇɴᴛɪᴛʏ (ᴛᴀʙ-ʟɪꜱᴛ ᴏɴʟʏ).",
                     Material.ARMOR_STAND),
+                SettingEntry.comingSoon("skin.guaranteed-skin",   "ꜱᴋɪɴ ꜱʏꜱᴛᴇᴍ",
+                    "ᴄᴜꜱᴛᴏᴍ ꜱᴋɪɴꜱ ꜰᴏʀ ʙᴏᴛꜱ.\nᴛʜɪꜱ ꜰᴇᴀᴛᴜʀᴇ ɪꜱ ɪɴ ᴅᴇᴠᴇʟᴏᴘᴍᴇɴᴛ.",
+                    Material.PLAYER_HEAD),
                 SettingEntry.toggle("body.pushable",          "ᴘᴜꜱʜᴀʙʟᴇ",
                     "ᴀʟʟᴏᴡ ᴘʟᴀʏᴇʀꜱ ᴀɴᴅ ᴇɴᴛɪᴛɪᴇꜱ\nᴛᴏ ᴘᴜꜱʜ ʙᴏᴛ ʙᴏᴅɪᴇꜱ.",
                     Material.PISTON),
@@ -853,6 +1021,79 @@ public final class SettingGui implements Listener {
             ));
     }
 
+    private Category pvp() {
+        return new Category("⚔ ᴘᴠᴘ ʙᴏᴛ",
+            Material.NETHERITE_SWORD, Material.IRON_SWORD,
+            Material.RED_STAINED_GLASS_PANE,
+            List.of(
+                // ── Page 1 (slots 0-17) ───────────────────────────────────────
+                SettingEntry.comingSoon("pvp-ai.difficulty",       "ᴅɪꜰꜰɪᴄᴜʟᴛʏ",
+                    "ꜱᴇᴛ ᴛʜᴇ ʙᴏᴛ'ꜱ ꜱᴋɪʟʟ ʟᴇᴠᴇʟ.\nɴᴘᴄ / ᴇᴀꜱʏ / ᴍᴇᴅɪᴜᴍ / ʜᴀʀᴅ / ᴛɪᴇʀ1 / ʜᴀᴄᴋᴇʀ.",
+                    Material.DIAMOND_SWORD),
+                SettingEntry.comingSoon("pvp-ai.combat-mode",      "ᴄᴏᴍʙᴀᴛ ᴍᴏᴅᴇ",
+                    "ꜱᴡɪᴛᴄʜ ʙᴇᴛᴡᴇᴇɴ ᴄʀʏꜱᴛᴀʟ ᴘᴠᴘ\nᴀɴᴅ ꜱᴡᴏʀᴅ ꜰɪɢʜᴛɪɴɢ ꜱᴛʏʟᴇ.",
+                    Material.END_CRYSTAL),
+                SettingEntry.comingSoon("pvp-ai.critting",         "ᴄʀɪᴛᴛɪɴɢ",
+                    "ʙᴏᴛ ʟᴀɴᴅꜱ ᴄʀɪᴛɪᴄᴀʟ ʜɪᴛꜱ ʙʏ\nꜰᴀʟʟɪɴɢ ᴅᴜʀɪɴɢ ᴀᴛᴛᴀᴄᴋꜱ.",
+                    Material.NETHERITE_SWORD),
+                SettingEntry.comingSoon("pvp-ai.s-tapping",        "ꜱ-ᴛᴀᴘᴘɪɴɢ",
+                    "ʙᴏᴛ ᴛᴀᴘꜱ ꜱ ᴅᴜʀɪɴɢ ꜱᴡɪɴɢ\nᴛᴏ ʀᴇꜱᴇᴛ ᴀᴛᴛᴀᴄᴋ ᴄᴏᴏʟᴅᴏᴡɴ.",
+                    Material.CLOCK),
+                SettingEntry.comingSoon("pvp-ai.strafing",         "ꜱᴛʀᴀꜰɪɴɢ",
+                    "ʙᴏᴛ ᴄɪʀᴄʟᴇꜱ ᴀʀᴏᴜɴᴅ ᴛʜᴇ ᴛᴀʀɢᴇᴛ\nᴡʜɪʟᴇ ꜰɪɢʜᴛɪɴɢ.",
+                    Material.FEATHER),
+                SettingEntry.comingSoon("pvp-ai.shield",           "ꜱʜɪᴇʟᴅɪɴɢ",
+                    "ʙᴏᴛ ᴄᴀʀʀɪᴇꜱ ᴀɴᴅ ᴜꜱᴇꜱ ᴀ ꜱʜɪᴇʟᴅ\nᴛᴏ ʙʟᴏᴄᴋ ɪɴᴄᴏᴍɪɴɢ ᴀᴛᴛᴀᴄᴋꜱ.",
+                    Material.SHIELD),
+                SettingEntry.comingSoon("pvp-ai.speed-buffs",      "ꜱᴘᴇᴇᴅ ʙᴜꜰꜰꜱ",
+                    "ʙᴏᴛ ʜᴀꜱ ꜱᴘᴇᴇᴅ & ꜱᴛʀᴇɴɢᴛʜ ᴘᴏᴛɪᴏɴ\nᴇꜰꜰᴇᴄᴛꜱ ᴀᴄᴛɪᴠᴇ.",
+                    Material.SUGAR),
+                SettingEntry.comingSoon("pvp-ai.jump-reset",       "ᴊᴜᴍᴘ ʀᴇꜱᴇᴛ",
+                    "ʙᴏᴛ ᴊᴜᴍᴘꜱ ᴊᴜꜱᴛ ʙᴇꜰᴏʀᴇ ꜱᴡɪɴɢɪɴɢ\nᴛᴏ ɢᴀɪɴ ᴛʜᴇ W-ᴛᴀᴘ ᴋɴᴏᴄᴋʙᴀᴄᴋ ʙᴏɴᴜꜱ.",
+                    Material.SLIME_BALL),
+                SettingEntry.comingSoon("pvp-ai.random",           "ʀᴀɴᴅᴏᴍ ᴘʟᴀʏꜱᴛʏʟᴇ",
+                    "ʀᴀɴᴅᴏᴍɪꜱᴇ ᴛᴇᴄʜɴɪQᴜᴇꜱ ᴇᴀᴄʜ ʀᴏᴜɴᴅ\nᴛᴏ ᴋᴇᴇᴘ ᴛʜᴇ ꜰɪɢʜᴛ ᴜɴᴘʀᴇᴅɪᴄᴛᴀʙʟᴇ.",
+                    Material.COMPARATOR),
+                SettingEntry.comingSoon("pvp-ai.gear",             "ɢᴇᴀʀ ᴛʏᴘᴇ",
+                    "ʙᴏᴛ ᴡᴇᴀʀꜱ ᴅɪᴀᴍᴏɴᴅ ᴏʀ\nɴᴇᴛʜᴇʀɪᴛᴇ ᴀʀᴍᴏᴜʀ.",
+                    Material.DIAMOND_CHESTPLATE),
+                SettingEntry.comingSoon("pvp-ai.defensive-mode",   "ᴅᴇꜰᴇɴꜱɪᴠᴇ ᴍᴏᴅᴇ",
+                    "ʙᴏᴛ ᴏɴʟʏ ꜰɪɢʜᴛꜱ ʙᴀᴄᴋ ᴡʜᴇɴ\nᴛʜᴇ ᴘʟᴀʏᴇʀ ᴀᴛᴛᴀᴄᴋꜱ ꜰɪʀꜱᴛ.",
+                    Material.BOW),
+                SettingEntry.comingSoon("pvp-ai.detect-range",     "ᴅᴇᴛᴇᴄᴛ ʀᴀɴɢᴇ",
+                    "ʜᴏᴡ ꜰᴀʀ ᴛʜᴇ ʙᴏᴛ ꜱᴇᴇꜱ ᴘʟᴀʏᴇʀꜱ\nᴀɴᴅ ʟᴏᴄᴋꜱ ᴏɴ ᴀꜱ ᴛᴀʀɢᴇᴛ.",
+                    Material.SPYGLASS),
+                SettingEntry.comingSoon("pvp-ai.sprint",           "ꜱᴘʀɪɴᴛɪɴɢ",
+                    "ʙᴏᴛ ꜱᴘʀɪɴᴛꜱ ᴛᴏᴡᴀʀᴅꜱ ᴛʜᴇ ᴛᴀʀɢᴇᴛ\nᴅᴜʀɪɴɢ ᴄᴏᴍʙᴀᴛ.",
+                    Material.GOLDEN_BOOTS),
+                SettingEntry.comingSoon("pvp-ai.pearl",            "ᴇɴᴅᴇʀ ᴘᴇᴀʀʟ",
+                    "ʙᴏᴛ ᴛʜʀᴏᴡꜱ ᴇɴᴅᴇʀ ᴘᴇᴀʀʟꜱ ᴛᴏ\nᴄʟᴏꜱᴇ ᴛʜᴇ ɢᴀᴘ ᴏʀ ᴇꜱᴄᴀᴘᴇ.",
+                    Material.ENDER_PEARL),
+                SettingEntry.comingSoon("pvp-ai.pearl-spam",       "ᴘᴇᴀʀʟ ꜱᴘᴀᴍ",
+                    "ʙᴏᴛ ꜱᴘᴀᴍꜱ ᴘᴇᴀʀʟꜱ ɪɴ ʙᴜʀꜱᴛꜱ\nꜰᴏʀ ᴀɢɢʀᴇꜱꜱɪᴠᴇ ɢᴀᴘ-ᴄʟᴏꜱɪɴɢ.",
+                    Material.ENDER_EYE),
+                SettingEntry.comingSoon("pvp-ai.walk-backwards",   "ᴡᴀʟᴋ ʙᴀᴄᴋᴡᴀʀᴅꜱ",
+                    "ʙᴏᴛ ʙᴀᴄᴋꜱ ᴀᴡᴀʏ ᴡʜɪʟᴇ ꜱᴡɪɴɢɪɴɢ\nᴛᴏ ᴄᴏɴᴛʀᴏʟ ᴋɴᴏᴄᴋʙᴀᴄᴋ.",
+                    Material.LEATHER_BOOTS),
+                SettingEntry.comingSoon("pvp-ai.hole-mode",        "ʜᴏʟᴇ ᴍᴏᴅᴇ",
+                    "ʙᴏᴛ ᴘᴀᴛʜꜰɪɴᴅꜱ ᴛᴏ ᴀɴ ᴏʙꜱɪᴅɪᴀɴ\nʜᴏʟᴇ ᴛᴏ ᴘʀᴏᴛᴇᴄᴛ ɪᴛꜱᴇʟꜰ.",
+                    Material.OBSIDIAN),
+                SettingEntry.comingSoon("pvp-ai.kit",              "ᴋɪᴛ ᴘʀᴇꜱᴇᴛ",
+                    "ꜱᴇʟᴇᴄᴛ ᴛʜᴇ ʙᴏᴛ'ꜱ ʟᴏᴀᴅᴏᴜᴛ.\nᴋɪᴛ1 / ᴋɪᴛ2 / ᴋɪᴛ3 / ᴋɪᴛ4.",
+                    Material.CHEST),
+                // ── Page 2 (slots 0-2) ────────────────────────────────────────
+                SettingEntry.comingSoon("pvp-ai.auto-refill",      "ᴀᴜᴛᴏ-ʀᴇꜰɪʟʟ ᴛᴏᴛᴇᴍ",
+                    "ʙᴏᴛ ᴀᴜᴛᴏᴍᴀᴛɪᴄᴀʟʟʏ ʀᴇ-ᴇQᴜɪᴘꜱ ᴀ\nᴛᴏᴛᴇᴍ ᴀꜰᴛᴇʀ ᴘᴏᴘᴘɪɴɢ ᴏɴᴇ.",
+                    Material.TOTEM_OF_UNDYING),
+                SettingEntry.comingSoon("pvp-ai.auto-respawn",     "ᴀᴜᴛᴏ-ʀᴇꜱᴘᴀᴡɴ",
+                    "ʙᴏᴛ ᴀᴜᴛᴏᴍᴀᴛɪᴄᴀʟʟʏ ʀᴇꜱᴘᴀᴡɴꜱ\nᴀɴᴅ ʀᴇᴊᴏɪɴꜱ ᴀꜰᴛᴇʀ ᴅᴇᴀᴛʜ.",
+                    Material.RESPAWN_ANCHOR),
+                SettingEntry.comingSoon("pvp-ai.spawn-protection", "ꜱᴘᴀᴡɴ ᴘʀᴏᴛᴇᴄᴛɪᴏɴ",
+                    "ʙᴏᴛ ꜱᴛᴀʏꜱ ɪɴᴠᴜʟɴᴇʀᴀʙʟᴇ ꜰᴏʀ\nᴀ ꜱʜᴏʀᴛ ɢʀᴀᴄᴇ ᴘᴇʀɪᴏᴅ ᴀᴛ ꜱᴘᴀᴡɴ.",
+                    Material.GRASS_BLOCK)
+            ));
+    }
+
     // ═════════════════════════════════════════════════════════════════════════
     //  Inner types
     // ═════════════════════════════════════════════════════════════════════════
@@ -870,7 +1111,7 @@ public final class SettingGui implements Listener {
         Material separatorGlass, List<SettingEntry> settings
     ) {}
 
-    private enum SettingType { TOGGLE, CYCLE_INT, CYCLE_DOUBLE }
+    private enum SettingType { TOGGLE, CYCLE_INT, CYCLE_DOUBLE, COMING_SOON }
 
     /**
      * Tracks an in-progress chat-input session for a single player.
@@ -923,6 +1164,12 @@ public final class SettingGui implements Listener {
                     SettingType.CYCLE_DOUBLE, null, values);
         }
 
+        /** Creates a locked "coming soon" entry — clicking plays ENTITY_VILLAGER_NO. */
+        static SettingEntry comingSoon(String key, String label, String desc, Material icon) {
+            return new SettingEntry(key, label, desc, icon,
+                    SettingType.COMING_SOON, null, null);
+        }
+
         String currentValueString(FakePlayerPlugin plugin) {
             var cfg = plugin.getConfig();
             return switch (type) {
@@ -934,6 +1181,7 @@ public final class SettingGui implements Listener {
                             ? String.valueOf((int) d)
                             : String.format("%.2f", d);
                 }
+                case COMING_SOON  -> "⚠ ᴄᴏᴍɪɴɢ ꜱᴏᴏɴ";
             };
         }
 

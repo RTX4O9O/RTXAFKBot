@@ -2,7 +2,7 @@
 /target/
 
 # Build / output
- /build/
+/build/
 dist/
 
 # Maven

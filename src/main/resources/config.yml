@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────────────────────────────────────
-#  ꜰᴀᴋᴇ ᴘʟᴀʏᴇʀ ᴘʟᴜɢɪɴ  ·  config.yml  ·  v1.5.10
+#  ꜰᴀᴋᴇ ᴘʟᴀʏᴇʀ ᴘʟᴜɢɪɴ  ·  config.yml  ·  v1.5.15
 #  Run /fpp reload to apply changes without restarting the server.
 #  Colors use MiniMessage: <#0079FF>text</#0079FF>  <gray>text</gray>
 # ─────────────────────────────────────────────────────────────────────────────
@@ -112,17 +112,18 @@ persistence:
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  JOIN / LEAVE TIMING
-#  Values are in TICKS.  20 ticks = 1 second.
-#  Each bot joins/leaves after a random tick delay in this range.
-#  Examples: 0 = instant   20 = 1 s   40 = 2 s   100 = 5 s
+#  Values are in TICKS — 20 ticks = 1 second.
+#  Each bot joins/leaves after a random delay in this range, staggering batch
+#  spawns so they look like natural player joins rather than an instant flood.
+#  Quick reference:  0 = instant · 20 = 1 s · 40 = 2 s · 100 = 5 s · 200 = 10 s
 # ─────────────────────────────────────────────────────────────────────────────
 join-delay:
-  min: 0
-  max: 1
+  min: 0    # ticks  (20 ticks = 1 second)
+  max: 1    # ticks  (e.g. 40 = 2 s, 100 = 5 s)
 
 leave-delay:
-  min: 0
-  max: 1
+  min: 0    # ticks  (20 ticks = 1 second)
+  max: 1    # ticks  (e.g. 40 = 2 s, 100 = 5 s)
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  MESSAGES
@@ -147,7 +148,7 @@ combat:
 # ─────────────────────────────────────────────────────────────────────────────
 death:
   respawn-on-death: false   # Respawn the bot after death instead of removing it
-  respawn-delay: 15          # Ticks before respawn (1 = near-instant, 20 = 1 second)
+  respawn-delay: 15          # Ticks before respawn — 20 ticks = 1 second  (15 = 0.75 s · 60 = 3 s · 100 = 5 s)
   suppress-drops: true      # Prevent bots from dropping items on death
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -158,7 +159,7 @@ death:
 chunk-loading:
   enabled: true
   radius: 0            # Chunk radius kept loaded. 0 = match server simulation-distance.
-  update-interval: 20  # Ticks between position checks (20 = 1 s). Lower = more responsive.
+  update-interval: 20  # How often bot positions are re-checked, in ticks (20 ticks = 1 second). Lower = more responsive, higher = less overhead.
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  HEAD AI
@@ -182,22 +183,29 @@ swim-ai:
 #              The pvp bot type is currently restricted to internal testing only.
 #              It will be available to all users in a future release.
 #  Controls combat behaviour for BotType.PVP bots.
-#  The bot is DYNAMIC — it always equips and uses the best item it has.
-#  The gear section only controls what it receives at spawn; hand it better
-#  items at runtime and it will switch automatically.
+#  NOTE: All settings below are locked to their defaults by the plugin until
+#        the PVP system is publicly released.  Editing them has no effect.
 # ─────────────────────────────────────────────────────────────────────────────
 pvp-ai:
-  # COMING SOON — set to false once the PVP system is ready for public use.
-  # While true, only the designated developer UUID may spawn pvp bots.
-  coming-soon: true
+  # Master enable switch for PVP bots.
+  # Forced to false by the plugin — PVP is dev-only until publicly released.
+  # Editing this has no effect; it is reset to false on every reload.
+  pvp: false
 
-  # Difficulty — attack range, timing precision, crit/s-tap frequency.
-  # easy   → 1.5 block reach, waits full cooldown, rare crits
-  # medium → 2.0 block reach, moderate aggression   (default)
-  # hard   → 2.5 block reach, sprint-resets & s-taps more often
-  # tier1  → 3.0 block reach, near-optimal combo pressure
-  # hacker → 4.6 block reach, always crits, never misses timing
+  # ── Core behaviour ───────────────────────────────────────────────────────
+  # Difficulty — attack range, timing precision, crit / s-tap frequency.
+  #   easy   → 1.5 block reach, waits full cooldown, rare crits
+  #   medium → 2.0 block reach, moderate aggression   (default)
+  #   hard   → 2.5 block reach, sprint-resets & s-taps more often
+  #   tier1  → 3.0 block reach, near-optimal combo pressure
+  #   hacker → 4.6 block reach, always crits, never misses timing
   difficulty: medium
+
+  # Combat mode: "crystal" = end-crystal PvP, "sword" = sword fighting
+  combat-mode: crystal
+
+  # Gear type: "diamond" or "netherite"
+  gear: netherite
 
   # Defensive mode: bot only retaliates when a player hits it first.
   # false = aggressive — bot attacks any player within detect-range.
@@ -205,6 +213,28 @@ pvp-ai:
 
   # Detection radius in blocks (how far the bot scans for targets).
   detect-range: 32.0
+
+  # Kit preset loaded at spawn: kit1 / kit2 / kit3 / kit4
+  kit: kit1
+
+  # ── Combat techniques ────────────────────────────────────────────────────
+  critting: true           # Bot lands critical hits by falling during attacks
+  s-tapping: true          # Bot taps S during swing to reset attack cooldown
+  strafing: true           # Bot circles around the target while fighting
+  shielding: false         # Bot equips and uses a shield to block incoming hits
+  speed-buffs: true        # Bot has Speed & Strength potion effects active
+  jump-reset: true         # Bot jump-resets (W-tap knockback bonus on hits)
+  random: false            # Randomise techniques each round for unpredictability
+  sprint: true             # Bot sprints toward the target during combat
+  walk-backwards: false    # Bot backs away while swinging to control knockback
+
+  # ── Abilities ────────────────────────────────────────────────────────────
+  pearl: true              # Bot throws ender pearls to close the gap / escape
+  pearl-spam: false        # Bot spams pearls in bursts for aggressive gap-closing
+  hole-mode: false         # Bot pathfinds to an obsidian hole to protect itself
+  auto-refill: true        # Bot automatically re-equips a totem after popping one
+  auto-respawn: true       # Bot automatically respawns and rejoins after death
+  spawn-protection: true   # Bot stays invulnerable during a short grace period at spawn
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  COLLISION & PUSH  ·  Advanced — defaults work well for most servers.
@@ -229,12 +259,12 @@ swap:
   enabled: false              # Master toggle: false = bots never swap out
 
   session:
-    min: 60                   # Minimum session duration in seconds (1 min)
-    max: 300                  # Maximum session duration in seconds (5 min)
+    min: 60                   # Minimum session duration in seconds (e.g. 60 = 1 min, 300 = 5 min)
+    max: 300                  # Maximum session duration in seconds (e.g. 300 = 5 min, 1800 = 30 min)
 
   absence:
-    min: 30                   # Minimum offline time in seconds (30 s)
-    max: 120                  # Maximum offline time in seconds (2 min)
+    min: 30                   # Minimum offline time in seconds (e.g. 30 = 30 s, 120 = 2 min)
+    max: 120                  # Maximum offline time in seconds (e.g. 120 = 2 min, 600 = 10 min)
 
   max-swapped-out: 0          # Max bots allowed offline simultaneously (0 = unlimited)
   farewell-chat: true         # Bots say goodbye before leaving
@@ -337,8 +367,8 @@ fake-chat:
   require-player-online: true  # Only chat when at least one real player is online
   chance: 0.75                 # Probability (0.0–1.0) a message fires each interval
   interval:
-    min: 5    # Seconds between messages (min)
-    max: 10   # Seconds between messages (max)
+    min: 5    # Seconds between a single bot's messages (min)
+    max: 10   # Seconds between a single bot's messages (max)
 
   # ── Realism enhancements ───────────────────────────────────────────────────
   # Simulate a typing pause (0–2.5 s) right before each message is sent.

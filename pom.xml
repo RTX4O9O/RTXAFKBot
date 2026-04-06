@@ -6,7 +6,7 @@
 
     <groupId>me.bill</groupId>
     <artifactId>fpp</artifactId>
-    <version>1.5.12</version>
+    <version>1.5.15</version>
     <packaging>jar</packaging>
 
     <name>fpp</name>
@@ -18,6 +18,19 @@
         <deploy.dir>${user.home}/Desktop/dmc/plugins</deploy.dir>
         <!-- Set to true to skip ProGuard obfuscation and deploy non-obfuscated jar -->
         <skip.proguard>false</skip.proguard>
+        <!-- Local build output folder inside the project root -->
+        <build.output.dir>${basedir}/build</build.output.dir>
+        <!-- Java executable used to run ProGuard.
+             The bundled proguard.jar has a runtime incompatibility with JDK 25 —
+             it crashes with NoClassDefFoundError: org/json/JSONException when run
+             under JDK 25. Use JDK 17 or 21 to run ProGuard.
+             Override on the command line: -Dproguard.java="C:\path\to\java.exe" -->
+        <proguard.java>C:/Program Files/Java/jdk-17/bin/java.exe</proguard.java>
+        <!-- JDK home for the ProGuard execution JDK (must match proguard.java above).
+             ProGuard preverification needs java.base.jmod to resolve java.lang.Object
+             for LUB (least-upper-bound) computation in StackMapTable generation.
+             Override with -Dproguard.jdk.home=... if your JDK 17 is elsewhere. -->
+        <proguard.jdk.home>C:/Program Files/Java/jdk-17</proguard.jdk.home>
     </properties>
 
     <build>
@@ -54,6 +67,31 @@
                                          at runtime to avoid shade-relocation class-loading issues. -->
                                 </includes>
                             </artifactSet>
+                            <!-- Exclude MANIFEST.MF and duplicate service descriptors from shaded
+                                 dependency JARs so the shade plugin doesn't emit overlap warnings.
+                                 The project's own MANIFEST.MF (built by maven-jar-plugin) is kept. -->
+                            <filters>
+                                <filter>
+                                    <artifact>org.xerial:sqlite-jdbc</artifact>
+                                    <excludes>
+                                        <exclude>META-INF/MANIFEST.MF</exclude>
+                                        <exclude>META-INF/services/java.sql.Driver</exclude>
+                                    </excludes>
+                                </filter>
+                                <filter>
+                                    <artifact>com.mysql:mysql-connector-j</artifact>
+                                    <excludes>
+                                        <exclude>META-INF/MANIFEST.MF</exclude>
+                                        <exclude>META-INF/services/java.sql.Driver</exclude>
+                                    </excludes>
+                                </filter>
+                            </filters>
+                            <transformers>
+                                <!-- Merges MANIFEST.MF entries instead of silently dropping duplicates -->
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer"/>
+                                <!-- Merges META-INF/services/* (e.g. java.sql.Driver) across shaded JARs -->
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                            </transformers>
                         </configuration>
                     </execution>
                 </executions>
@@ -71,13 +109,32 @@
                         </goals>
                         <configuration>
                             <skip>${skip.proguard}</skip>
-                            <executable>java</executable>
+                            <!-- Use JDK 17 to run ProGuard: the bundled proguard.jar supports
+                                 class files up to version 65 (Java 21). JDK 25 jmods are version 69
+                                 and would cause a parse error. JDK 17 jmods are version 61 — safe.
+                                 Override with -Dproguard.java=<path> if JDK 17 is elsewhere. -->
+                            <executable>${proguard.java}</executable>
                             <arguments>
-                                <argument>-jar</argument>
-                                <argument>${basedir}/libs/proguard/proguard.jar</argument>
+                                <!-- Use -cp instead of -jar so we can include org.json.jar
+                                     (required by ProGuard's internal jsonprinter utility). -->
+                                <argument>-cp</argument>
+                                <argument>${basedir}/libs/proguard/proguard.jar${path.separator}${basedir}/libs/proguard/org.json.jar</argument>
+                                <argument>proguard.ProGuard</argument>
                                 <argument>@${basedir}/libs/proguard/fpp.conf</argument>
+                                <!-- Inject java.base.jmod as a library jar so ProGuard can resolve
+                                     java.lang.Object during preverification (LUB computation for
+                                     StackMapTable generation). Without this, ProGuard throws
+                                     IncompleteClassHierarchyException even for non-MySQL classes
+                                     because Object itself is unknown. -->
+                                <argument>-libraryjars</argument>
+                                <argument>${proguard.jdk.home}/jmods/java.base.jmod(!**.jar;!module-info.class)</argument>
+                                <!-- MySQL and SQLite are filtered OUT of -injars so ProGuard's
+                                     preverification never processes their internal methods (they
+                                     reference classes outside our library set and would crash with
+                                     IncompleteClassHierarchyException). They are merged back into
+                                     the obfuscated JAR by the antrun step below. -->
                                 <argument>-injars</argument>
-                                <argument>${project.build.directory}/${project.build.finalName}.jar</argument>
+                                <argument>${project.build.directory}/${project.build.finalName}.jar(!com/mysql/**,!org/sqlite/**)</argument>
                                 <argument>-outjars</argument>
                                 <argument>${project.build.directory}/${project.build.finalName}-obfuscated.jar</argument>
                             </arguments>
@@ -99,6 +156,33 @@
                         </goals>
                         <configuration>
                             <target>
+                                <!-- Merge MySQL + SQLite classes back into the obfuscated JAR.
+                                     They were excluded from -injars so ProGuard's preverification
+                                     never tries to analyse their internal method bodies (which
+                                     reference JDK types outside our library set). Their original
+                                     class files (already containing correct StackMapTable from their
+                                     own compilation) are merged verbatim from the pre-ProGuard JAR. -->
+                                <zip destfile="${project.build.directory}/${project.build.finalName}-obfuscated.jar"
+                                     update="true">
+                                    <zipfileset src="${project.build.directory}/${project.build.finalName}.jar"
+                                                includes="com/mysql/**,org/sqlite/**"/>
+                                </zip>
+
+                                <!-- Copy to project-local build/ folder -->
+                                <mkdir dir="${build.output.dir}" />
+                                <copy
+                                    file="${project.build.directory}/${project.build.finalName}-obfuscated.jar"
+                                    tofile="${build.output.dir}/fpp.jar"
+                                    overwrite="true"
+                                    failonerror="false" />
+                                <copy
+                                    file="${project.build.directory}/${project.build.finalName}.jar"
+                                    tofile="${build.output.dir}/fpp.jar"
+                                    overwrite="false"
+                                    failonerror="false" />
+                                <echo level="info" message="[FPP] Build output: ${build.output.dir}/fpp.jar" />
+
+                                <!-- Also deploy to server plugins folder -->
                                 <mkdir dir="${deploy.dir}" />
                                 <!-- Primary: deploy obfuscated jar (produced by ProGuard) -->
                                 <copy
@@ -112,7 +196,7 @@
                                     tofile="${deploy.dir}/fpp.jar"
                                     overwrite="false"
                                     failonerror="false" />
-                                <echo message="[FPP] Deployed JAR to: ${deploy.dir}/fpp.jar" />
+                                <echo level="info" message="[FPP] Deployed JAR to: ${deploy.dir}/fpp.jar" />
                             </target>
                         </configuration>
                     </execution>
@@ -154,13 +238,16 @@
             <url>https://repo.extendedclip.com/content/repositories/placeholderapi/</url>
         </repository>
         <repository>
+            <id>enginehub</id>
+            <url>https://maven.enginehub.org/repo/</url>
+        </repository>
+        <repository>
             <id>faststats-releases</id>
             <url>https://repo.faststats.dev/releases</url>
         </repository>
-        <repository>
-            <id>guardsquare</id>
-            <url>https://repository.guardsquare.com/content/repositories/releases</url>
-        </repository>
+        <!-- guardsquare removed from <repositories>: ProGuard is run via a local JAR
+             (exec-maven-plugin), not as a Maven dependency. It was causing spurious
+             "No such host" warnings for every SNAPSHOT artifact resolution. -->
     </repositories>
 
     <pluginRepositories>
@@ -237,6 +324,14 @@
             <groupId>me.clip</groupId>
             <artifactId>placeholderapi</artifactId>
             <version>2.11.6</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- WorldGuard API — soft optional; provided by server/plugin environment -->
+        <dependency>
+            <groupId>com.sk89q.worldguard</groupId>
+            <artifactId>worldguard-bukkit</artifactId>
+            <version>7.0.12</version>
             <scope>provided</scope>
         </dependency>
 

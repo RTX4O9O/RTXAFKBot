@@ -20,6 +20,7 @@ import me.bill.fakePlayerPlugin.listener.ServerListListener;
 import me.bill.fakePlayerPlugin.messaging.VelocityChannel;
 import me.bill.fakePlayerPlugin.util.BackupManager;
 import me.bill.fakePlayerPlugin.util.BotTabTeam;
+import me.bill.fakePlayerPlugin.util.CompatibilityChecker;
 import me.bill.fakePlayerPlugin.util.ConfigMigrator;
 import me.bill.fakePlayerPlugin.util.ConfigValidator;
 import me.bill.fakePlayerPlugin.util.FppLogger;
@@ -68,6 +69,35 @@ public final class FakePlayerPlugin extends JavaPlugin {
     /** @return {@code true} when LuckPerms is installed and enabled on this server. */
     public boolean isLuckPermsAvailable() { return luckPermsAvailable; }
 
+    /**
+     * Cached flag: whether WorldGuard is installed and enabled on this server.
+     * Set once in {@code onEnable()} via a pure Bukkit check (no WG class loading)
+     * so that {@link me.bill.fakePlayerPlugin.util.WorldGuardHelper} is never loaded
+     * when WorldGuard is absent — prevents {@code NoClassDefFoundError} from WG/WE
+     * API classes that aren't on the classpath.
+     */
+    private boolean worldGuardAvailable = false;
+
+    /** @return {@code true} when WorldGuard is installed and enabled on this server. */
+    public boolean isWorldGuardAvailable() { return worldGuardAvailable; }
+
+    /**
+     * {@code true} when the server is running a Minecraft version newer than the
+     * maximum tested version (1.21.11). Set once in {@code onEnable()}.
+     * When {@code true} all /fpp sub-commands are disabled and a persistent
+     * warning is shown to operators on join.
+     */
+    private boolean versionUnsupported = false;
+
+    /** The Minecraft version string detected at startup, e.g. {@code "1.22.0"}. */
+    private String detectedMcVersion = "unknown";
+
+    /** @return {@code true} if the server is running an unsupported MC version (&gt; 1.21.11). */
+    public boolean isVersionUnsupported() { return versionUnsupported; }
+
+    /** @return The Minecraft version string detected at startup, e.g. {@code "1.21.11"}. */
+    public String getDetectedMcVersion() { return detectedMcVersion; }
+
     /** System.currentTimeMillis() captured at the start of onEnable. */
     private long enabledAt;
 
@@ -88,6 +118,25 @@ public final class FakePlayerPlugin extends JavaPlugin {
 
         Lang.init(this);
         Config.debugStartup("Language file loaded (lang=" + Config.getLanguage() + ").");
+
+        // ── Version compatibility gate ────────────────────────────────────────
+        // FPP is tested up to MC 1.21.11. Any newer version is flagged as unsupported:
+        // all /fpp sub-commands are disabled and a warning is broadcast to operators.
+        detectedMcVersion = CompatibilityChecker.extractMcVersion();
+        if (CompatibilityChecker.isVersionAtLeast(detectedMcVersion, "1.21.12")) {
+            versionUnsupported = true;
+            String pv = getPluginMeta().getVersion();
+            FppLogger.warn("═══════════════════════════════════════════════════════════════════");
+            FppLogger.warn("  ⚠  FakePlayerPlugin — UNSUPPORTED MINECRAFT VERSION  ⚠");
+            FppLogger.warn("═══════════════════════════════════════════════════════════════════");
+            FppLogger.warn("  Plugin    : FakePlayerPlugin v" + pv);
+            FppLogger.warn("  Server MC : " + detectedMcVersion + "  (NOT supported)");
+            FppLogger.warn("  Supported : up to MC 1.21.11");
+            FppLogger.warn("  Action    : All /fpp commands have been DISABLED.");
+            FppLogger.warn("  Support   : If you think this is a bug, contact us:");
+            FppLogger.warn("              Discord → https://discord.gg/RfjEJDG2TM");
+            FppLogger.warn("═══════════════════════════════════════════════════════════════════");
+        }
 
         BotNameConfig.init(this);
         Config.debugStartup("Bot name pool: " + BotNameConfig.getNames().size() + " names.");
@@ -296,6 +345,15 @@ public final class FakePlayerPlugin extends JavaPlugin {
             }
             // Subscribe to LP UserDataRecalculateEvent for auto-refresh when LP group changes
             me.bill.fakePlayerPlugin.util.LuckPermsHelper.subscribeLpEvents(this, fakePlayerManager);
+        }
+
+        // ── WorldGuard soft-dependency ─────────────────────────────────────────
+        // worldGuardAvailable is cached here so WorldGuardHelper is NEVER loaded
+        // when WorldGuard is absent — prevents NoClassDefFoundError from WG/WE API
+        // classes that aren't on the classpath (same guard as LuckPerms above).
+        worldGuardAvailable = Bukkit.getPluginManager().getPlugin("WorldGuard") != null;
+        if (worldGuardAvailable) {
+            Config.debugStartup("WorldGuard detected — bot PvP region protection enabled.");
         }
 
         // ── Update checker — purely async, never blocks startup ───────────────

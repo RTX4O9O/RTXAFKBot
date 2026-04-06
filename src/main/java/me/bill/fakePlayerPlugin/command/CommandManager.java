@@ -65,6 +65,15 @@ public class CommandManager implements CommandExecutor, TabCompleter {
             return true;
         }
 
+        // Block all sub-commands when running on an unsupported MC version.
+        // Bare /fpp (no args, handled above) still shows the info screen so users
+        // can see the plugin version and the Discord support link.
+        if (plugin.isVersionUnsupported()) {
+            sender.sendMessage(Lang.get("version-unsupported",
+                    "version", plugin.getDetectedMcVersion()));
+            return true;
+        }
+
         String subName = args[0].toLowerCase();
         FppCommand sub = byName.get(subName);
 

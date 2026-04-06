@@ -46,6 +46,23 @@ public class FakePlayerManager {
     private final Map<UUID, float[]> botSpawnRotation = new ConcurrentHashMap<>();
     /** Flag set to true during bot restoration, cleared after prefix refresh completes. */
     private volatile boolean restorationInProgress = false;
+    /**
+     * UUIDs of bots currently mid body-transition (hide or show via applyBodyConfig).
+     * Checked by {@link me.bill.fakePlayerPlugin.listener.PlayerJoinListener} to
+     * suppress vanilla join/quit messages during the transition.
+     */
+    private final Set<UUID> bodyTransitionBots = new HashSet<>();
+    /**
+     * UUIDs of bots that are being permanently despawned via {@link #delete} or
+     * {@link #removeAll}.  Populated immediately before {@code FakePlayerBody.removeAll()}
+     * fires {@code PlayerQuitEvent}, cleared right after.  Lets
+     * {@link me.bill.fakePlayerPlugin.listener.PlayerJoinListener} suppress the vanilla
+     * quit message (Paper sets none for programmatic removals anyway, but this guards
+     * against double-messages on servers where it does).
+     * Value = the bot's display name at despawn time so the MONITOR quit handler can build
+     * the leave message even after the bot has been removed from {@code activePlayers}.
+     */
+    private final ConcurrentHashMap<UUID, String> despawningBotIds = new ConcurrentHashMap<>();
     private ChunkLoader     chunkLoader;
     private DatabaseManager db;
     private BotPersistence  persistence;
@@ -251,6 +268,35 @@ public class FakePlayerManager {
     /** Internal: set when restoration chain starts, cleared after prefix refresh completes. */
     public void setRestorationInProgress(boolean inProgress) {
         this.restorationInProgress = inProgress;
+    }
+
+    /**
+     * Returns {@code true} while a bot's body is being shown/hidden by
+     * {@link #applyBodyConfig()}.  Checked by
+     * {@link me.bill.fakePlayerPlugin.listener.PlayerJoinListener} to
+     * suppress vanilla join/quit messages during the body transition.
+     */
+    public boolean isBodyTransitioning(UUID uuid) {
+        return bodyTransitionBots.contains(uuid);
+    }
+
+    /**
+     * Returns {@code true} if the bot with this UUID is currently being permanently
+     * despawned via {@link #delete} or {@link #removeAll}.  Used by
+     * {@link me.bill.fakePlayerPlugin.listener.PlayerJoinListener} to suppress the
+     * vanilla quit message so the MONITOR quit handler can send the custom leave message.
+     */
+    public boolean isDespawning(UUID uuid) {
+        return despawningBotIds.containsKey(uuid);
+    }
+
+    /**
+     * Returns the display name stored for a bot being despawned, or {@code null}
+     * if the UUID is not in the despawning set.  Used by the MONITOR quit handler
+     * to build the leave message after the bot has left {@code activePlayers}.
+     */
+    public String getDespawningDisplayName(UUID uuid) {
+        return despawningBotIds.get(uuid);
     }
 
     /**
@@ -628,6 +674,36 @@ public class FakePlayerManager {
                     fp.setPhysicsEntity(body);
                     entityIdIndex.put(body.getEntityId(), fp);
                     fp.setPacketProfileName(fp.getName());
+
+                    // WorldGuard: if the bot spawned inside a no-pvp region, teleport it
+                    // to a safe location (world spawn) after the 5-tick spawn grace period
+                    // expires (BotSpawnProtectionListener blocks PLUGIN teleports during that
+                    // window). We use 10 ticks to ensure the protection window is fully clear.
+                    if (plugin.isWorldGuardAvailable()
+                            && !me.bill.fakePlayerPlugin.util.WorldGuardHelper.isPvpAllowed(spawnLoc)) {
+                        org.bukkit.Location wgSafeLoc =
+                                me.bill.fakePlayerPlugin.util.WorldGuardHelper.findSafeLocation(spawnLoc.getWorld());
+                        if (wgSafeLoc != null) {
+                            final Player safeBody    = body;
+                            final org.bukkit.Location safeTarget = wgSafeLoc;
+                            Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                                if (!activePlayers.containsKey(fp.getUuid())) return;
+                                if (!safeBody.isOnline()) return;
+                                safeBody.teleport(safeTarget,
+                                        org.bukkit.event.player.PlayerTeleportEvent.TeleportCause.PLUGIN);
+                                fp.setSpawnLocation(safeTarget);
+                                Config.debug("WorldGuard: teleported bot '" + fp.getName()
+                                        + "' out of no-pvp region to world spawn "
+                                        + safeTarget.getBlockX() + "," + safeTarget.getBlockY()
+                                        + "," + safeTarget.getBlockZ());
+                            }, 10L);
+                        } else {
+                            me.bill.fakePlayerPlugin.util.FppLogger.warn(
+                                    "WorldGuard: bot '" + fp.getName()
+                                    + "' spawned in a no-pvp region but world spawn is also"
+                                    + " in a no-pvp region — cannot find a safe location.");
+                        }
+                    }
                     // Persist playerdata 2 ticks after spawn.  This writes
                     // world/playerdata/<uuid>.dat to disk immediately so that
                     // PlayerIo.load() inside the next placeNewPlayer() finds it
@@ -635,15 +711,34 @@ public class FakePlayerManager {
                     // and other plugins from flagging the bot as a new player every
                     // time it is despawned and respawned with the same name/UUID.
                     final Player savedBody = body;
+                    final String savedName = fp.getName();
+                    final java.util.UUID savedUuid = fp.getUuid();
                     Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                        if (!savedBody.isOnline()) return;
                         try {
-                            if (savedBody.isOnline()) savedBody.saveData();
-                        } catch (Exception ignored) {}
+                            // Stamp firstPlayed/lastPlayed with real timestamps if still 0.
+                            // This ensures the .dat file written below contains non-zero
+                            // values, so on the NEXT spawn Paper loads hasPlayedBefore=true
+                            // naturally — without FPP needing to override Bukkit-layer flags.
+                            me.bill.fakePlayerPlugin.listener.PlayerJoinListener.stampFirstPlayed(savedBody);
+                            savedBody.saveData();
+                            FppLogger.debug("FakePlayerManager: initial playerdata saved for '"
+                                    + savedName + "' uuid=" + savedUuid);
+                        } catch (Exception e) {
+                            FppLogger.warn("FakePlayerManager: initial saveData failed for '"
+                                    + savedName + "' uuid=" + savedUuid
+                                    + ": " + e.getMessage());
+                        }
                     }, 2L);
                 }
             } else if (fp.isBodyless()) {
-                // Bodyless spawn: no physical body, tab-list only
+                // Bodyless spawn: no physical body, tab-list only (console spawn without location)
                 Config.debug("Bodyless spawn: skipping physical body for " + fp.getName());
+            } else {
+                // body.enabled = false — mark as intentionally bodyless so validateEntities()
+                // and applyBodyConfig() don't mistakenly try to re-spawn this bot's body.
+                fp.setBodyless(true);
+                Config.debug("Body spawn skipped (body.enabled=false) for " + fp.getName());
             }
 
             // 2. Send tab list
@@ -692,16 +787,21 @@ public class FakePlayerManager {
                 Config.debug("Tab-list disabled — skipping tab add for '" + fp.getName() + "'");
             }
 
-            // 4. NMS ServerPlayer bots fire vanilla PlayerJoinEvent which already broadcasts
-            // "X joined the game" to all players — no custom broadcast needed.
-            // For bodyless bots only: forward join event to the proxy network.
-            if (fp.isBodyless()) {
-                Bukkit.getScheduler().runTaskLater(plugin, () -> {
-                    if (!activePlayers.containsKey(fp.getUuid())) return; // removed mid-spawn
-                    var vc = plugin.getVelocityChannel();
-                    if (vc != null) vc.broadcastJoinToNetwork(fp);
-                }, 2L);
-            }
+            // 4. Broadcast join message.
+            // • Bodied bots: PlayerJoinEvent fires during FakePlayerBody.spawn(); the MONITOR
+            //   handler in PlayerJoinListener sets event.joinMessage() to the custom bot-join
+            //   component so Paper broadcasts it automatically — no extra call needed here.
+            // • Bodyless bots: no PlayerJoinEvent fires, so we must broadcast manually.
+            // Skip during server-startup persistence restore to avoid flooding chat.
+            Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                if (!activePlayers.containsKey(fp.getUuid())) return; // removed mid-spawn
+                if (fp.isBodyless() && !isRestorationInProgress()) {
+                    BotBroadcast.broadcastJoin(fp);
+                }
+                // Forward to proxy network for cross-server join message.
+                var vc = plugin.getVelocityChannel();
+                if (vc != null) vc.broadcastJoinToNetwork(fp);
+            }, 2L);
 
             if (persistence != null && Config.persistOnRestart()) {
                 persistence.saveAsync(activePlayers.values());
@@ -908,11 +1008,6 @@ public class FakePlayerManager {
     public void removeAll() {
         if (activePlayers.isEmpty()) return;
 
-        // leave-delay values in config are in TICKS (20 ticks = 1 second)
-        int delayMinTicks = Config.leaveDelayMin();
-        int delayMaxTicks = Math.max(delayMinTicks, Config.leaveDelayMax());
-        boolean stagger = delayMaxTicks > 0;
-
         // Snapshot and clear registry immediately — prevents double-removal
         List<FakePlayer> toRemove = new ArrayList<>(activePlayers.values());
         activePlayers.clear();
@@ -930,23 +1025,23 @@ public class FakePlayerManager {
         for (int i = 0; i < toRemove.size(); i++) {
             FakePlayer fp = toRemove.get(i);
 
-            // Each bot gets a random delay; index offset guarantees stagger
-            long leaveDelayTicks;
-            if (!stagger) {
-                leaveDelayTicks = 0L;
-            } else {
-                int spread = delayMaxTicks - delayMinTicks;
-                int ticks = delayMinTicks + (spread > 0
-                        ? ThreadLocalRandom.current().nextInt(spread + 1)
-                        : 0);
-                // +i tick jitter guarantees strict ordering without large extra delay
-                leaveDelayTicks = Math.max(1L, (long) ticks) + i;
-            }
+            // Use a minimal per-bot stagger (1 tick each) so bots leave in a
+            // natural sequence without being delayed by the leave-delay config.
+            // The leave-delay config is reserved for simulated swap-AI departures.
+            long leaveDelayTicks = (long) i; // 0 for first bot, 1 for second, etc.
             maxDelay = Math.max(maxDelay, leaveDelayTicks);
 
             final FakePlayer target = fp;
             Runnable doVisualRemove = () -> {
-                FakePlayerBody.removeAll(target);
+                // Mark as despawning so quit handlers (onQuitEarly/onQuit) suppress
+                // the vanilla "X left the game" message — the MONITOR quit handler
+                // builds and broadcasts the custom bot-leave message from en.yml.
+                despawningBotIds.put(target.getUuid(), target.getDisplayName());
+                try {
+                    FakePlayerBody.removeAll(target);   // fires PlayerQuitEvent synchronously
+                } finally {
+                    despawningBotIds.remove(target.getUuid());
+                }
                 if (chunkLoader != null) chunkLoader.releaseForBot(target);
 
                 // Remove from scoreboard team before removing tab entry
@@ -955,8 +1050,9 @@ public class FakePlayerManager {
                 List<Player> snapshot = new ArrayList<>(Bukkit.getOnlinePlayers());
                 for (Player online : snapshot) PacketHelper.sendTabListRemove(online, target);
 
-                // NMS player's quit event fires naturally — no custom leave message needed.
-                // Forward to proxy network for cross-server tab sync.
+                // Local leave message is broadcast by PlayerJoinListener.onQuit (MONITOR)
+                // via event.quitMessage() — no manual broadcast needed here.
+                // Forward to proxy network for cross-server leave message.
                 if (Config.leaveMessage()) {
                     var vc = plugin.getVelocityChannel();
                     if (vc != null) vc.broadcastLeaveToNetwork(target.getDisplayName());
@@ -1019,32 +1115,39 @@ public class FakePlayerManager {
         botSpawnRotation.remove(target.getUuid());
 
 
-        // Defer body removal, tab-list, despawn and leave message together
-        int delayMinTicks = Config.leaveDelayMin();
-        int delayMaxTicks = Math.max(delayMinTicks, Config.leaveDelayMax());
-        long leaveDelay;
-        if (delayMaxTicks <= 0) {
-            leaveDelay = 0L;
-        } else {
-            int spread = delayMaxTicks - delayMinTicks;
-            int ticks = delayMinTicks + (spread > 0
-                    ? ThreadLocalRandom.current().nextInt(spread + 1)
-                    : 0);
-            leaveDelay = Math.max(1L, (long) ticks);
-        }
+        // Defer body removal, tab-list, despawn and leave message by a hardcoded 1-tick
+        // so the current tick finishes before cleanup runs. The leave-delay config is
+        // intentionally NOT used here — it only applies to simulated swap-AI departures
+        // (see BotSwapAI.doLeave). This ensures /fpp despawn and combat-death despawns
+        // are always instant regardless of how large leave-delay is set.
+        long leaveDelay = 1L;
 
         Runnable doVisualRemove = () -> {
-            // Primary removal via entity reference
-            FakePlayerBody.removeAll(target);
+            // Mark as despawning so quit handlers (onQuitEarly/onQuit) suppress
+            // the vanilla "X left the game" message — the MONITOR quit handler
+            // builds and broadcasts the custom bot-leave message from en.yml.
+            despawningBotIds.put(target.getUuid(), target.getDisplayName());
+            try {
+                // Primary removal via entity reference
+                FakePlayerBody.removeAll(target);   // fires PlayerQuitEvent synchronously
+            } finally {
+                despawningBotIds.remove(target.getUuid());
+            }
             if (chunkLoader != null) chunkLoader.releaseForBot(target);
+
+            // Remove from scoreboard team before removing tab entry
+            if (botTabTeam != null) botTabTeam.removeBot(target);
 
             List<Player> snapshot = new ArrayList<>(Bukkit.getOnlinePlayers());
             for (Player online : snapshot) PacketHelper.sendTabListRemove(online, target);
 
-            // NMS player's quit event fires naturally — no custom leave message needed.
-            // Forward to proxy network for cross-server tab sync.
-            var vc = plugin.getVelocityChannel();
-            if (vc != null) vc.broadcastLeaveToNetwork(target.getDisplayName());
+            // Local leave message is broadcast by PlayerJoinListener.onQuit (MONITOR)
+            // via event.quitMessage() — no manual broadcast needed here.
+            // Forward to proxy network for cross-server leave message.
+            if (Config.leaveMessage()) {
+                var vc = plugin.getVelocityChannel();
+                if (vc != null) vc.broadcastLeaveToNetwork(target.getDisplayName());
+            }
             if (db != null) db.recordRemoval(target.getUuid(), "DELETED");
             // Clean up LuckPerms user data for this bot
             if (plugin.isLuckPermsAvailable()) {
@@ -1064,11 +1167,7 @@ public class FakePlayerManager {
             }
         };
 
-        if (leaveDelay <= 0) {
-            Bukkit.getScheduler().runTask(plugin, doVisualRemove);
-        } else {
-            Bukkit.getScheduler().runTaskLater(plugin, doVisualRemove, leaveDelay);
-        }
+        Bukkit.getScheduler().runTaskLater(plugin, doVisualRemove, leaveDelay);
 
         return true;
     }
@@ -1123,45 +1222,108 @@ public class FakePlayerManager {
     }
 
     /**
-     * Immediately removes the physical NMS ServerPlayer body
-     * from every active bot when {@code body.enabled} is {@code false}.
-     * Safe to call on the main thread after a config reload.
-     * Has no effect when bodies are enabled.
+     * Called after {@code body.enabled}, {@code body.damageable}, {@code body.pushable},
+     * or {@code combat.max-health} changes (live from the settings GUI or {@code /fpp reload}).
+     *
+     * <ul>
+     *   <li><b>body.enabled → true</b>: spawns a new NMS body for every intentionally-bodyless
+     *       bot and re-adds their tab-list entry.</li>
+     *   <li><b>body.enabled → false</b>: removes the NMS body via the proper
+     *       {@code PlayerList.remove()} path (suppresses vanilla quit message), marks the
+     *       bot as bodyless, then re-adds the tab-list entry so the bot remains visible.</li>
+     *   <li><b>other keys</b>: updates runtime flags (invulnerable, collidable, max-health)
+     *       on existing bodies only.</li>
+     * </ul>
      */
     public void applyBodyConfig() {
+        List<Player> online = new ArrayList<>(Bukkit.getOnlinePlayers());
+
         if (physicalBodiesEnabled()) {
-            // Keep runtime body flags in sync after /fpp reload.
-            for (FakePlayer fp : activePlayers.values()) {
+            // ── Bodies enabled ─────────────────────────────────────────────────
+            for (FakePlayer fp : new ArrayList<>(activePlayers.values())) {
                 Player body = fp.getPlayer();
+
                 if (body != null && body.isValid()) {
+                    // Already has a body — just refresh runtime flags
                     body.setInvulnerable(!Config.bodyDamageable());
                     body.setCollidable(Config.bodyPushable());
-                    // Apply max-health change to existing bots
                     try {
-                        var maxHpAttr = body.getAttribute(org.bukkit.attribute.Attribute.MAX_HEALTH);
-                        if (maxHpAttr != null) {
+                        var attr = body.getAttribute(org.bukkit.attribute.Attribute.MAX_HEALTH);
+                        if (attr != null) {
                             double hp = Config.maxHealth();
-                            maxHpAttr.setBaseValue(hp);
+                            attr.setBaseValue(hp);
                             if (body.getHealth() > hp) body.setHealth(hp);
                         }
                     } catch (Exception ignored) {}
+
+                } else if (fp.isBodyless()) {
+                    // Intentionally bodyless — spawn a body now
+                    Location loc = fp.getSpawnLocation();
+                    if (loc == null || loc.getWorld() == null) continue;
+
+                    bodyTransitionBots.add(fp.getUuid());
+                    fp.setBodyless(false);
+                    try {
+                        Player newBody = FakePlayerBody.spawn(fp, loc); // fires PlayerJoinEvent (suppressed)
+                        if (newBody != null) {
+                            fp.setPhysicsEntity(newBody);
+                            entityIdIndex.put(newBody.getEntityId(), fp);
+                            fp.setPacketProfileName(fp.getName());
+                            // Remove the manual ghost tab entry — the NMS join packet already
+                            // sent an ADD for the real entity. Re-add to force display-name sync.
+                            if (Config.tabListEnabled()) {
+                                for (Player p : online) {
+                                    PacketHelper.sendTabListRemove(p, fp);
+                                    PacketHelper.sendTabListAdd(p, fp);
+                                }
+                            }
+                            // Stamp firstPlayed so next saveData() writes real timestamps
+                            me.bill.fakePlayerPlugin.listener.PlayerJoinListener.stampFirstPlayed(newBody);
+                            FppLogger.info("BodyConfig: body shown for '" + fp.getName() + "'");
+                        } else {
+                            fp.setBodyless(true); // revert — spawn failed
+                            FppLogger.warn("BodyConfig: failed to show body for '" + fp.getName() + "'");
+                        }
+                    } finally {
+                        bodyTransitionBots.remove(fp.getUuid());
+                    }
                 }
             }
-            // Update the scoreboard team's collision rule.
-            // setCollidable() alone has no effect on players that are already in a team —
-            // the team's COLLISION_RULE is what Minecraft actually uses for player-player physics.
+            // Refresh scoreboard team collision rule
             var btt = plugin.getBotTabTeam();
             if (btt != null) btt.applyCollisionRule(Config.bodyPushable());
             return;
         }
-        // Bodies disabled — remove all physical entities
-        for (FakePlayer fp : activePlayers.values()) {
+
+        // ── Bodies disabled — remove NMS entities, keep bots tab-list-only ────
+        for (FakePlayer fp : new ArrayList<>(activePlayers.values())) {
             Player body = fp.getPlayer();
-            if (body != null) {
-                try { body.remove(); } catch (Exception ignored) {}
-                entityIdIndex.remove(body.getEntityId());
-                fp.setPhysicsEntity(null);
+            if (body == null || !body.isOnline()) continue;
+
+            // Save the live position so the bot can be restored at the right spot
+            fp.setSpawnLocation(body.getLocation());
+            int entityId = body.getEntityId();
+
+            // Clear FakePlayer references BEFORE removal so event handlers during
+            // PlayerQuitEvent don't find a stale body reference.
+            entityIdIndex.remove(entityId);
+            fp.setPhysicsEntity(null);
+            fp.setBodyless(true);
+
+            // Suppress the vanilla quit message — the bot is NOT leaving FPP management
+            bodyTransitionBots.add(fp.getUuid());
+            try {
+                NmsPlayerSpawner.removeFakePlayer(body); // fires PlayerQuitEvent (suppressed)
+            } finally {
+                bodyTransitionBots.remove(fp.getUuid());
             }
+
+            // PlayerQuitEvent cleared the client tab-list entry — re-add as a ghost entry
+            // so the bot remains visible in the tab list despite having no physical body.
+            if (Config.tabListEnabled()) {
+                for (Player p : online) PacketHelper.sendTabListAdd(p, fp);
+            }
+            FppLogger.info("BodyConfig: body hidden for '" + fp.getName() + "', now tab-list only");
         }
     }
 
@@ -1273,8 +1435,7 @@ public class FakePlayerManager {
         for (FakePlayer fp : activePlayers.values()) {
             Entity body = fp.getPhysicsEntity();
 
-            // Bodies disabled: remove any that still exist (e.g. after a config reload)
-            // and skip all respawn logic — this handles body.enabled toggled via /fpp reload.
+            // Bodies disabled: remove any that still exist and skip all respawn logic.
             if (!physicalBodiesEnabled()) {
                 if (body != null && body.isValid()) {
                     try { body.remove(); } catch (Exception ignored) {}
@@ -1283,6 +1444,10 @@ public class FakePlayerManager {
                 }
                 continue;
             }
+
+            // Bot is intentionally bodyless (body.enabled was false when it spawned,
+            // or body was hidden via the settings GUI) — skip respawn logic.
+            if (fp.isBodyless()) continue;
 
             // Body is valid — nothing to do
             if (body != null && body.isValid()) continue;

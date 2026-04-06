@@ -55,19 +55,34 @@ public class BotCollisionListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void onEntityDamageByEntity(EntityDamageByEntityEvent event) {
-        if (!Config.bodyPushable()) return;
+        if (!Config.bodyPushable()) {
+            Config.debugNms("[KB-DEBUG] BotCollision: SKIP — bodyPushable=false");
+            return;
+        }
         if (!(event.getEntity() instanceof Player target)) return;
         if (!isFakeBody(target)) return;
 
         Entity attacker = resolveKnockbackSource(event.getDamager());
-        if (attacker == null) return;
+        if (attacker == null) {
+            Config.debugNms("[KB-DEBUG] BotCollision: SKIP — attacker null for bot=" + target.getName());
+            return;
+        }
 
         boolean fromPlayer = attacker instanceof Player;
+
+        Config.debugNms("[KB-DEBUG] BotCollision: hit event for bot=" + target.getName()
+                + " attacker=" + attacker.getType()
+                + " fromPlayer=" + fromPlayer
+                + " cancelled=" + event.isCancelled()
+                + " bodyDamageable=" + Config.bodyDamageable());
 
         // For mob attacks, don't respect cancellation - apply knockback regardless
         // For player attacks, respect cancellation only if body is damageable
         if (event.isCancelled()) {
-            if (fromPlayer && Config.bodyDamageable()) return;
+            if (fromPlayer && Config.bodyDamageable()) {
+                Config.debugNms("[KB-DEBUG] BotCollision: SKIP — event cancelled & fromPlayer & bodyDamageable");
+                return;
+            }
             // Mob attacks: continue to apply knockback even if cancelled
         }
 
@@ -99,7 +114,23 @@ public class BotCollisionListener implements Listener {
 
         // PVP bots receive 60 % less knockback — they should feel solid but still react.
         double pvpFactor = isPvpBot(target) ? 0.15 : 1.0;
-        target.setVelocity(new Vector(kbX * pvpFactor, kb.getY() * pvpFactor, kbZ * pvpFactor));
+        Vector finalVel = new Vector(kbX * pvpFactor, kb.getY() * pvpFactor, kbZ * pvpFactor);
+
+        Config.debugNms("[KB-DEBUG] BotCollision: calling setVelocity on " + target.getName()
+                + " vel=(" + String.format("%.4f", finalVel.getX())
+                + "," + String.format("%.4f", finalVel.getY())
+                + "," + String.format("%.4f", finalVel.getZ()) + ")"
+                + " pvpFactor=" + pvpFactor
+                + " hitStrength=" + hitStrength);
+
+        target.setVelocity(finalVel);
+
+        // Read back the velocity immediately after setting it to verify it was accepted
+        org.bukkit.util.Vector readBack = target.getVelocity();
+        Config.debugNms("[KB-DEBUG] BotCollision: readback velocity for " + target.getName()
+                + " x=" + String.format("%.4f", readBack.getX())
+                + " y=" + String.format("%.4f", readBack.getY())
+                + " z=" + String.format("%.4f", readBack.getZ()));
     }
 
     // ── 1b. Explosion fallback knockback ───────────────────────────────────

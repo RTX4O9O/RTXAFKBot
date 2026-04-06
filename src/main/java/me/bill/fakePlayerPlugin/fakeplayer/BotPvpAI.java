@@ -5,6 +5,8 @@ import org.bukkit.GameMode;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.Particle;
+import org.bukkit.attribute.Attribute;
+import org.bukkit.attribute.AttributeInstance;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
 import org.bukkit.entity.EnderCrystal;
@@ -453,7 +455,7 @@ public final class BotPvpAI {
         if (s.wtapTicks      > 0) s.wtapTicks--;
         if (s.arcTicks       > 0) s.arcTicks--;
         if (s.arcTicks == 0)      s.arcActive = false;
-        if (s.inAirAfterJump && bot.isOnGround()) s.inAirAfterJump = false;
+        if (s.inAirAfterJump && isGrounded(bot)) s.inAirAfterJump = false;
 
         // Human imperfection counters
         if (s.reactionDelay  > 0) s.reactionDelay--;
@@ -619,8 +621,8 @@ public final class BotPvpAI {
 
         // ── Update aggression based on target and self HP ────────────────────
         // More aggressive when target is low, more cautious when self is low.
-        double targetHpRatio = target.getHealth() / target.getMaxHealth();
-        double selfHpRatio   = bot.getHealth() / bot.getMaxHealth();
+        double targetHpRatio = target.getHealth() / maxHp(target);
+        double selfHpRatio   = bot.getHealth() / maxHp(bot);
         s.aggression = 1.0 + (0.4 * (1.0 - targetHpRatio)) - (0.35 * (1.0 - selfHpRatio));
         s.aggression = Math.max(0.55, Math.min(1.45, s.aggression));
 
@@ -764,7 +766,7 @@ public final class BotPvpAI {
         // Mirrors the datapack: tempCrit flag gates whether crits are attempted.
         // Physical conditions: falling (fall distance > 0.2) OR post-jump descent.
         // Water, lava, climbing, and on-ground conditions all cancel crits.
-        boolean onGround = bot.isOnGround();
+        boolean onGround = isGrounded(bot);
         boolean inFluid  = bot.isInWater() || bot.isInLava();
         boolean falling  = bot.getFallDistance() > 0.20f;
         boolean isCritical = s.tempCrit && !onGround && !inFluid
@@ -847,7 +849,7 @@ public final class BotPvpAI {
         vel.setZ(nz * speed);
 
         // Terrain navigation: jump up 1-block obstacles (only when on ground)
-        if (bot.isOnGround() && shouldJumpObstacle(bot, nx, nz)) {
+        if (isGrounded(bot) && shouldJumpObstacle(bot, nx, nz)) {
             vel.setY(0.42);
         }
 
@@ -959,7 +961,7 @@ public final class BotPvpAI {
         // (attackCooldown 5–8 ticks after hitting), force a brief back-pedal.
         // Combined with tempCrit this mimics the classic S-tap into sprint-crit rhythm.
         boolean doStap = s.tempStap && s.attackCooldown >= 5 && s.attackCooldown <= 8
-                && bot.isOnGround() && !tooClose;
+                && isGrounded(bot) && !tooClose;
 
         // ── Combo shield (datapack: combo matches 3.. → use continuous) ───────
         // If the target has landed 3+ consecutive hits and the bot has a shield,
@@ -1057,7 +1059,7 @@ public final class BotPvpAI {
         boolean shouldJump = false;
         Vector jumpDir = new Vector(nx, 0, nz);
 
-        if (s.jumpQueued && horizDist <= JUMP_RANGE && horizDist > Difficulty.fromConfig().attackRange && bot.isOnGround()) {
+        if (s.jumpQueued && horizDist <= JUMP_RANGE && horizDist > Difficulty.fromConfig().attackRange && isGrounded(bot)) {
             shouldJump = true;
             if (rng.nextDouble() > JUMP_FORWARD_BACK_CHANCE) {
                 jumpDir.setX(sx * 0.8 + nx * 0.2);
@@ -1065,9 +1067,9 @@ public final class BotPvpAI {
             }
             s.jumpQueued     = false;
             s.inAirAfterJump = true;
-        } else if (bot.isOnGround() && shouldJumpObstacle(bot, nx, nz)) {
+        } else if (isGrounded(bot) && shouldJumpObstacle(bot, nx, nz)) {
             shouldJump = true;
-        } else if (tooClose && bot.isOnGround() && rng.nextDouble() < 0.15) {
+        } else if (tooClose && isGrounded(bot) && rng.nextDouble() < 0.15) {
             shouldJump = true;
             jumpDir.setX(-nx);
             jumpDir.setZ(-nz);
@@ -1199,7 +1201,7 @@ public final class BotPvpAI {
         vel.setZ(-nz * fleeSpeed + pz * sineStrafe);
 
         // Jump over obstacles while fleeing
-        if (bot.isOnGround() && shouldJumpObstacle(bot, -nx, -nz)) {
+        if (isGrounded(bot) && shouldJumpObstacle(bot, -nx, -nz)) {
             vel.setY(0.42);
         }
 
@@ -1267,7 +1269,7 @@ public final class BotPvpAI {
      */
     private static void applyPhysicsRestrictions(Player bot, Vector vel) {
         boolean inWater = bot.isInWater() || bot.isInLava();
-        boolean onGround = bot.isOnGround();
+        boolean onGround = isGrounded(bot);
 
         // Water/lava: reduce movement speed (realistic water drag)
         if (inWater) {
@@ -1828,7 +1830,7 @@ public final class BotPvpAI {
             String n = base.name();
             if (n.contains("HEALING") || n.contains("HEALTH")) {
                 double heal = n.contains("STRONG") ? 8.0 : 4.0;
-                bot.setHealth(Math.min(bot.getMaxHealth(), bot.getHealth() + heal));
+                bot.setHealth(Math.min(maxHp(bot), bot.getHealth() + heal));
             } else if (n.contains("REGENERATION") || n.contains("REGEN")) {
                 int amp = n.contains("STRONG") ? 1 : 0;
                 bot.addPotionEffect(new PotionEffect(PotionEffectType.REGENERATION, 900, amp));
@@ -1926,7 +1928,7 @@ public final class BotPvpAI {
     private static void applyFoodBenefits(Player bot, Material type) {
         switch (type) {
             case ENCHANTED_GOLDEN_APPLE -> {
-                bot.setHealth(Math.min(bot.getMaxHealth(), bot.getHealth() + 8.0));
+                bot.setHealth(Math.min(maxHp(bot), bot.getHealth() + 8.0));
                 bot.setFoodLevel(Math.min(20, bot.getFoodLevel() + 4));
                 bot.addPotionEffect(new PotionEffect(PotionEffectType.REGENERATION, 400, 1));
                 bot.addPotionEffect(new PotionEffect(PotionEffectType.ABSORPTION,  2400, 3));
@@ -1934,7 +1936,7 @@ public final class BotPvpAI {
                 bot.addPotionEffect(new PotionEffect(PotionEffectType.FIRE_RESISTANCE, 6000, 0));
             }
             case GOLDEN_APPLE -> {
-                bot.setHealth(Math.min(bot.getMaxHealth(), bot.getHealth() + 4.0));
+                bot.setHealth(Math.min(maxHp(bot), bot.getHealth() + 4.0));
                 bot.setFoodLevel(Math.min(20, bot.getFoodLevel() + 4));
                 bot.addPotionEffect(new PotionEffect(PotionEffectType.REGENERATION, 100, 1));
                 bot.addPotionEffect(new PotionEffect(PotionEffectType.ABSORPTION,   2400, 0));
@@ -2453,7 +2455,7 @@ public final class BotPvpAI {
                 vel.setZ(nz * SPRINT_SPEED);
                 
                 // Jump over obstacles
-                if (bot.isOnGround() && shouldJumpObstacle(bot, nx, nz)) {
+                if (isGrounded(bot) && shouldJumpObstacle(bot, nx, nz)) {
                     vel.setY(0.42);
                 }
                 
@@ -2818,5 +2820,26 @@ public final class BotPvpAI {
 
     public void cancelAll() {
         states.clear();
+    }
+
+    // ── Deprecation-safe helpers ──────────────────────────────────────────────
+
+    /**
+     * Returns whether the bot is on the ground via the Entity reference so the
+     * compiler sees Entity#isOnGround (not deprecated) instead of
+     * Player#isOnGround (deprecated — only deprecated because real clients can
+     * spoof it; server-controlled bots report ground state server-side).
+     */
+    private static boolean isGrounded(Player p) {
+        return ((Entity) p).isOnGround();
+    }
+
+    /**
+     * Returns the max-health attribute value, replacing the deprecated
+     * LivingEntity#getMaxHealth() with the Attribute API.
+     */
+    private static double maxHp(LivingEntity e) {
+        AttributeInstance inst = e.getAttribute(Attribute.MAX_HEALTH);
+        return inst != null ? inst.getValue() : 20.0;
     }
 }

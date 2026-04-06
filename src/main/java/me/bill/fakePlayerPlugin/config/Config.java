@@ -35,6 +35,14 @@ public final class Config {
         plugin.reloadConfig();
         cfg = plugin.getConfig();
         cfg.options().copyDefaults(true);
+        // ── Locked / Coming-Soon features ─────────────────────────────────────
+        // body.enabled is always forced true — bodyless mode is not yet available.
+        // skin.guaranteed-skin is always forced false — skin system is coming soon.
+        // pvp-ai.pvp is always forced false — PVP bots are dev-only for now.
+        // If a user edits these manually, the next reload auto-reverts them.
+        cfg.set("body.enabled", true);
+        cfg.set("skin.guaranteed-skin", false);
+        cfg.set("pvp-ai.pvp", false);
         plugin.saveConfig();
     }
 
@@ -480,6 +488,15 @@ public final class Config {
     // ── PVP AI  (pvp-ai.*) ────────────────────────────────────────────────────
 
     /**
+     * Master PVP enable flag. Always {@code false} — forced by {@link #reload()}.
+     * While {@code false}, only the designated developer UUID may spawn PVP bots.
+     * Maps to {@code pvp-ai.pvp}.
+     */
+    public static boolean pvpAiEnabled() {
+        return cfg.getBoolean("pvp-ai.pvp", false);
+    }
+
+    /**
      * Difficulty level for the PVP AI.
      * Maps to {@code pvp-ai.difficulty} — one of {@code "easy"}, {@code "medium"},
      * {@code "hard"}, {@code "tier1"}, or {@code "hacker"}.
@@ -487,6 +504,22 @@ public final class Config {
      */
     public static String pvpAiDifficulty() {
         return cfg.getString("pvp-ai.difficulty", "medium").toLowerCase();
+    }
+
+    /**
+     * Combat mode for PVP bots: {@code "crystal"} or {@code "sword"}.
+     * Maps to {@code pvp-ai.combat-mode}.
+     */
+    public static String pvpAiCombatMode() {
+        return cfg.getString("pvp-ai.combat-mode", "crystal").toLowerCase();
+    }
+
+    /**
+     * Gear type the bot receives at spawn: {@code "diamond"} or {@code "netherite"}.
+     * Maps to {@code pvp-ai.gear}.
+     */
+    public static String pvpAiGear() {
+        return cfg.getString("pvp-ai.gear", "netherite").toLowerCase();
     }
 
     /**
@@ -505,6 +538,60 @@ public final class Config {
     public static double pvpAiDetectRange() {
         return cfg.getDouble("pvp-ai.detect-range", 32.0);
     }
+
+    /** Kit preset loaded at bot spawn: kit1 / kit2 / kit3 / kit4. */
+    public static String pvpAiKit() {
+        return cfg.getString("pvp-ai.kit", "kit1").toLowerCase();
+    }
+
+    // ── Combat techniques ─────────────────────────────────────────────────
+
+    /** Whether the bot lands critical hits by falling during attacks. */
+    public static boolean pvpAiCritting()      { return cfg.getBoolean("pvp-ai.critting",      true);  }
+
+    /** Whether the bot taps S during swing to reset attack cooldown (s-tap). */
+    public static boolean pvpAiSTapping()      { return cfg.getBoolean("pvp-ai.s-tapping",     true);  }
+
+    /** Whether the bot strafes (circles) around the target while fighting. */
+    public static boolean pvpAiStrafing()      { return cfg.getBoolean("pvp-ai.strafing",      true);  }
+
+    /** Whether the bot equips and uses a shield to block incoming hits. */
+    public static boolean pvpAiShielding()     { return cfg.getBoolean("pvp-ai.shielding",     false); }
+
+    /** Whether the bot has Speed and Strength potion effects active. */
+    public static boolean pvpAiSpeedBuffs()    { return cfg.getBoolean("pvp-ai.speed-buffs",   true);  }
+
+    /** Whether the bot jump-resets for the W-tap knockback bonus on hits. */
+    public static boolean pvpAiJumpReset()     { return cfg.getBoolean("pvp-ai.jump-reset",    true);  }
+
+    /** Whether combat techniques are randomised each round for unpredictability. */
+    public static boolean pvpAiRandom()        { return cfg.getBoolean("pvp-ai.random",        false); }
+
+    /** Whether the bot sprints toward the target during combat. */
+    public static boolean pvpAiSprint()        { return cfg.getBoolean("pvp-ai.sprint",        true);  }
+
+    /** Whether the bot backs away while swinging to control knockback. */
+    public static boolean pvpAiWalkBackwards() { return cfg.getBoolean("pvp-ai.walk-backwards",false); }
+
+    // ── Abilities ─────────────────────────────────────────────────────────
+
+    /** Whether the bot throws ender pearls to close the gap or escape. */
+    public static boolean pvpAiPearl()         { return cfg.getBoolean("pvp-ai.pearl",         true);  }
+
+    /** Whether the bot spams pearls in bursts for aggressive gap-closing. */
+    public static boolean pvpAiPearlSpam()     { return cfg.getBoolean("pvp-ai.pearl-spam",    false); }
+
+    /** Whether the bot pathfinds to an obsidian hole to protect itself. */
+    public static boolean pvpAiHoleMode()      { return cfg.getBoolean("pvp-ai.hole-mode",     false); }
+
+    /** Whether the bot automatically re-equips a totem after popping one. */
+    public static boolean pvpAiAutoRefill()    { return cfg.getBoolean("pvp-ai.auto-refill",   true);  }
+
+    /** Whether the bot automatically respawns and rejoins after death. */
+    public static boolean pvpAiAutoRespawn()   { return cfg.getBoolean("pvp-ai.auto-respawn",  true);  }
+
+    /** Whether the bot stays invulnerable during a grace period at spawn. */
+    public static boolean pvpAiSpawnProtection() { return cfg.getBoolean("pvp-ai.spawn-protection", true); }
 
 
     // ── Collision / Push  (collision.*) ──────────────────────────────────────

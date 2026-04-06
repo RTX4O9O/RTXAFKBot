@@ -298,17 +298,27 @@ public final class BotPersistence {
                 if (!saved.isEmpty()) {
                     Bukkit.getScheduler().runTaskLater(plugin,
                             () -> restoreChain(manager, saved, 0), 40L);
+                } else {
+                    // All DB rows were malformed — nothing to restore.
+                    manager.setRestorationInProgress(false);
                 }
                 return;
             }
         }
 
         // ── Fallback: restore from YAML file (no DB or empty active_bots) ────
-        if (!dataFile.exists()) return;
+        if (!dataFile.exists()) {
+            manager.setRestorationInProgress(false);
+            return;
+        }
 
         YamlConfiguration yaml = YamlConfiguration.loadConfiguration(dataFile);
         List<?> raw = yaml.getList("bots");
-        if (raw == null || raw.isEmpty()) { deleteFile(dataFile); return; }
+        if (raw == null || raw.isEmpty()) {
+            deleteFile(dataFile);
+            manager.setRestorationInProgress(false);
+            return;
+        }
 
         List<SavedBot> saved = new ArrayList<>();
         for (Object obj : raw) {
@@ -343,7 +353,10 @@ public final class BotPersistence {
             }
         }
         deleteFile(dataFile);
-        if (saved.isEmpty()) return;
+        if (saved.isEmpty()) {
+            manager.setRestorationInProgress(false);
+            return;
+        }
 
         FppLogger.info("Restoring " + saved.size() + " bot(s) from YAML fallback...");
         Bukkit.getScheduler().runTaskLater(plugin,

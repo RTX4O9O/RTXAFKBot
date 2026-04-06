@@ -2,7 +2,7 @@
 
 [SIZE=5][I]Spawn realistic fake players on your Paper server — with tab list presence, server list count, join/leave messages, in-world bodies, guaranteed skins, chunk loading, bot swap/rotation, fake chat, LuckPerms integration, proxy network support, and full hot-reload.[/I][/SIZE]
 
-[SIZE=4][B]Version:[/B] 1.5.12  [B]Minecraft:[/B] 1.21.x  [B]Platform:[/B] Paper  [B]Java:[/B] 21+[/SIZE]
+[SIZE=4][B]Version:[/B] 1.5.15  [B]Minecraft:[/B] 1.21.x  [B]Platform:[/B] Paper  [B]Java:[/B] 21+[/SIZE]
 
 [URL='https://modrinth.com/plugin/fake-player-plugin-(fpp)'][B][COLOR=#00AF5C]⬇ Download on Modrinth[/COLOR][/B][/URL]  [URL='https://www.spigotmc.org/resources/fake-player-plugin-fpp.133572/'][B][COLOR=#FF6B35]⬇ SpigotMC[/COLOR][/B][/URL]  [URL='https://hangar.papermc.io/Pepe-tf/FakePlayerPlugin'][B][COLOR=#00BFD8]⬇ PaperMC Hangar[/COLOR][/B][/URL]  [URL='https://builtbybit.com/resources/fake-player-plugin.98704/'][B][COLOR=#A855F7]⬇ BuiltByBit[/COLOR][/B][/URL]
 [URL='https://discord.gg/QSN7f67nkJ'][B][COLOR=#5865F2]💬 Join Discord[/COLOR][/B][/URL]  [URL='https://fakeplayerplugin.xyz'][B][COLOR=#7B8EF0]📖 Wiki[/COLOR][/B][/URL]  [URL='https://ko-fi.com/fakeplayerplugin'][B][COLOR=#FF5E5B]☕ Support on Ko-fi[/COLOR][/B][/URL]
@@ -390,6 +390,24 @@ Bot chat uses the server's real chat pipeline, so formatting is handled by your 
 
 [SIZE=6][B]📖 Changelog[/B][/SIZE]
 
+[SIZE=5][B]v1.5.15[/B][/SIZE] [I](2026-04-06)[/I]
+
+[B]📝 Config Clarity Improvements[/B]
+[LIST]
+[*]All timing-related values now clearly state their unit (ticks or seconds) with human-readable conversion examples
+[*][FONT=monospace]join-delay[/FONT] / [FONT=monospace]leave-delay[/FONT] header updated: "Values are in TICKS — 20 ticks = 1 second" with quick-reference line; [FONT=monospace]min[/FONT]/[FONT=monospace]max[/FONT] keys now carry inline tick-unit comments
+[*][FONT=monospace]death.respawn-delay[/FONT] comment shows seconds equivalents: 15 = 0.75 s · 60 = 3 s · 100 = 5 s
+[*][FONT=monospace]chunk-loading.update-interval[/FONT] clarified: "in ticks (20 ticks = 1 second). Lower = more responsive, higher = less overhead."
+[*][FONT=monospace]swap.session[/FONT] / [FONT=monospace]swap.absence[/FONT] inline comments updated with real-world time examples
+[/LIST]
+
+[B]🔧 Build Pipeline Fixes[/B]
+[LIST]
+[*]ProGuard: removed [FONT=monospace]**.yml[/FONT] from [FONT=monospace]-adaptresourcefilecontents[/FONT] — prevents charset corruption of plugin.yml and language files on Windows builds
+[*]ProGuard: removed [FONT=monospace]-dontpreverify[/FONT] — StackMapTable attributes preserved; obfuscated jar passes JVM verifier
+[*]ProGuard: MySQL / SQLite shaded classes excluded from preverification to prevent IncompleteClassHierarchyException; merged back verbatim into final jar
+[/LIST]
+
 [SIZE=5][B]v1.5.12[/B][/SIZE] [I](2026-04-05)[/I]
 
 [B]🔒 Stable Bot UUID Identity[/B]
@@ -699,6 +717,6 @@ Thank you for using Fake Player Plugin. Without you, it wouldn't be where it is 
 
 [HR][/HR]
 
-[CENTER][I]Built for Paper 1.21.x · Java 21 · FPP v1.5.12[/I]
+[CENTER][I]Built for Paper 1.21.x · Java 21 · FPP v1.5.15[/I]
 
 [URL='https://modrinth.com/plugin/fake-player-plugin-(fpp)']Modrinth[/URL]  [URL='https://www.spigotmc.org/resources/fake-player-plugin-fpp.133572/']SpigotMC[/URL]  [URL='https://hangar.papermc.io/Pepe-tf/FakePlayerPlugin']PaperMC[/URL]  [URL='https://builtbybit.com/resources/fake-player-plugin.98704/']BuiltByBit[/URL]  [URL='https://fakeplayerplugin.xyz']Wiki[/URL][/CENTER]

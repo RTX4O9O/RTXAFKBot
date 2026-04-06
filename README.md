@@ -343,6 +343,20 @@ Bot chat uses the server's real chat pipeline (`Player.chat()`), so formatting i
 
 ## Changelog
 
+### v1.5.15 *(2026-04-06)*
+
+**Config Clarity Improvements**
+- All timing-related values in `config.yml` now clearly state their unit (ticks or seconds) with human-readable conversion examples
+- `join-delay` / `leave-delay` section header updated: *"Values are in TICKS — 20 ticks = 1 second"* with a quick-reference line; both `min`/`max` keys now carry inline `# ticks (20 ticks = 1 second)` comments
+- `death.respawn-delay` comment now shows seconds equivalents: `15 = 0.75 s · 60 = 3 s · 100 = 5 s`
+- `chunk-loading.update-interval` comment clarified to *"in ticks (20 ticks = 1 second). Lower = more responsive, higher = less overhead."*
+- `swap.session` / `swap.absence` inline comments updated to show real-world time examples (e.g. `60 = 1 min, 300 = 5 min`)
+
+**Build Pipeline Fixes**
+- ProGuard obfuscation: removed `**.yml` from `-adaptresourcefilecontents` — prevents charset corruption of `plugin.yml` and language files on Windows builds
+- ProGuard obfuscation: removed `-dontpreverify` — `StackMapTable` attributes are now preserved so the JVM verifier accepts the obfuscated jar
+- ProGuard obfuscation: MySQL / SQLite shaded classes excluded from preverification to prevent `IncompleteClassHierarchyException`; merged back verbatim into the final jar
+
 ### v1.5.12 *(2026-04-05)*
 
 **Stable Bot UUID Identity**
@@ -570,4 +584,4 @@ Thank you for using Fake Player Plugin. Without you, it wouldn't be where it is 
 
 ---
 
-*Built for Paper 1.21.x · Java 21 · FPP v1.5.12 · [Modrinth](https://modrinth.com/plugin/fake-player-plugin-(fpp)) · [SpigotMC](https://www.spigotmc.org/resources/fake-player-plugin-fpp.133572/) · [PaperMC](https://hangar.papermc.io/Pepe-tf/FakePlayerPlugin) · [BuiltByBit](https://builtbybit.com/resources/fake-player-plugin.98704/) · [Wiki](https://fakeplayerplugin.xyz)*
+*Built for Paper 1.21.x · Java 21 · FPP v1.5.15 · [Modrinth](https://modrinth.com/plugin/fake-player-plugin-(fpp)) · [SpigotMC](https://www.spigotmc.org/resources/fake-player-plugin-fpp.133572/) · [PaperMC](https://hangar.papermc.io/Pepe-tf/FakePlayerPlugin) · [BuiltByBit](https://builtbybit.com/resources/fake-player-plugin.98704/) · [Wiki](https://fakeplayerplugin.xyz)*

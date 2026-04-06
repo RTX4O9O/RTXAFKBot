@@ -1,7 +1,7 @@
 # 🎮 Fake Player Plugin — Wiki
 
 > **The Ultimate Bot Spoofing Plugin for Paper 1.21+**  
-> **Version:** 1.5.12 · **Platform:** Paper 1.21+ · **Author:** Bill_Hub
+> **Version:** 1.5.15 · **Platform:** Paper 1.21+ · **Author:** Bill_Hub
 
 ---
 
@@ -118,23 +118,17 @@
 
 ---
 
-## 🆕 What's New in v1.5.12
+## 🆕 What's New in v1.5.15
 
-### 🔒 **Stable Bot UUID Identity**
-- Each bot name is permanently tied to a stable UUID — bots always rejoin with the same UUID after restarts, keeping LuckPerms data and session history intact
+### 📝 **Config Clarity Improvements**
+- All timing-related values in `config.yml` now clearly state their unit (ticks or seconds) with human-readable conversion examples — no more guessing whether `respawn-delay: 15` means seconds or ticks
+- `join-delay` / `leave-delay` header updated with quick-reference: `0 = instant · 20 = 1 s · 40 = 2 s · 100 = 5 s`
+- `swap.session` / `swap.absence` inline comments show real-world equivalents (e.g. `60 = 1 min`, `300 = 5 min`)
 
-### ⚙️ **In-Game Settings GUI**
-- `/fpp settings` opens a 3-row chest GUI to toggle and adjust config values live, no file editing required
-
-### ⏰ **Peak Hours Scheduler**
-- Automatically scales the bot pool up or down based on time-of-day windows; crash-safe via DB persistence
-- New command: `/fpp peaks [on|off|status|next|force|list|wake|sleep]`
-
-### 💬 **Per-Bot Chat Control**
-- Activity tiers (quiet → chatty), timed mutes, per-bot info, and bulk operations via `/fpp chat <bot> tier|mute|info` and `/fpp chat all`
-
-### 🔧 **Config Migration v41 → v44**
-- Config version bumped to **44** — automatic migration runs on first startup
+### 🔧 **Build Pipeline Fixes**
+- ProGuard obfuscation pipeline fixed — `plugin.yml` and language files no longer corrupted on Windows builds
+- `StackMapTable` attributes preserved in obfuscated jar — no more `VerifyError` on startup
+- MySQL / SQLite shaded classes handled correctly during ProGuard preverification
 
 ---
 

@@ -81,6 +81,35 @@ public final class NmsPlayerSpawner {
     /** Used to make bot perform actual attack on target entity. */
     private static Method attackMethod;
 
+    // ── PlayerList lifecycle ──────────────────────────────────────────────────
+    /**
+     * {@code PlayerList.remove(EntityPlayer)} — removes the bot through the proper
+     * server-side lifecycle (saves data, fires {@code PlayerQuitEvent}, removes entity
+     * from world).  Used instead of {@code player.kick()} so the save path is
+     * guaranteed even when the fake Netty pipeline's {@code fireChannelInactive()} is a no-op.
+     */
+    private static Method playerListRemoveMethod;
+
+    // ── WorldNBTStorage (PlayerDataStorage) — pre-spawn file creation ─────────
+    /**
+     * The {@code WorldNBTStorage} (a.k.a. {@code PlayerDataStorage}) field {@code s}
+     * on {@code PlayerList}.  Holds the player-file I/O backend.
+     */
+    private static java.lang.reflect.Field playerDataStorageField;
+    /**
+     * {@code WorldNBTStorage.a(EntityHuman)} — saves player NBT to
+     * {@code world/playerdata/<uuid>.dat}.  Called <em>before</em> {@code placeNewPlayer()}
+     * when no file yet exists so Paper/CMI/Essentials see the bot as a returning player
+     * ({@code hasPlayedBefore() == true}) on every subsequent spawn.
+     */
+    private static Method playerDataSaveMethod;
+    /**
+     * {@code WorldNBTStorage.getPlayerDir()} — returns the {@code File} pointing at
+     * the {@code world/playerdata/} directory.  Used to check whether
+     * {@code <uuid>.dat} already exists before attempting a pre-spawn save.
+     */
+    private static Method getPlayerDirMethod;
+
     // ── ClientInformation cache ────────────────────────────────────────────────
     private static Object clientInfoDefault;
 
@@ -272,10 +301,56 @@ public final class NmsPlayerSpawner {
                 FppLogger.warn("NmsPlayerSpawner: Failed to cache attack method: " + e.getMessage());
             }
 
+            // ── PlayerList.remove / WorldNBTStorage save ────────────────────────
+            // remove(EntityPlayer) — proper despawn path: saves data, fires
+            //   PlayerQuitEvent, removes entity from world. Used instead of kick()
+            //   to guarantee the save even when FakeChannelPipeline is a no-op.
+            // WorldNBTStorage.a(EntityHuman) — save() — called BEFORE placeNewPlayer()
+            //   when no <uuid>.dat file exists yet, ensuring Paper sees the bot as a
+            //   returning player (hasPlayedBefore=true) on every subsequent spawn.
+            //   Also used via getPlayerDir() to check for the pre-existing file.
+            try {
+                Class<?> playerListClass = getPlayerListMethod.getReturnType();
+                playerListRemoveMethod = findMethod(playerListClass, "remove", 1);
+
+                // WorldNBTStorage is held in field "s" on PlayerList.
+                // Scan by type to be robust against obfuscation renames across versions.
+                for (java.lang.reflect.Field f : playerListClass.getDeclaredFields()) {
+                    String typeName = f.getType().getSimpleName();
+                    if (typeName.contains("WorldNBTStorage") || typeName.contains("PlayerDataStorage")) {
+                        f.setAccessible(true);
+                        playerDataStorageField = f;
+                        break;
+                    }
+                }
+                if (playerDataStorageField != null) {
+                    Class<?> storageClass = playerDataStorageField.getType();
+                    // getPlayerDir() — Mojang-mapped name is preserved in Paper
+                    try { getPlayerDirMethod = storageClass.getMethod("getPlayerDir"); } catch (Exception ignored) {}
+                    // void a(EntityHuman) — the save overload (load returns Optional, not void)
+                    for (java.lang.reflect.Method m : storageClass.getDeclaredMethods()) {
+                        if ("a".equals(m.getName()) && m.getParameterCount() == 1
+                                && m.getReturnType() == void.class) {
+                            m.setAccessible(true);
+                            playerDataSaveMethod = m;
+                            break;
+                        }
+                    }
+                }
+                FppLogger.debug("NmsPlayerSpawner: PlayerList lifecycle — remove="
+                        + (playerListRemoveMethod != null ? "ok" : "missing")
+                        + " storage=" + (playerDataStorageField != null ? "ok" : "missing")
+                        + " save=" + (playerDataSaveMethod != null ? "ok" : "missing")
+                        + " getPlayerDir=" + (getPlayerDirMethod != null ? "ok" : "missing"));
+            } catch (Exception e) {
+                FppLogger.debug("NmsPlayerSpawner: PlayerList lifecycle init failed: " + e.getMessage());
+            }
+
             initialized = true;
             FppLogger.info("NmsPlayerSpawner initialised (doTick=" + (doTickMethod != null)
                     + ", connectionField=" + (connectionFieldInPlayer != null)
-                    + ", attack=" + (attackMethod != null) + ")");
+                    + ", attack=" + (attackMethod != null)
+                    + ", playerDataDir=" + (getPlayerDirMethod != null) + ")");
 
             // ── Skin-parts entity metadata (DATA_PLAYER_MODE_CUSTOMISATION) ────
             // Done after initialized=true so forceAllSkinParts() can use the already-
@@ -386,6 +461,16 @@ public final class NmsPlayerSpawner {
                 return null;
             }
 
+            // ── Ensure playerdata file exists before placeNewPlayer() ─────────
+            // Creates world/playerdata/<uuid>.dat if it does not yet exist by calling
+            // WorldNBTStorage.save() on the freshly-created (but not yet placed) player.
+            // placeNewPlayer() calls playerIo.load() internally — when the file exists,
+            // Paper sets isFirstJoin=false, so Bukkit's hasPlayedBefore() returns true.
+            // This prevents CMI, Essentials, and other plugins from treating the bot as
+            // a brand-new player on every respawn with the same name+UUID.
+            FppLogger.debug("NmsPlayerSpawner: spawning '" + name + "' uuid=" + uuid);
+            ensurePlayerDataExists(minecraftServer, serverPlayer, name, uuid);
+
             // ── Place into world ───────────────────────────────────────────────
             // placeNewPlayer() creates a vanilla SGPL, assigns it to serverPlayer.connection,
             // and sends the spawn-position packet → sets awaitingPositionFromClient on SGPL.
@@ -413,7 +498,7 @@ public final class NmsPlayerSpawner {
                 // returns modelCustomisation = 0 on this server version.
                 forceAllSkinParts(result);
                 firstTickSet.add(uuid);
-                FppLogger.info("NmsPlayerSpawner: spawned " + name + " (" + uuid + ")");
+                FppLogger.debug("NmsPlayerSpawner: spawned " + name + " (" + uuid + ")");
                 return result;
             }
 
@@ -583,34 +668,167 @@ public final class NmsPlayerSpawner {
     // ══════════════════════════════════════════════════════════════════════════
 
     /**
-     * Removes a fake player from the server by kicking it, which triggers the
-     * normal server-side despawn and cleanup path.
+     * Removes a fake player from the server using the proper server-side lifecycle path.
      *
-     * <p>Uses {@code Component.empty()} as the kick reason so that
-     * {@code FakePlayerKickListener} recognises this as an intentional removal
-     * and does not cancel the event (non-empty reasons are cancelled to prevent
-     * anti-idle/anti-AFK systems from kicking bots unintentionally).
+     * <h3>Removal sequence</h3>
+     * <ol>
+     *   <li><b>Explicit save</b> — {@code player.saveData()} writes
+     *       {@code world/playerdata/<uuid>.dat} before anything else.  This is the
+     *       primary guarantee that the file exists for the next {@code placeNewPlayer()}
+     *       call; it is intentionally done here even though {@code PlayerList.remove()}
+     *       (step 2) also saves.</li>
+     *   <li><b>{@code PlayerList.remove(nmsPlayer)}</b> (preferred) — saves data again,
+     *       fires {@code PlayerQuitEvent}, removes from the server player list, and
+     *       removes the entity from the world via
+     *       {@code ServerLevel.removePlayerImmediately()}.  This is the correct lifecycle
+     *       path that Paper uses for real player disconnections.</li>
+     *   <li><b>Kick fallback</b> — if {@code PlayerList.remove()} is not available or
+     *       fails (e.g. reflection error on an unusual build), falls back to
+     *       {@code player.kick(Component.empty())}.  The empty reason bypasses
+     *       {@code FakePlayerKickListener}'s "cancel all kicks" guard.</li>
+     * </ol>
+     *
+     * <p>By replacing the old kick-only approach with a direct {@code PlayerList.remove()}
+     * call we eliminate the dependency on the fake Netty pipeline's
+     * {@code fireChannelInactive()} firing {@code handleDisconnection()} — a path that is
+     * a no-op with our fake channel.  The result is reliable playerdata persistence on
+     * every despawn.
      */
     public static void removeFakePlayer(Player player) {
         if (player == null) return;
         try {
             firstTickSet.remove(player.getUniqueId());
             if (player.isOnline()) {
-                // Persist playerdata to disk NOW, before the kick, so the file exists on the
-                // next spawn.  When placeNewPlayer() runs, it calls PlayerIo.load() — if the
-                // file is present, Paper sets isFirstJoin=false and hasPlayedBefore=true, which
-                // prevents third-party plugins (CMI, Essentials, etc.) from treating the
-                // re-spawned bot as a brand-new player.  The normal disconnect-path save via
-                // super.onDisconnect() → PlayerList.remove() also runs, but calling saveData()
-                // here guarantees the file is on disk before the next spawn even if the normal
-                // path is deferred to a later tick.
-                try { player.saveData(); } catch (Exception ignored) {}
-                // Empty reason bypasses FakePlayerKickListener's "cancel all kicks" guard.
-                player.kick(net.kyori.adventure.text.Component.empty());
+                final String name = player.getName();
+                final UUID   uuid = player.getUniqueId();
+
+                FppLogger.debug("NmsPlayerSpawner: removing '" + name + "' uuid=" + uuid);
+
+                // Step 1: Explicit save — guarantees world/playerdata/<uuid>.dat exists
+                // for the next placeNewPlayer() regardless of what the removal path does.
+                try {
+                    player.saveData();
+                    FppLogger.info("NmsPlayerSpawner: saved playerdata for '"
+                            + name + "' uuid=" + uuid);
+                } catch (Exception e) {
+                    FppLogger.warn("NmsPlayerSpawner: saveData failed for '"
+                            + name + "' uuid=" + uuid + ": " + e.getMessage());
+                }
+
+                // Step 2: Remove via PlayerList.remove(nmsPlayer) — proper lifecycle path.
+                // Fires PlayerQuitEvent, saves data again, removes from player list,
+                // and calls ServerLevel.removePlayerImmediately() to drop the entity.
+                boolean removedViaPlayerList = false;
+                if (initialized
+                        && craftPlayerGetHandleMethod  != null
+                        && craftServerGetServerMethod  != null
+                        && getPlayerListMethod         != null
+                        && playerListRemoveMethod      != null) {
+                    try {
+                        Object nmsPlayer       = craftPlayerGetHandleMethod.invoke(player);
+                        Object minecraftServer = craftServerGetServerMethod.invoke(
+                                org.bukkit.Bukkit.getServer());
+                        Object playerList      = getPlayerListMethod.invoke(minecraftServer);
+                        playerListRemoveMethod.invoke(playerList, nmsPlayer);
+                        removedViaPlayerList = true;
+                        FppLogger.info("NmsPlayerSpawner: removed '" + name
+                                + "' via PlayerList.remove() uuid=" + uuid);
+                    } catch (Exception e) {
+                        FppLogger.debug("NmsPlayerSpawner: PlayerList.remove failed for '"
+                                + name + "' uuid=" + uuid + ": " + e.getMessage()
+                                + " — falling back to kick");
+                    }
+                }
+
+                // Step 3: Fallback — kick with empty reason when PlayerList.remove() was
+                // unavailable or failed.  Empty reason bypasses FakePlayerKickListener.
+                if (!removedViaPlayerList && player.isOnline()) {
+                    player.kick(net.kyori.adventure.text.Component.empty());
+                }
             }
         } catch (Exception e) {
             FppLogger.debug("NmsPlayerSpawner.removeFakePlayer failed for "
                     + player.getName() + ": " + e.getMessage());
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Pre-spawn playerdata helper
+    // ══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Ensures {@code world/playerdata/<uuid>.dat} exists on disk <em>before</em>
+     * {@link #placePlayer(Object, Object, Object, Object, Object)} is called.
+     *
+     * <h3>Why this is needed</h3>
+     * <p>{@code PlayerList.placeNewPlayer()} internally calls
+     * {@code playerIo.load(player)}.  If the file does not exist, {@code load()}
+     * returns {@code Optional.empty()}, Paper sets {@code isFirstJoin = true}, and
+     * Bukkit's {@link org.bukkit.entity.Player#hasPlayedBefore()} returns
+     * {@code false}.  Plugins such as CMI, Essentials, and similar management
+     * suites read {@code hasPlayedBefore()} to decide whether to show a
+     * "joined for the first time!" announcement and to run first-join workflows.
+     * Without a pre-existing file, bots are treated as brand-new players on every
+     * single despawn+respawn cycle.
+     *
+     * <h3>Implementation</h3>
+     * <ol>
+     *   <li>Obtain {@code WorldNBTStorage} via {@code PlayerList.s}.</li>
+     *   <li>Call {@code getPlayerDir()} to find the physical directory.</li>
+     *   <li>If {@code <uuid>.dat} already exists → log "returning player", return.</li>
+     *   <li>If it does not exist → call {@code WorldNBTStorage.a(EntityHuman)} (the
+     *       save overload) on the freshly-constructed {@code serverPlayer}.  This writes
+     *       a valid compressed-NBT file containing the bot's default initial state
+     *       (empty inventory, default health, the position we just set).  On the next
+     *       {@code placeNewPlayer()} call, {@code load()} finds the file and sets
+     *       {@code isFirstJoin = false} — the bot is recognised as a returning player.</li>
+     * </ol>
+     *
+     * <p>If the reflection objects are unavailable (older/remapped server), the method
+     * returns silently; behaviour degrades to the old "first-time join" state but no
+     * exception is thrown.
+     *
+     * @param minecraftServer NMS {@code MinecraftServer} instance
+     * @param serverPlayer    freshly constructed NMS {@code ServerPlayer} (not yet placed)
+     * @param name            bot name (for logging)
+     * @param uuid            bot UUID (for logging and filename)
+     */
+    private static void ensurePlayerDataExists(Object minecraftServer, Object serverPlayer,
+                                               String name, UUID uuid) {
+        if (playerDataStorageField == null) {
+            FppLogger.debug("NmsPlayerSpawner: ensurePlayerDataExists skipped"
+                    + " — WorldNBTStorage field not cached (name=" + name + " uuid=" + uuid + ")");
+            return;
+        }
+        try {
+            Object playerList        = getPlayerListMethod.invoke(minecraftServer);
+            Object playerDataStorage = playerDataStorageField.get(playerList);
+
+            // ── Check whether <uuid>.dat already exists ────────────────────────
+            if (getPlayerDirMethod != null) {
+                java.io.File playerDir  = (java.io.File) getPlayerDirMethod.invoke(playerDataStorage);
+                java.io.File playerFile = new java.io.File(playerDir, uuid + ".dat");
+                if (playerFile.exists()) {
+                    FppLogger.info("NmsPlayerSpawner: playerdata found for '"
+                            + name + "' uuid=" + uuid + " — returning player");
+                    return;
+                }
+            }
+
+            // ── File does not exist — write initial data to prevent first-join ─
+            if (playerDataSaveMethod != null) {
+                playerDataSaveMethod.invoke(playerDataStorage, serverPlayer);
+                FppLogger.info("NmsPlayerSpawner: created initial playerdata for '"
+                        + name + "' uuid=" + uuid
+                        + " — will be treated as returning player on next spawn");
+            } else {
+                FppLogger.debug("NmsPlayerSpawner: playerdata file missing but save method"
+                        + " not cached — first-join message may appear (name=" + name + ")");
+            }
+        } catch (Exception e) {
+            // Non-fatal — placeNewPlayer() will proceed regardless.
+            FppLogger.warn("NmsPlayerSpawner: ensurePlayerDataExists failed for '"
+                    + name + "' uuid=" + uuid + ": " + e.getMessage());
         }
     }
 
