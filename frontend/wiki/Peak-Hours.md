@@ -1,239 +1,243 @@
-# Peak Hours
+# ⏰ Peak Hours
 
-The peak-hours system automatically adjusts how many bots are online based on real-world time windows, mimicking natural player activity patterns - busy evenings, quiet nights, weekend surges, and so on.
+Peak-hours automatically adjusts how many AFK bots are online based on real-world time windows.
 
----
-
-## Overview
-
-When enabled, the plugin evaluates the current server time every **60 seconds** against a configurable schedule.  Each time window defines a **fraction** of the total bot pool that should be online during that period.
-
-- `fraction: 1.0` → all bots online
-- `fraction: 0.5` → half the bots online
-- `fraction: 0.0` → no bots online (all sleeping)
-
-Bots that exceed the target fraction are quietly put to **sleep** (removed); sleeping bots are gradually **woken** (respawned) when the fraction rises.  Transitions are staggered so joins and leaves look natural.
-
-> **Requires:** `swap.enabled: true` - peak-hours uses the swap system to sleep and wake bots naturally.
+It is designed to mimic:
+- quiet overnight periods
+- daytime medium activity
+- evening peaks
+- weekend surges
 
 ---
 
-## Enabling Peak Hours
+## Requirements
+
+Peak-hours depends on the swap system.
 
 ```yaml
+swap:
+  enabled: true
+
 peak-hours:
-  enabled: false
+  enabled: true
 ```
 
-Set to `true` in `config.yml`, or control live with:
+Without `swap.enabled: true`, peak-hours cannot manage the bot pool correctly.
 
-```
-/fpp peaks              ← bare command toggles on/off
+---
+
+## Commands
+
+```text
+/fpp peaks
 /fpp peaks on
 /fpp peaks off
-/fpp peaks status       ← current window, fraction, pool counts
-/fpp peaks next         ← time until the next window change
-/fpp peaks force        ← trigger an immediate evaluation now
-/fpp peaks list         ← list all sleeping bots and their locations
-/fpp peaks wake [name]  ← wake a specific bot (or all sleeping bots)
-/fpp peaks sleep <name> ← manually put an active bot to sleep
+/fpp peaks status
+/fpp peaks next
+/fpp peaks force
+/fpp peaks list
+/fpp peaks wake [name]
+/fpp peaks sleep <name>
 ```
 
-The `on`/`off` commands write directly to `config.yml` and survive restarts.
-
-**Required permission:** `fpp.peaks`
+Permission: `fpp.peaks`
 
 ---
 
-## Configuration
+## Core Configuration
 
 ```yaml
 peak-hours:
   enabled: false
-  timezone: "UTC"            # Any java.time.ZoneId, e.g. "America/New_York"
-  stagger-seconds: 30        # Spread bot joins/leaves over this many seconds
-
-  # Absolute minimum bots that must stay online regardless of fraction
+  timezone: "UTC"
+  stagger-seconds: 30
   min-online: 0
-
-  # Broadcast window transitions to online admins with fpp.peaks
   notify-transitions: false
-
-  # ── Daily schedule ──────────────────────────────────────────────────────
   schedule:
-    - start: "06:00"
-      end:   "09:00"
-      fraction: 0.30       # Early morning - server waking up
-
-    - start: "09:00"
-      end:   "18:00"
-      fraction: 0.75       # Daytime - moderate activity
-
-    - start: "18:00"
-      end:   "22:00"
-      fraction: 1.00       # Peak evening - all bots online
-
-    - start: "22:00"
-      end:   "06:00"
-      fraction: 0.05       # Night - almost all bots sleeping
-
-  # ── Day-of-week overrides ───────────────────────────────────────────────
-  day-overrides:
-    SATURDAY:
-      - start: "10:00"
-        end:   "23:00"
-        fraction: 1.00     # Weekend peak - full server all day
-      - start: "23:00"
-        end:   "10:00"
-        fraction: 0.10     # Saturday night wind-down
-    SUNDAY:
-      - start: "10:00"
-        end:   "21:00"
-        fraction: 0.90
-      - start: "21:00"
-        end:   "10:00"
-        fraction: 0.05
+    - { start: "06:00", end: "09:00", fraction: 0.30 }
+    - { start: "09:00", end: "18:00", fraction: 0.75 }
+    - { start: "18:00", end: "22:00", fraction: 1.00 }
+    - { start: "22:00", end: "06:00", fraction: 0.05 }
 ```
+
+### Meaning of `fraction`
+
+- `1.0` → all bots online
+- `0.5` → half the pool online
+- `0.0` → no AFK bots online
+
+---
+
+## How It Works
+
+Every 60 seconds, FPP:
+1. checks the configured timezone
+2. finds the matching window
+3. computes a target fraction of the AFK bot pool
+4. gradually wakes or sleeps bots to match that target
+
+Changes are staggered over `stagger-seconds` so joins/leaves do not happen all at once.
+
+---
+
+## Schedule Rules
+
+### Daily schedule
+
+Entries are checked top-to-bottom.
+
+The first matching window wins.
+
+### Midnight-crossing windows
+
+Windows like `22:00 -> 06:00` work automatically.
+
+### Day overrides
+
+Use uppercase day keys:
+- `MONDAY`
+- `TUESDAY`
+- `WEDNESDAY`
+- `THURSDAY`
+- `FRIDAY`
+- `SATURDAY`
+- `SUNDAY`
+
+A day override completely replaces the normal `schedule` for that day.
 
 ---
 
 ## Settings Reference
 
-### Timezone
+### `timezone`
 
 ```yaml
 timezone: "UTC"
 ```
 
-Any valid [Java `ZoneId`](https://docs.oracle.com/en/java/docs/api/java.base/java/time/ZoneId.html) string.  Examples:
+Any valid Java `ZoneId`, for example:
+- `UTC`
+- `America/New_York`
+- `Europe/London`
+- `Asia/Tokyo`
 
-| Value | Region |
-|-------|--------|
-| `"UTC"` | Universal Coordinated Time (default) |
-| `"America/New_York"` | US Eastern |
-| `"Europe/London"` | UK |
-| `"Asia/Tokyo"` | Japan |
-| `"Australia/Sydney"` | Australia Eastern |
-
----
-
-### Stagger Seconds
+### `stagger-seconds`
 
 ```yaml
 stagger-seconds: 30
 ```
 
-Distributes bot joins and leaves evenly across this many seconds so they don't all happen at once.  With 10 bots and `stagger-seconds: 60`, one bot wakes roughly every 6 seconds.
+Spreads the transition over this many seconds.
 
----
-
-### Min Online
+### `min-online`
 
 ```yaml
 min-online: 0
 ```
 
-Sets a hard floor - at least this many AFK bots will always remain online, regardless of the computed fraction.  Useful for ensuring the server never appears completely empty during off-peak hours.
+Hard floor: at least this many AFK bots remain online even if the active fraction would otherwise go lower.
 
----
-
-### Notify Transitions
+### `notify-transitions`
 
 ```yaml
 notify-transitions: false
 ```
 
-When `true`, online players with the `fpp.peaks` permission receive a chat notification each time the server enters a new time window.
+When enabled, players with `fpp.peaks` are notified when the active window changes.
 
 ---
 
-### Schedule
+## Sleeping Bots
 
-Each entry in `schedule` (and each day override) is a map with three keys:
+When peak-hours needs fewer bots online:
+- selected AFK bots are put to sleep
+- they are quietly removed from the active world/tab state
+- their saved location is kept for re-wake
 
-| Key | Type | Description |
-|-----|------|-------------|
-| `start` | `HH:mm` | Window start time (24-hour) |
-| `end`   | `HH:mm` | Window end time (24-hour) |
-| `fraction` | `0.0 - 1.0` | Fraction of the total bot pool that should be online |
-
-**Midnight-crossing windows** (e.g. `22:00 → 06:00`) are handled automatically - no special configuration is needed.
-
-Windows are checked **top-to-bottom**; the first matching window wins.  If no window matches, the fraction defaults to `1.0` (all bots online).
+When the active fraction rises:
+- sleeping bots are re-spawned
+- wake order follows the saved queue behavior
 
 ---
 
-### Day-of-Week Overrides
+## Crash-Safe Persistence
 
-```yaml
-day-overrides:
-  SATURDAY:
-    - start: "10:00"
-      end:   "23:00"
-      fraction: 1.00
-```
+This is an important current behavior.
 
-Override the default daily schedule for specific days.  Keys must be uppercase Java [`DayOfWeek`](https://docs.oracle.com/en/java/docs/api/java.base/java/time/DayOfWeek.html) names:
+Sleeping bots **are persisted separately** when DB is enabled.
 
-`MONDAY` `TUESDAY` `WEDNESDAY` `THURSDAY` `FRIDAY` `SATURDAY` `SUNDAY`
+They are stored in:
+- `fpp_sleeping_bots`
 
-When a day-override is present it completely replaces the default schedule for that day.  Remove or comment out an entry to fall back to the default schedule.
+That means if the server crashes or restarts unexpectedly, peak-hours can rebuild the sleeping queue instead of losing track of which bots were intentionally asleep.
 
 ---
 
-## How Sleeping Works
+## Shutdown / Reload Behavior
 
-When peak-hours needs to reduce the online count:
+### On shutdown
 
-1. A random selection of AFK bots are chosen as **sleep candidates**.
-2. Each bot's pending swap session is cancelled (so `BotSwapAI` does not independently rejoin it).
-3. The bot's current location is saved.
-4. The bot is quietly despawned (no leave message is broadcast - it simply vanishes from the tab list).
+Peak-hours wakes sleeping bots **before** normal persistence save so the full bot pool is captured correctly.
 
-When the fraction rises:
+### On reload
 
-1. Bots are woken from the queue **FIFO** (oldest first).
-2. Each bot respawns at its saved location.
-3. If `swap.same-name-on-rejoin: true` and the original name is available, it rejoins with the same name.
+`/fpp reload` causes peak-hours to:
+1. wake all sleeping bots
+2. reset transition state
+3. start evaluating again using the new config
+
+This prevents stale sleep-state issues after config changes.
 
 ---
 
-## Interaction with BotSwapAI
+## Interaction with Swap
 
-The total bot pool counted by peak-hours **includes** bots currently offline via the normal swap rotation (`BotSwapAI.getSwappedOutCount()`).  This prevents routine swap absences from appearing as a sudden pool shrinkage that peak-hours would try to compensate for.
+Peak-hours works alongside the normal swap system.
 
-> If swap is disabled while peak-hours is running, the tick pauses and **all sleeping bots are immediately woken** to prevent data loss.
+Important behavior:
+- swapped-out bots still count toward the overall bot pool
+- this prevents short swap absences from tricking peak-hours into overcompensating
+- if swap is disabled, peak-hours cannot keep running properly
+
+Newer swap settings that often matter here:
+- `swap.min-online`
+- `swap.retry-rejoin`
+- `swap.retry-delay`
+
+---
+
+## What Bots Are Managed?
+
+Peak-hours only manages:
+- **AFK bots**
+
+It does **not** manage:
+- PvP bots
 
 ---
 
 ## Diagnostics
 
-```
-/fpp peaks status
-```
+### `/fpp peaks status`
 
-Displays:
+Shows information like:
+- current window
+- current target fraction
+- sleeping count
+- total pool size
+- time zone
 
-| Field | Meaning |
-|-------|---------|
-| `window` | Active time window (e.g. `18:00-22:00`) |
-| `fraction` | Target fraction as a percentage |
-| `target` | Target number of bots online |
-| `online` | Currently online AFK bots |
-| `swapping` | Bots temporarily offline via BotSwapAI |
-| `sleeping` | Bots in the peak-hours sleep queue |
-| `total` | Total pool (online + swapping + sleeping) |
-| `tz` | Configured timezone |
+### `/fpp peaks next`
 
-```
-/fpp peaks next
-```
+Shows the next window change and how long until it applies.
 
-Shows the time remaining until the next window change and its fraction.
+### `/fpp peaks list`
+
+Lists currently sleeping bots and their saved locations.
 
 ---
 
-## Example - Realistic 24/7 Server
+## Example Configuration
 
 ```yaml
 swap:
@@ -251,47 +255,25 @@ peak-hours:
   stagger-seconds: 45
   min-online: 2
   notify-transitions: false
-
   schedule:
-    - start: "07:00"
-      end:   "12:00"
-      fraction: 0.40   # Morning ramp-up
-    - start: "12:00"
-      end:   "17:00"
-      fraction: 0.65   # Afternoon
-    - start: "17:00"
-      end:   "22:00"
-      fraction: 1.00   # Prime time
-    - start: "22:00"
-      end:   "01:00"
-      fraction: 0.50   # Late night
-    - start: "01:00"
-      end:   "07:00"
-      fraction: 0.10   # Overnight minimum
-
-  day-overrides:
-    SATURDAY:
-      - start: "10:00"
-        end:   "02:00"
-        fraction: 1.00
-      - start: "02:00"
-        end:   "10:00"
-        fraction: 0.10
-    SUNDAY:
-      - start: "10:00"
-        end:   "23:00"
-        fraction: 0.85
-      - start: "23:00"
-        end:   "10:00"
-        fraction: 0.10
+    - { start: "07:00", end: "12:00", fraction: 0.40 }
+    - { start: "12:00", end: "17:00", fraction: 0.65 }
+    - { start: "17:00", end: "22:00", fraction: 1.00 }
+    - { start: "22:00", end: "01:00", fraction: 0.50 }
+    - { start: "01:00", end: "07:00", fraction: 0.10 }
 ```
 
 ---
 
 ## Notes
 
-- Peak-hours **does not override** the global `limits.max-bots` cap.
-- Only **AFK bots** (`BotType.AFK`) are managed by peak-hours.  PVP bots are never put to sleep.
-- Sleeping bots are **not persisted** separately - on shutdown, `PeakHoursManager` wakes all sleeping bots before `BotPersistence.save()` runs, so they are included in the normal persistence file.
-- `/fpp reload` wakes all sleeping bots, resets state, then immediately re-evaluates the new config.
+- peak-hours does not bypass `limits.max-bots`
+- it should be used for AFK population shaping, not PvP bot scheduling
+- DB-backed sleeping persistence is strongly recommended for production servers
 
+---
+
+See also:
+- [Swap-System](Swap-System.md)
+- [Configuration](Configuration.md)
+- [Database](Database.md)

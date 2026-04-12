@@ -156,11 +156,11 @@ public class PlayerJoinListener implements Listener {
         FakePlayer fp = manager.getByName(event.getPlayer().getName());
         if (fp == null) fp = manager.getByUuid(event.getPlayer().getUniqueId());
         if (fp != null) {
-            // Suppress join message during respawns, body transitions, and restoration.
+            // Suppress join message during respawns, body transitions, and renames.
             // For normal spawns: replace the vanilla message with the custom bot-join
             // from en.yml so Paper broadcasts it automatically (most reliable approach).
             if (fp.isRespawning() || manager.isBodyTransitioning(fp.getUuid())
-                    || manager.isRestorationInProgress()) {
+                    || manager.isRenaming(fp.getUuid())) {
                 event.joinMessage(null);
             } else if (Config.joinMessage()) {
                 event.joinMessage(BotBroadcast.joinComponent(fp));
@@ -172,15 +172,18 @@ public class PlayerJoinListener implements Listener {
         }
 
 
-        // Send any stored update notification to admins/ops who join after startup
+        // Send any stored update notification to admins/ops who join after startup.
+        // Also delivered to non-OP players with fpp.notify (e.g. non-OP server admins).
         try {
             var upd = plugin.getUpdateNotification();
             if (upd != null) {
-                if (me.bill.fakePlayerPlugin.permission.Perm.hasOrOp(event.getPlayer(), me.bill.fakePlayerPlugin.permission.Perm.OP)) {
+                var p = event.getPlayer();
+                if (me.bill.fakePlayerPlugin.permission.Perm.hasOrOp(p, me.bill.fakePlayerPlugin.permission.Perm.OP)
+                        || me.bill.fakePlayerPlugin.permission.Perm.has(p, me.bill.fakePlayerPlugin.permission.Perm.NOTIFY)) {
                     try {
-                        event.getPlayer().sendMessage(upd);
+                        p.sendMessage(upd);
                     } catch (NoSuchMethodError | NoClassDefFoundError e) {
-                        event.getPlayer().sendMessage(upd.toString());
+                        p.sendMessage(upd.toString());
                     }
                 }
             }
@@ -251,7 +254,8 @@ public class PlayerJoinListener implements Listener {
             // Broadcast the custom bot-leave message directly rather than relying on
             // Paper to re-broadcast event.quitMessage() - newer Paper builds (26.1.1+)
             // do not always honour a non-null quitMessage set inside the MONITOR handler.
-            if (Config.leaveMessage()) {
+            // Skip the leave message during renames — a dedicated rename broadcast is sent instead.
+            if (Config.leaveMessage() && !manager.isRenaming(uuid)) {
                 String displayName = manager.getDespawningDisplayName(uuid);
                 if (displayName != null) {
                     BotBroadcast.broadcastLeaveByDisplayName(displayName);

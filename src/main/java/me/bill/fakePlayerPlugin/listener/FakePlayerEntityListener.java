@@ -302,15 +302,38 @@ public class FakePlayerEntityListener implements Listener {
     }
 
     /**
-     * Prevents bots from picking up items unless {@code body.pick-up-items} is {@code true}.
+     * Prevents bots from picking up items unless both the global {@code body.pick-up-items}
+     * config flag AND the per-bot {@code pickUpItemsEnabled} flag are {@code true}.
+     *
+     * <p>Checking both guards here means:
+     * <ul>
+     *   <li>Global {@code false} → all bots blocked, regardless of per-bot value
+     *       (covers bots spawned before the global was changed).</li>
+     *   <li>Global {@code true} + per-bot {@code false} → only this bot blocked.</li>
+     *   <li>Global {@code true} + per-bot {@code true} → pickup allowed.</li>
+     * </ul>
      * Runs at NORMAL priority so anti-grief plugins still get first say.
      */
     @EventHandler(priority = EventPriority.NORMAL)
     public void onEntityPickupItem(EntityPickupItemEvent event) {
         if (!isFakeBotBody(event.getEntity())) return;
-        if (!Config.bodyPickUpItems()) {
+
+        FakePlayer fp = manager.getByUuid(event.getEntity().getUniqueId());
+        if (fp == null) return;
+
+        // Block pickup when the global config gate is off OR the per-bot flag is off.
+        if (!Config.bodyPickUpItems() || !fp.isPickUpItemsEnabled()) {
             event.setCancelled(true);
+            return;
         }
+
+        // Refresh any open bot inventory GUI next tick, after Bukkit has actually inserted
+        // the picked-up item into the bot inventory. Without this, viewers keep a stale
+        // snapshot and closing the GUI can overwrite the newly picked-up item.
+        Bukkit.getScheduler().runTask(plugin, () -> {
+            var invCmd = plugin.getInventoryCommand();
+            if (invCmd != null) invCmd.refreshOpenGui(fp.getUuid());
+        });
     }
 
 

@@ -126,6 +126,67 @@ public final class BotMessageConfig {
         return cfg.getStringList("keyword-reactions." + key.toLowerCase());
     }
 
+    /**
+     * Bot-to-bot conversation reply messages
+     * ({@code bot-to-bot-replies:} section in {@code bot-messages.yml}).
+     * Falls back to {@link #getReplyMessages()} when the section is absent.
+     */
+    public static List<String> getBotToBotReplyMessages() {
+        if (cfg == null) return List.of();
+        List<String> msgs = cfg.getStringList("bot-to-bot-replies");
+        return msgs.isEmpty() ? getReplyMessages() : msgs;
+    }
+
+    /**
+     * Advancement-reaction messages sent when a player earns an advancement
+     * ({@code advancement-reactions:} section in {@code bot-messages.yml}).
+     */
+    public static List<String> getAdvancementReactionMessages() {
+        if (cfg == null) return List.of();
+        return cfg.getStringList("advancement-reactions");
+    }
+
+    /**
+     * First-join welcome messages sent when a brand-new player joins for the first time
+     * ({@code first-join-reactions:} section in {@code bot-messages.yml}).
+     * Falls back to {@link #getJoinReactionMessages()} when absent.
+     */
+    public static List<String> getFirstJoinReactionMessages() {
+        if (cfg == null) return List.of();
+        List<String> msgs = cfg.getStringList("first-join-reactions");
+        return msgs.isEmpty() ? getJoinReactionMessages() : msgs;
+    }
+
+    /**
+     * Kill-reaction messages sent when a player kills another player
+     * ({@code kill-reactions:} section in {@code bot-messages.yml}).
+     */
+    public static List<String> getKillReactionMessages() {
+        if (cfg == null) return List.of();
+        return cfg.getStringList("kill-reactions");
+    }
+
+    /**
+     * High-level milestone reaction messages
+     * ({@code high-level-reactions:} section in {@code bot-messages.yml}).
+     */
+    public static List<String> getHighLevelReactionMessages() {
+        if (cfg == null) return List.of();
+        return cfg.getStringList("high-level-reactions");
+    }
+
+    /**
+     * Player-chat reaction messages — sent when a bot spontaneously reacts to
+     * something a real player said in chat
+     * ({@code player-chat-reactions:} section in {@code bot-messages.yml}).
+     * Falls back to {@link #getReplyMessages()} when absent.
+     */
+    public static List<String> getPlayerChatReactionMessages() {
+        if (cfg == null) return List.of();
+        List<String> msgs = cfg.getStringList("player-chat-reactions");
+        return msgs.isEmpty() ? getReplyMessages() : msgs;
+    }
+
     private static List<String> fallback() {
         return Arrays.asList("gg", "let's go!", "hey everyone", "what's up", "nice server");
     }

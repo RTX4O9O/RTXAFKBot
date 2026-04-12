@@ -1,5 +1,5 @@
 name: FakePlayerPlugin
-version: '1.6.0'
+version: '1.6.2'
 main: me.bill.fakePlayerPlugin.FakePlayerPlugin
 api-version: '1.21'
 authors: [ El_Pepes ]
@@ -12,6 +12,7 @@ commands:
     description: Fake Player Plugin main command
     usage: /fpp [sub-command]
     aliases: [ fakeplayer, fp ]
+    permission-message: ''
 
 # ══════════════════════════════════════════════════════════════════════════════
 #                           PERMISSION SYSTEM
@@ -41,6 +42,8 @@ permissions:
     description: Grants access to all FPP commands and features (admin).
     default: op
     children:
+      fpp.command:          true
+      fpp.plugininfo:       true
       fpp.help:             true
       fpp.spawn:            true
       fpp.spawn.multiple:   true
@@ -68,9 +71,40 @@ permissions:
       fpp.inventory:        true
       fpp.cmd:              true
       fpp.mine:             true
+      fpp.storage:          true
+      fpp.place:            true
       fpp.useitem:          true
       fpp.waypoint:         true
+      fpp.badword:          true
+      fpp.rename:           true
+      fpp.rename.own:       true
+      fpp.notify:           true
+      fpp.personality:      true
       fpp.use:              true
+
+  # ── Main command visibility ────────────────────────────────────────────────
+  # Controls whether the /fpp command itself is visible and usable.
+  # Default: true (everyone) — negate to completely hide /fpp from a group/player:
+  #   /lp group guest permission set fpp.command false
+  # When negated: /fpp produces no output and does not appear in tab-completion.
+  fpp.command:
+    description: >
+      Allows use of the /fpp command (all sub-commands, tab-complete).
+      Default: everyone. Negate to fully hide the FPP command from a player or group.
+    default: true
+
+  # ── Plugin info panel (bare /fpp) ─────────────────────────────────────────
+  # Controls whether typing bare /fpp shows the full info panel.
+  # Default: op — regular users just see the /fpp help hint instead.
+  # Grant to non-OP staff who need visibility of version/status info:
+  #   /lp user StaffPlayer permission set fpp.plugininfo true
+  fpp.plugininfo:
+    description: >
+      Show the full plugin info panel when typing bare /fpp (version, author,
+      active bots, download links, Discord). Default: op.
+      Players without this see only a minimal /fpp help hint — they can still
+      use all sub-commands they have permission for.
+    default: op
 
   # ── User wildcard ──────────────────────────────────────────────────────────
   # default: true  →  ALL players get user-tier access out of the box.
@@ -79,10 +113,14 @@ permissions:
   fpp.use:
     description: >
       Grants all user-facing FPP commands to regular players (default: everyone).
-      Includes: spawn (1-bot limit), /fpp tph, /fpp xp, /fpp info (own bots only).
-      Does NOT include admin commands (delete, reload, chat, list, full-info, tp, settings).
+      Includes: /fpp command access, /fpp help, spawn (1-bot limit), /fpp tph, /fpp xp,
+      /fpp info (own bots only).
+      Does NOT include admin commands (delete, reload, chat, list, full-info, tp, settings)
+      and does NOT show the plugin info panel (requires fpp.plugininfo).
     default: true
     children:
+      fpp.command:         true    # allows the /fpp command itself
+      fpp.help:            true    # allows /fpp help
       fpp.spawn.user:      true
       fpp.tph:             true
       fpp.xp:              true
@@ -134,8 +172,23 @@ permissions:
   fpp.spawn.limit.3:
     description: Personal bot limit — 3 active bots at a time.
     default: false
+  fpp.spawn.limit.4:
+    description: Personal bot limit — 4 active bots at a time.
+    default: false
   fpp.spawn.limit.5:
     description: Personal bot limit — 5 active bots at a time.
+    default: false
+  fpp.spawn.limit.6:
+    description: Personal bot limit — 6 active bots at a time.
+    default: false
+  fpp.spawn.limit.7:
+    description: Personal bot limit — 7 active bots at a time.
+    default: false
+  fpp.spawn.limit.8:
+    description: Personal bot limit — 8 active bots at a time.
+    default: false
+  fpp.spawn.limit.9:
+    description: Personal bot limit — 9 active bots at a time.
     default: false
   fpp.spawn.limit.10:
     description: Personal bot limit — 10 active bots at a time.
@@ -146,8 +199,20 @@ permissions:
   fpp.spawn.limit.20:
     description: Personal bot limit — 20 active bots at a time.
     default: false
+  fpp.spawn.limit.25:
+    description: Personal bot limit — 25 active bots at a time.
+    default: false
+  fpp.spawn.limit.30:
+    description: Personal bot limit — 30 active bots at a time.
+    default: false
+  fpp.spawn.limit.40:
+    description: Personal bot limit — 40 active bots at a time.
+    default: false
   fpp.spawn.limit.50:
     description: Personal bot limit — 50 active bots at a time.
+    default: false
+  fpp.spawn.limit.75:
+    description: Personal bot limit — 75 active bots at a time.
     default: false
   fpp.spawn.limit.100:
     description: Personal bot limit — 100 active bots at a time.
@@ -183,7 +248,11 @@ permissions:
 
   # ── Delete ────────────────────────────────────────────────────────────────
   fpp.delete:
-    description: Despawn a fake player by name with /fpp despawn <name>.
+    description: >
+      Despawn fake players with /fpp despawn.
+      Subcommands: <name> (by name), all (all bots — requires fpp.delete.all),
+      --random [num] (despawn N random bots, default 1),
+      --num <num> (despawn N bots in spawn order, oldest first).
     default: op
     children:
       fpp.delete.all: true
@@ -191,7 +260,7 @@ permissions:
   fpp.delete.all:
     description: >
       Despawn ALL bots at once with /fpp despawn all.
-      Negate to allow individual deletions without mass-wipe access.
+      Negate to allow individual/random deletions without mass-wipe access.
     default: op
 
   # ── List ──────────────────────────────────────────────────────────────────
@@ -247,9 +316,13 @@ permissions:
       Op-only by default. Grant only to trusted server administrators.
     default: op
 
-  # Permission used to receive update notifications when a newer plugin version is available
-  fakeplayer.notify:
-    description: Receive update notifications from FakePlayerPlugin (ops always notified)
+  # ── Update notifications ──────────────────────────────────────────────────
+  # Automatically granted to all fpp.op members.
+  # Grant to non-OP server admins who should also receive update notifications on join.
+  fpp.notify:
+    description: >
+      Receive plugin update notifications on join when a newer version is available.
+      Automatically inherited by fpp.op. Grant explicitly to non-OP server staff.
     default: op
 
   # ── Stats ─────────────────────────────────────────────────────────────────
@@ -360,9 +433,25 @@ permissions:
   # ── Mine (Block Mining) ────────────────────────────────────────────────────────
   fpp.mine:
     description: >
-      Make a bot mine blocks in front of them with /fpp mine <bot> [once|stop].
-      The bot continuously breaks the block they're looking at in creative or survival mode.
-      Use 'once' to mine a single block, 'stop' to halt mining.
+      Make a bot mine blocks with /fpp mine <bot> [once|stop|--pos1|--pos2|--start].
+      Supports classic look-target mining and area mining using a pos1/pos2 cuboid selection.
+      Area mining can offload items into named storages set with /fpp storage.
+    default: op
+
+  # ── Storage (Named Bot Storage Targets) ───────────────────────────────────────
+  fpp.storage:
+    description: >
+      Register named storage locations for a bot with /fpp storage <bot> [storage_name].
+      Look at a container block such as a chest, barrel, hopper, or shulker box.
+      If no name is given, numeric names 1, 2, 3... are assigned automatically.
+    default: op
+
+  # ── Place (Block Placement / Fill) ────────────────────────────────────────
+  fpp.place:
+    description: >
+      Fill a selected cuboid area with blocks using /fpp place <bot> [--pos1|--pos2|--block <spec>|start|stop].
+      Supports weighted multi-block specs (e.g. STONE50%,DIRT50%) and auto-supply from /fpp storage containers.
+      Reports missing materials to the command sender before starting.
     default: op
 
   # ── Use (Right-click Action) ────────────────────────────────────────────────────
@@ -381,6 +470,47 @@ permissions:
       Subcommands: add <route>, remove <route> <index>, delete <route>, clear <route>, list [route].
       Routes are saved to data/waypoints.yml.
       Use /fpp move <bot> --wp <route> to send bots on a looping patrol through all positions.
+    default: op
+
+  # ── Badword Filter ────────────────────────────────────────────────────────────
+  fpp.badword:
+    description: >
+      Manage the badword filter and scan/fix active bot names with /fpp badword.
+      Subcommands: check (list bots with flagged names, read-only),
+      update (despawn flagged bots and respawn with random clean names from bot-names.yml),
+      status (show filter configuration, word count, and live scan result).
+      Useful for enforcing the badword filter on bots that were spawned before the filter
+      was enabled, or after new words were added to the list.
+    default: op
+
+  # ── Rename ────────────────────────────────────────────────────────────────────
+  fpp.rename:
+    description: >
+      Rename any active bot with /fpp rename <oldname> <newname>.
+      Admin tier — can rename ALL bots regardless of who spawned them.
+      Despawns the bot and immediately respawns it under the new name,
+      preserving inventory, XP, LP group, chat settings, and frozen state.
+    default: op
+    children:
+      fpp.rename.own: true
+
+  fpp.rename.own:
+    description: >
+      Rename bots that the sender personally spawned with /fpp rename <oldname> <newname>.
+      User opt-in — does NOT allow renaming other players' bots.
+      Grant this to players who should be allowed to rename their own bots.
+    default: false
+
+  # ── AI Personality ────────────────────────────────────────────────────────────
+  fpp.personality:
+    description: >
+      Manage AI personalities for bots with /fpp personality.
+      List personalities: /fpp personality list
+      Assign a personality: /fpp personality <bot> set <name>
+      Reset to default: /fpp personality <bot> reset
+      Show current: /fpp personality <bot> show
+      Reload files from disk: /fpp personality reload
+      Personality files are .txt files in plugins/FakePlayerPlugin/personalities/.
     default: op
 
 

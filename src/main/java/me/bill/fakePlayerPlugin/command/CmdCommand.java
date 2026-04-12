@@ -77,6 +77,7 @@ public final class CmdCommand implements FppCommand {
             String previous = fp.getRightClickCommand(); // null if not set yet
             fp.setRightClickCommand(command);            // setter strips leading /
             String newCmd = "/" + fp.getRightClickCommand();
+            manager.persistBotSettings(fp);
 
             if (previous != null) {
                 // Replacing an existing command - show old → new
@@ -102,6 +103,7 @@ public final class CmdCommand implements FppCommand {
             }
             fp.setRightClickCommand(null);
             sender.sendMessage(Lang.get("cmd-add-cleared", "name", fp.getDisplayName()));
+            manager.persistBotSettings(fp);
             return true;
         }
 

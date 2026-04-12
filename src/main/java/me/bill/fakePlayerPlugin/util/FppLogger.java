@@ -227,24 +227,29 @@ public final class FppLogger {
      *
      * <p>Call after ALL subsystems have been initialised so statuses are accurate.
      *
-     * @param version          plugin version string
-     * @param authors          comma-joined author list
-     * @param namePoolSize     number of names in the name pool
-     * @param msgPoolSize      number of chat messages in the pool
-     * @param dbState          resolved DB state text, e.g. "SQLite (local)", "MySQL", "disabled", "MySQL (failed)"
-     * @param skinMode         value from Config.skinMode()
-     * @param bodyEnabled      whether physical bodies are spawned
-     * @param persistEnabled   whether bot persistence is on
-     * @param luckPermsFound   whether LuckPerms is installed
-     * @param fakeChatEnable   whether fake chat is on
-     * @param swapEnable       whether bot session rotation (swap) is on
-     * @param peakHoursEnable  whether peak hours scheduling is on
-     * @param chunkLoading     whether chunk loading is on
-     * @param maxBots          global bot limit (0 = unlimited)
-     * @param metricsActive    whether FastStats metrics are running
-     * @param configVersion    formatted config version string, e.g. {@code "v19 ✔"}
-     * @param backupCount      number of config backups on disk (0 = none)
-     * @param startupMs        plugin enable time in milliseconds
+     * @param version                plugin version string
+     * @param authors                comma-joined author list
+     * @param namePoolSize           number of names in the name pool
+     * @param msgPoolSize            number of chat messages in the pool
+     * @param dbState                resolved DB state text, e.g. "SQLite (local)", "MySQL", "disabled"
+     * @param dbSchemaVersion        current DB schema version (0 = DB disabled)
+     * @param skinMode               value from Config.skinMode()
+     * @param bodyEnabled            whether physical bodies are spawned
+     * @param persistEnabled         whether bot persistence is on
+     * @param taskPersistEnabled     whether task persistence (DB + persist) is active
+     * @param luckPermsFound         whether LuckPerms is installed
+     * @param worldGuardFound        whether WorldGuard is installed
+     * @param fakeChatEnable         whether fake chat is on
+     * @param aiConversationsEnabled whether AI DM conversations are active
+     * @param aiProviderName         active AI provider name, or "none"
+     * @param swapEnable             whether bot session rotation (swap) is on
+     * @param peakHoursEnable        whether peak hours scheduling is on
+     * @param chunkLoading           whether chunk loading is on
+     * @param maxBots                global bot limit (0 = unlimited)
+     * @param metricsActive          whether FastStats metrics are running
+     * @param configVersion          formatted config version string, e.g. {@code "v19 ✔"}
+     * @param backupCount            number of config backups on disk (0 = none)
+     * @param startupMs              plugin enable time in milliseconds
      */
     public static void printStartupBanner(
             String  version,
@@ -252,11 +257,16 @@ public final class FppLogger {
             int     namePoolSize,
             int     msgPoolSize,
             String  dbState,
+            int     dbSchemaVersion,
             String  skinMode,
             boolean bodyEnabled,
             boolean persistEnabled,
+            boolean taskPersistEnabled,
             boolean luckPermsFound,
+            boolean worldGuardFound,
             boolean fakeChatEnable,
+            boolean aiConversationsEnabled,
+            String  aiProviderName,
             boolean swapEnable,
             boolean peakHoursEnable,
             boolean chunkLoading,
@@ -270,28 +280,33 @@ public final class FppLogger {
         rule();
 
         section("Runtime");
-        stateRow(resolveDbState(dbState), "Database", dbState);
+        String dbDisplay = dbSchemaVersion > 0 ? dbState + "  (schema v" + dbSchemaVersion + ")" : dbState;
+        stateRow(resolveDbState(dbState), "Database", dbDisplay);
         kv("Config version", configVersion);
         kv("Backups", backupCount);
         kv("Startup time", startupMs + "ms");
 
         section("Features");
-        stateRow(bodyEnabled ? RowState.OK : RowState.OFF, "Physical bodies", onOff(bodyEnabled));
-        stateRow(persistEnabled ? RowState.OK : RowState.OFF, "Persistence", onOff(persistEnabled));
-        stateRow(chunkLoading ? RowState.OK : RowState.OFF, "Chunk loading", onOff(chunkLoading));
-        stateRow(fakeChatEnable ? RowState.OK : RowState.OFF, "Fake chat", onOff(fakeChatEnable));
-        stateRow(swapEnable ? RowState.OK : RowState.OFF, "Bot swap", onOff(swapEnable));
-        stateRow(peakHoursEnable ? RowState.OK : RowState.OFF, "Peak hours", onOff(peakHoursEnable));
+        stateRow(bodyEnabled      ? RowState.OK  : RowState.OFF, "Physical bodies",  onOff(bodyEnabled));
+        stateRow(persistEnabled   ? RowState.OK  : RowState.OFF, "Persistence",      onOff(persistEnabled));
+        stateRow(taskPersistEnabled ? RowState.OK : RowState.OFF, "Task persistence", taskPersistEnabled ? "db + yaml" : onOff(false));
+        stateRow(chunkLoading     ? RowState.OK  : RowState.OFF, "Chunk loading",    onOff(chunkLoading));
+        stateRow(fakeChatEnable   ? RowState.OK  : RowState.OFF, "Fake chat",        onOff(fakeChatEnable));
+        stateRow(aiConversationsEnabled ? RowState.OK : RowState.OFF, "AI converse",
+                aiConversationsEnabled ? "enabled  (" + aiProviderName + ")" : "disabled");
+        stateRow(swapEnable       ? RowState.OK  : RowState.OFF, "Bot swap",         onOff(swapEnable));
+        stateRow(peakHoursEnable  ? RowState.OK  : RowState.OFF, "Peak hours",       onOff(peakHoursEnable));
 
         section("Integrations");
-        stateRow(luckPermsFound ? RowState.OK : RowState.OFF, "LuckPerms", onOff(luckPermsFound));
-        stateRow(metricsActive ? RowState.OK : RowState.OFF, "Metrics", onOff(metricsActive));
+        stateRow(luckPermsFound   ? RowState.OK  : RowState.OFF, "LuckPerms",        onOff(luckPermsFound));
+        stateRow(worldGuardFound  ? RowState.OK  : RowState.OFF, "WorldGuard",       onOff(worldGuardFound));
+        stateRow(metricsActive    ? RowState.OK  : RowState.OFF, "Metrics",          onOff(metricsActive));
 
         section("Pools & Limits");
-        kv("Name pool", namePoolSize);
+        kv("Name pool",    namePoolSize);
         kv("Message pool", msgPoolSize);
-        kv("Skin mode", skinMode);
-        kv("Max bots", maxBots == 0 ? "unlimited" : maxBots);
+        kv("Skin mode",    skinMode);
+        kv("Max bots",     maxBots == 0 ? "unlimited" : maxBots);
 
         if (Config.isDebug()) {
             section("Debug");
@@ -306,17 +321,23 @@ public final class FppLogger {
     /**
      * Prints the shutdown banner summarising what was cleaned up.
      *
-     * @param botsRemoved number of bots that were cleanly removed
-     * @param dbFlushed   whether DB sessions were flushed
-     * @param uptimeMs    server uptime since plugin enable, in milliseconds
+     * @param botsRemoved      number of bots that were cleanly removed
+     * @param dbFlushed        whether DB sessions were flushed
+     * @param tasksPersisted   whether active bot tasks were saved (DB-backed)
+     * @param botsSaved        number of bots whose state was written to persistence
+     * @param uptimeMs         server uptime since plugin enable, in milliseconds
      */
-    public static void printShutdownBanner(int botsRemoved, boolean dbFlushed, long uptimeMs) {
+    public static void printShutdownBanner(int botsRemoved, boolean dbFlushed,
+                                           boolean tasksPersisted, int botsSaved,
+                                           long uptimeMs) {
         boldRule();
         highlight("  ꜰᴀᴋᴇ ᴘʟᴀʏᴇʀ ᴘʟᴜɢɪɴ  -  shutting down");
         rule();
-        kv("Bots removed",   botsRemoved);
-        kv("DB sessions",    dbFlushed ? "flushed ✔" : "skipped (no DB)");
-        kv("Session uptime", formatUptime(uptimeMs));
+        kv("Bots removed",     botsRemoved);
+        kv("Bots saved",       botsSaved > 0 ? botsSaved + " ✔" : "none");
+        kv("Tasks persisted",  tasksPersisted ? "db + yaml ✔" : "yaml only");
+        kv("DB sessions",      dbFlushed ? "flushed ✔" : "skipped (no DB)");
+        kv("Session uptime",   formatUptime(uptimeMs));
         boldRule();
         info("  Goodbye! ꜰᴀᴋᴇ ᴘʟᴀʏᴇʀ ᴘʟᴜɢɪɴ has been disabled.");
         boldRule();

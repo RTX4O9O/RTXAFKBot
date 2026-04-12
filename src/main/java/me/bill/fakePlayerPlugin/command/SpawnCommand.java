@@ -293,6 +293,53 @@ public class SpawnCommand implements FppCommand {
         boolean bypassMax = Perm.has(sender, Perm.BYPASS_MAX);
         Player  spawner   = (sender instanceof Player p) ? p : null;
 
+        // ── Badword filter ────────────────────────────────────────────────────
+        // Full check happens here (not in FakePlayerManager) so the sanitised name
+        // never gets re-checked against the words list and falsely rejected.
+        String originalCustomName = customName;
+        if (customName != null) {
+            if (Config.isBadwordFilterEnabled() && me.bill.fakePlayerPlugin.util.BadwordFilter.getBadwordCount() == 0) {
+                // Filter is ON but no words are configured — warn sender and still allow spawn
+                sender.sendMessage(Lang.get("badword-filter-empty-warning"));
+            } else if (!me.bill.fakePlayerPlugin.util.BadwordFilter.isAllowed(customName)) {
+                // Name contains a badword
+                if (Config.isBadwordAutoRenameEnabled()) {
+                    // auto-rename mode: try "bot_<name>", fall back to hard-block if too long
+                    String sanitized = me.bill.fakePlayerPlugin.util.BadwordFilter.sanitize(customName);
+                    if (sanitized != null) {
+                        customName = sanitized;
+                        sender.sendMessage(Lang.get("spawn-badword-auto-prefixed",
+                                "original", originalCustomName,
+                                "name", customName));
+                    } else {
+                        String badword = me.bill.fakePlayerPlugin.util.BadwordFilter.findBadword(originalCustomName);
+                        sender.sendMessage(Lang.get("spawn-badword-rejected",
+                                "name", originalCustomName,
+                                "badword", badword != null ? badword : "???"));
+                        return true;
+                    }
+                } else {
+                    // hard-block mode: always reject bad names outright
+                    String badword = me.bill.fakePlayerPlugin.util.BadwordFilter.findBadword(originalCustomName);
+                    sender.sendMessage(Lang.get("spawn-badword-rejected",
+                            "name", originalCustomName,
+                            "badword", badword != null ? badword : "???"));
+                    return true;
+                }
+            }
+        }
+
+        // ── Real-player name conflict ─────────────────────────────────────────
+        // Bots pass through placeNewPlayer() so they appear in getOnlinePlayers().
+        // Distinguish real players from bots by checking the manager's bot registry.
+        if (customName != null) {
+            Player onlinePlayer = Bukkit.getPlayerExact(customName);
+            if (onlinePlayer != null && manager.getByName(customName) == null) {
+                sender.sendMessage(Lang.get("spawn-name-taken-player", "name", customName));
+                return true;
+            }
+        }
+
         // Always spawn with a full body - bodyless mode is not available.
         int result = manager.spawn(location, count, spawner, customName, bypassMax, botType);
 
@@ -329,6 +376,7 @@ public class SpawnCommand implements FppCommand {
                 sender.sendMessage(Lang.get("spawn-max-reached", "max", String.valueOf(max)));
             }
             case -2 -> sender.sendMessage(Lang.get("spawn-invalid-name"));
+            case -4 -> sender.sendMessage(Lang.get("spawn-name-taken-player", "name", customName != null ? customName : "?"));
             case 0 -> {
                 if (customName != null) {
                     sender.sendMessage(Lang.get("spawn-name-taken", "name", customName));

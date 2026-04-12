@@ -5,6 +5,8 @@
 #    {name}          — the bot's own name
 #    {random_player} — a random online real player's name (or the joiner/deceased
 #                      for join-reactions and death-reactions respectively)
+#    {player_name}   — the specific player the bot is reacting to
+#                      (used in player-chat-reactions pool)
 #    {online}        — number of real (non-bot) players online
 #    {world}         — the bot's current world name
 #    {time}          — "day" or "night" based on the world's time
@@ -1292,4 +1294,328 @@ keyword-reactions:
     - "watch out for lava"
     - "bring plenty of torches"
     - "always carry a water bucket"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  BOT-TO-BOT REPLIES
+#  Used when one bot responds to another bot's message.
+#  {random_player} resolves to the bot that was just speaking.
+#  {name}  — the replying bot's own name
+#  {bot_name} — another random active bot's name
+# ─────────────────────────────────────────────────────────────────────────────
+bot-to-bot-replies:
+  - "yeah exactly"
+  - "fr"
+  - "lol same"
+  - "true"
+  - "facts"
+  - "nah fr tho"
+  - "deadass"
+  - "ong"
+  - "real"
+  - "wait what"
+  - "lmao"
+  - "no cap"
+  - "bruh"
+  - "i was just thinking that"
+  - "same tbh"
+  - "ikr"
+  - "omg yes"
+  - "preach"
+  - "literally"
+  - "so true"
+  - "W take"
+  - "hard agree"
+  - "nah that's valid tho"
+  - "wait really?"
+  - "not gonna lie same"
+  - "okay but {random_player} has a point"
+  - "yeah {random_player} is right"
+  - "i agree with {random_player} on that"
+  - "haha {random_player} said it"
+  - "bro {random_player} lmao"
+  - "{random_player} spitting"
+  - "{random_player} i was thinking the same thing"
+  - "lol {random_player} is right tho"
+  - "ok {random_player} fair point"
+  - "{random_player} has the right idea"
+  - "actually yeah"
+  - "wait yeah that's true"
+  - "ok actually fair"
+  - "ngl you're right"
+  - "lowkey agree"
+  - "highkey agree"
+  - "based"
+  - "W"
+  - "big W"
+  - "goated take"
+  - "say less"
+  - "valid valid"
+  - "sheesh"
+  - "ok ok ok"
+  - "wait hold on"
+  - "actually..."
+  - "hmm you know what"
+  - "okay but hear me out"
+  - "not wrong"
+  - "can't even argue"
+  - "respect"
+  - "man's not wrong"
+  - "this guy gets it"
+  - "finally someone said it"
+  - "been saying this for ages"
+  - "someone had to say it"
+  - "we out here"
+  - "let's gooo"
+  - "poggers"
+  - "pog"
+  - "hype"
+  - "big hype"
+  - "no shot"
+  - "no way"
+  - "stop lying"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  ADVANCEMENT REACTIONS
+#  Sent when a player earns an advancement that's announced to chat.
+#  {random_player} — the player who got the advancement
+#  {advancement}   — the advancement title (e.g. "Getting an Upgrade")
+# ─────────────────────────────────────────────────────────────────────────────
+advancement-reactions:
+  - "gg {random_player}!"
+  - "nice one {random_player}"
+  - "let's go {random_player}!"
+  - "pog {random_player}"
+  - "W {random_player}"
+  - "{random_player} getting those advancements"
+  - "oh nice {random_player} got that"
+  - "{random_player} is progressing!"
+  - "big gg"
+  - "gg"
+  - "poggers"
+  - "clutch {random_player}"
+  - "{random_player} nice advancement"
+  - "oh that one's cool"
+  - "always satisfying to get that one"
+  - "that's a good one to get"
+  - "noice"
+  - "based"
+  - "goated {random_player}"
+  - "{random_player} on their grind"
+  - "keep going {random_player}!"
+  - "nice {random_player} keep it up"
+  - "W progression {random_player}"
+  - "{random_player} is built different"
+  - "oh they got {advancement}!"
+  - "nice {advancement}!"
+  - "oh wait {advancement} is a solid one"
+  - "{random_player} got {advancement} gg"
+  - "gg on {advancement} {random_player}"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  FIRST-JOIN REACTIONS
+#  Sent when a brand-new player joins the server for the very first time.
+#  {random_player} — the new player's name
+# ─────────────────────────────────────────────────────────────────────────────
+first-join-reactions:
+  - "welcome {random_player}! first time here?"
+  - "oh a new player! hey {random_player}!"
+  - "welcome to the server {random_player}!"
+  - "hey {random_player}! glad you joined"
+  - "ayo new player! welcome {random_player}"
+  - "{random_player} just joined for the first time!"
+  - "fresh blood! welcome {random_player}"
+  - "welcome welcome {random_player}!"
+  - "oh nice a new person! hey {random_player}"
+  - "{random_player} welcome to the fam!"
+  - "yo {random_player} welcome to the server!"
+  - "welcome {random_player} hope you enjoy it here"
+  - "hey {random_player}! this server is great you'll love it"
+  - "welcome {random_player}! need any help just ask"
+  - "new player alert! hey {random_player} :)"
+  - "ooh a new face! welcome {random_player}"
+  - "{random_player} is brand new here, welcome!"
+  - "welcome {random_player}, hope you stick around"
+  - "glad you're here {random_player}!"
+  - "yo {random_player}! first day let's go"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  KILL REACTIONS
+#  Sent when a real player kills another real player.
+#  {killer}        — the player who made the kill
+#  {victim}        — the player who was killed
+#  {random_player} — same as {killer} by default
+# ─────────────────────────────────────────────────────────────────────────────
+kill-reactions:
+  - "gg {killer}"
+  - "GG {killer}"
+  - "nice kill {killer}"
+  - "{killer} 🗿"
+  - "oof {victim}"
+  - "rip {victim}"
+  - "{killer} is not playing around"
+  - "oh {killer} went off"
+  - "{killer} is cracked"
+  - "yo {killer} nice one"
+  - "lethal {killer}"
+  - "{killer} said no"
+  - "{killer} W"
+  - "W {killer}"
+  - "that was clean {killer}"
+  - "{victim} got cooked"
+  - "{victim} took an L there"
+  - "L {victim}"
+  - "rip bozo {victim}"
+  - "skill issue {victim}"
+  - "gg ez"
+  - "gg wp"
+  - "{killer} with the clutch"
+  - "insane {killer}"
+  - "cracked {killer}"
+  - "goated {killer}"
+  - "beast mode {killer}"
+  - "{killer} is not human"
+  - "someone stop {killer}"
+  - "who's gonna stop {killer}?"
+  - "{killer} is on a mission"
+  - "F for {victim}"
+  - "F in chat for {victim}"
+  - "press F for {victim}"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  HIGH-LEVEL REACTIONS
+#  Sent when a player hits a significant XP level milestone (30, 50, 75, 100…).
+#  {random_player} — the player who hit the milestone
+#  {level}         — the level they just reached
+# ─────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+#  PLAYER CHAT REACTIONS
+#  Sent when a bot spontaneously reacts to something a real player said in chat.
+#  {player_name} — the player who sent the message (the one being reacted to)
+#  {name}        — the bot's own name
+#  {random_player} — a random other online real player
+#  Short, natural responses that fit general conversation.
+# ─────────────────────────────────────────────────────────────────────────────
+player-chat-reactions:
+  # ── Acknowledgements ───────────────────────────────────────────────────────
+  - "lol"
+  - "lmao"
+  - "true"
+  - "facts"
+  - "real"
+  - "same"
+  - "fr"
+  - "fr fr"
+  - "no way"
+  - "bro what"
+  - "haha"
+  - "hahaha"
+  - "xD"
+  - "XD"
+  - "ok"
+  - "oof"
+  - "rip"
+  - "mood"
+  - "big mood"
+  - "based"
+  - "nah"
+  - "ngl"
+  - "ikr"
+  - "ik right"
+  - "wait what"
+  - "crazy"
+  - "wild"
+  - "bruh"
+  - "BRUH"
+  - "bro"
+  - "sheesh"
+  - "the disrespect"
+  - "not wrong"
+  - "lowkey facts"
+
+  # ── Agreements ─────────────────────────────────────────────────────────────
+  - "yeah"
+  - "yea"
+  - "yep"
+  - "yup"
+  - "definitely"
+  - "100%"
+  - "totally"
+  - "for real"
+  - "exactly"
+  - "agreed"
+  - "no cap"
+  - "straight up"
+  - "hard agree"
+  - "word"
+  - "deadass"
+  - "i was just thinking that"
+  - "literally this"
+  - "this exactly"
+  - "say less"
+
+  # ── Reactions to the specific player ───────────────────────────────────────
+  - "lol {player_name}"
+  - "bro {player_name} 💀"
+  - "{player_name} said what"
+  - "{player_name} 😭"
+  - "{player_name} be wilding"
+  - "{player_name} speaking facts"
+  - "{player_name} no way"
+  - "ok {player_name} i see you"
+  - "{player_name} with the W take"
+  - "wait is {player_name} serious rn"
+  - "{player_name} said it how it is"
+  - "{player_name} coming in with the truth"
+  - "{player_name} real one"
+  - "bro {player_name} LOL"
+  - "nah {player_name} got a point"
+  - "{player_name} understands"
+  - "yeah {player_name} exactly"
+  - "true {player_name}"
+
+  # ── Random reactions (no mention) ──────────────────────────────────────────
+  - "actually fair"
+  - "wait that's kinda valid"
+  - "kinda agree ngl"
+  - "idk man"
+  - "depends tbh"
+  - "could be worse"
+  - "could be better"
+  - "that tracks"
+  - "make it make sense"
+  - "not sure about that one"
+  - "go off i guess"
+  - "ok fine"
+  - "i mean... fair"
+  - "not gonna lie"
+  - "that's actually facts"
+  - "been saying this"
+  - "ok i'm dead"
+  - "pls"
+  - "sir"
+  - "ma'am"
+  - "this guy"
+
+high-level-reactions:
+  - "nice {random_player} level {level}!"
+  - "level {level}?! {random_player} is cracked"
+  - "{random_player} hitting level {level} gg"
+  - "W {random_player} level {level}"
+  - "the grind is real for {random_player}"
+  - "{random_player} on the xp grind"
+  - "level {level} respect"
+  - "insane xp {random_player}"
+  - "{random_player} doesn't stop"
+  - "the xp farm is carrying {random_player}"
+  - "gg {random_player} xp grind paying off"
+  - "{random_player} is leveled up"
+  - "level {level} that's solid"
+  - "ok {random_player} level {level} nice"
+  - "{random_player} been grinding"
+  - "respect the grind {random_player}"
 

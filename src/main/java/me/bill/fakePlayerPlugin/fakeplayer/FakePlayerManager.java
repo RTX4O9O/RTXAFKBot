@@ -5,6 +5,7 @@ import me.bill.fakePlayerPlugin.FakePlayerPlugin;
 import me.bill.fakePlayerPlugin.config.Config;
 import me.bill.fakePlayerPlugin.database.BotRecord;
 import me.bill.fakePlayerPlugin.database.DatabaseManager;
+import me.bill.fakePlayerPlugin.util.BadwordFilter;
 import me.bill.fakePlayerPlugin.util.BotTabTeam;
 import me.bill.fakePlayerPlugin.util.FppLogger;
 import net.kyori.adventure.text.Component;
@@ -13,9 +14,12 @@ import org.bukkit.GameMode;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
+import org.bukkit.World;
 import org.bukkit.util.BlockIterator;
 import org.bukkit.entity.Entity;
+import org.bukkit.entity.ExperienceOrb;
 import org.bukkit.entity.Player;
+import org.bukkit.inventory.ItemStack;
 
 import java.time.Instant;
 import java.util.*;
@@ -56,6 +60,18 @@ public class FakePlayerManager {
     /** Flag set to true during bot restoration, cleared after prefix refresh completes. */
     private volatile boolean restorationInProgress = false;
 
+    /**
+     * Pre-filtered name pool: names from bot-names.yml that passed the badword filter,
+     * length, and charset checks.  Built once at startup and after every {@code /fpp reload}
+     * via {@link #refreshCleanNamePool()}.  Using a cached list avoids running the expensive
+     * regex-based badword passes on every single {@link #generateName()} call, which would
+     * cause severe main-thread lag when spawning 100+ bots simultaneously.
+     *
+     * <p>Pool names are admin-curated; only {@code --name} custom names entered by users
+     * are checked on-the-fly in {@code SpawnCommand}.
+     */
+    private volatile List<String> cleanNamePool = Collections.emptyList();
+
     // ── Per-tick performance caches ───────────────────────────────────────────
 
     /**
@@ -91,19 +107,21 @@ public class FakePlayerManager {
     private final Map<UUID, Integer> navJumpHolding = new ConcurrentHashMap<>();
 
     /**
-     * Mining position locks.  When a bot is set to mine via {@code MineCommand},
-     * its starting {@link Location} (including yaw + pitch) is stored here.
+     * Action-locked bots.  When a bot is locked for a sustained action (mining, storage
+     * interaction, right-click loop), its position {@link Location} (including yaw + pitch)
+     * is stored here.
      * <ul>
      *   <li>The head-AI loop <b>skips</b> bots in this map so they never auto-rotate.</li>
      *   <li>The physics tick enforces the locked position every tick so physics or
-     *       knockback cannot push the bot off its mining spot.</li>
-     *   <li>The locked rotation is sent to nearby players every tick so the mining
+     *       knockback cannot push the bot off its action spot.</li>
+     *   <li>The locked rotation is sent to nearby players every tick so the action
      *       direction is visible.</li>
      * </ul>
-     * Populated by {@link #lockForMining(UUID, Location)} (called from {@code MineCommand});
-     * removed by {@link #unlockMining(UUID)} when mining stops or the bot despawns.
+     * Populated by {@link #lockForAction(UUID, Location)} (called from MineCommand,
+     * PlaceCommand, UseCommand, and {@link StorageInteractionHelper});
+     * removed by {@link #unlockAction(UUID)} when the action stops or the bot despawns.
      */
-    private final ConcurrentHashMap<UUID, Location> miningLockedBots = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<UUID, Location> actionLockedBots = new ConcurrentHashMap<>();
 
     /**
      * Navigation-locked bots.  When a bot is actively navigating via {@code MoveCommand}
@@ -124,6 +142,15 @@ public class FakePlayerManager {
      * the leave message even after the bot has been removed from {@code activePlayers}.
      */
     private final ConcurrentHashMap<UUID, String> despawningBotIds = new ConcurrentHashMap<>();
+
+    /**
+     * UUIDs of bots involved in an active rename operation (both the old UUID being
+     * deleted and the new UUID being spawned).  While a UUID is in this set, the
+     * standard join/leave broadcasts are suppressed; a single "renamed" message is
+     * sent instead once the respawn completes.
+     */
+    private final Set<UUID> renamingBotIds = ConcurrentHashMap.newKeySet();
+
     private ChunkLoader     chunkLoader;
     private DatabaseManager db;
     private BotPersistence  persistence;
@@ -146,6 +173,33 @@ public class FakePlayerManager {
     public void setBotSwapAI(BotSwapAI ai) { this.botSwapAI = ai; }
     /** Injects the identity cache so UUID generation uses the stable registry. */
     public void setIdentityCache(BotIdentityCache ic) { this.identityCache = ic; }
+
+    /**
+     * Pre-filters the name pool against the badword filter and caches the result.
+     *
+     * <p>Must be called once at startup (after both {@code BotNameConfig} and
+     * {@code BadwordFilter} are initialised) and again after every {@code /fpp reload}.
+     * After this call, {@link #generateName()} uses the cached list directly, so the
+     * expensive regex-based badword detection never runs on the main thread during a
+     * batch spawn — no matter how many bots are spawned at once.
+     *
+     * <p>Only custom names supplied via {@code --name} are checked on-the-fly in
+     * {@code SpawnCommand}; pool names are admin-curated and filtered here instead.
+     */
+    public void refreshCleanNamePool() {
+        List<String> raw   = me.bill.fakePlayerPlugin.config.Config.namePool();
+        List<String> clean = new ArrayList<>(raw.size());
+        for (String n : raw) {
+            if (n == null || n.isEmpty() || n.length() > 16
+                    || !n.matches("[a-zA-Z0-9_]+")) continue;
+            if (!me.bill.fakePlayerPlugin.util.BadwordFilter.isAllowed(n)) continue;
+            clean.add(n);
+        }
+        cleanNamePool = Collections.unmodifiableList(clean);
+        me.bill.fakePlayerPlugin.config.Config.debugStartup(
+                "Clean name pool refreshed: " + clean.size() + "/" + raw.size()
+                + " names pass the badword filter.");
+    }
 
     /** Returns the {@link BotChatAI} instance, or {@code null} if not yet initialised. */
     public BotChatAI getBotChatAI() { return plugin.getBotChatAI(); }
@@ -211,7 +265,6 @@ public class FakePlayerManager {
             // Config reads involve YAML map lookups; hoisting them here cuts
             // that cost from O(bots) to O(1) per tick.
             headAiTickCounter++;
-            final boolean swimAi    = Config.swimAiEnabled();
             final boolean headAiOn  = Config.headAiEnabled();
             final int     headAiRate = Config.headAiTickRate();
             // Only run the expensive raycast loop every N ticks.
@@ -252,7 +305,7 @@ public class FakePlayerManager {
                         else navJumpHolding.put(fp.getUuid(), navHold - 1);
                     }
 
-                    if (swimAi) {
+                    if (fp.isSwimAiEnabled()) {
                         NmsPlayerSpawner.setJumping(bot, navJump || bot.isInWater() || bot.isInLava());
                     } else if (navJump) {
                         // swimAi=false means we normally never touch the jumping flag,
@@ -269,11 +322,13 @@ public class FakePlayerManager {
                     NmsPlayerSpawner.tickPhysics(bot);
 
                     // Head AI: skip for PVP bots (pvpAI handles rotation)
-                    //          skip for mining-locked bots (direction must stay fixed)
+                    //          skip for action-locked bots (direction must stay fixed for mining/use/storage)
                     //          skip for navigation-locked bots (MoveCommand sets rotation each tick).
+                    //          skip for bots with per-bot head-AI disabled.
                     // Only fires every headAiRate ticks to reduce O(bots×players) raycast cost.
                     if (doHeadAi && fp.getBotType() != BotType.PVP
-                            && !miningLockedBots.containsKey(fp.getUuid())
+                            && fp.isHeadAiEnabled()
+                            && !actionLockedBots.containsKey(fp.getUuid())
                             && !navLockedBots.contains(fp.getUuid())) {
 
                         // Find the nearest real (non-bot) player within range AND line-of-sight.
@@ -338,10 +393,10 @@ public class FakePlayerManager {
                         }
                     }
 
-                    // Mining lock: enforce exact position + rotation every tick.
+                    // Action lock: enforce exact position + rotation every tick.
                     // Physics (gravity, knockback) can displace the bot; this snaps
-                    // it back so it stays on its mining spot and keeps the right facing.
-                    Location miningLock = miningLockedBots.get(fp.getUuid());
+                    // it back so it stays on its action spot and keeps the right facing.
+                    Location miningLock = actionLockedBots.get(fp.getUuid());
                     if (miningLock != null) {
                         Location cur = bot.getLocation();
                         boolean outOfPlace = !cur.getWorld().equals(miningLock.getWorld())
@@ -437,6 +492,15 @@ public class FakePlayerManager {
     public String getDespawningDisplayName(UUID uuid) {
         return despawningBotIds.get(uuid);
     }
+
+    /** Marks a bot UUID as being mid-rename so join/leave broadcasts are suppressed. */
+    public void markRenaming(UUID uuid) { renamingBotIds.add(uuid); }
+
+    /** Removes a bot UUID from the rename-in-progress set. */
+    public void unmarkRenaming(UUID uuid) { renamingBotIds.remove(uuid); }
+
+    /** Returns {@code true} while the UUID is part of an active rename operation. */
+    public boolean isRenaming(UUID uuid) { return renamingBotIds.contains(uuid); }
 
     /**
      * Returns a human-friendly location string for display in /fpp info
@@ -604,7 +668,11 @@ public class FakePlayerManager {
             // Minecraft player name: 1-16 chars, letters/digits/underscore only
             if (effectiveName.isEmpty() || effectiveName.length() > 16
                     || !effectiveName.matches("[a-zA-Z0-9_]+")) return -2;
-            if (usedNames.contains(effectiveName)) return 0; // already active
+            // Badword check is handled upstream in SpawnCommand (with auto-rename + leet detection)
+            if (usedNames.contains(effectiveName)) return 0; // already active as a bot
+            // Block if a real (non-bot) player with this name is currently online
+            Player realPlayer = Bukkit.getPlayerExact(effectiveName);
+            if (realPlayer != null && !activePlayers.containsKey(realPlayer.getUniqueId())) return -4;
             count = 1; // custom name always spawns exactly one bot
         }
 
@@ -809,6 +877,24 @@ public class FakePlayerManager {
                 return;
             }
 
+            // ── Assign random AI personality if none yet ──────────────────────
+            // This runs once per fresh spawn (restored bots already have aiPersonality set
+            // from persistence before this point). A randomly-chosen personality is then
+            // stable for the bot's lifetime and stored in DB + YAML so it survives restarts.
+            if (fp.getAiPersonality() == null) {
+                me.bill.fakePlayerPlugin.ai.PersonalityRepository repo =
+                        plugin.getPersonalityRepository();
+                if (repo != null && repo.size() > 0) {
+                    java.util.List<String> names = repo.getNames();
+                    String randomName = names.get(
+                            java.util.concurrent.ThreadLocalRandom.current().nextInt(names.size()));
+                    fp.setAiPersonality(randomName);
+                    if (db != null) db.updateBotAiPersonality(fp.getUuid().toString(), randomName);
+                    Config.debugChat("Assigned random AI personality '" + randomName
+                            + "' to bot '" + fp.getName() + "'.");
+                }
+            }
+
             // 1. Spawn body - NMS ServerPlayer entity
             // Skip if bodyless flag is set (console spawn without location data)
             if (!fp.isBodyless() && Config.spawnBody()) {
@@ -935,10 +1021,9 @@ public class FakePlayerManager {
             //   handler in PlayerJoinListener sets event.joinMessage() to the custom bot-join
             //   component so Paper broadcasts it automatically - no extra call needed here.
             // • Bodyless bots: no PlayerJoinEvent fires, so we must broadcast manually.
-            // Skip during server-startup persistence restore to avoid flooding chat.
             Bukkit.getScheduler().runTaskLater(plugin, () -> {
                 if (!activePlayers.containsKey(fp.getUuid())) return; // removed mid-spawn
-                if (fp.isBodyless() && !isRestorationInProgress()) {
+                if (fp.isBodyless()) {
                     BotBroadcast.broadcastJoin(fp);
                 }
                 // Forward to proxy network for cross-server join message.
@@ -1229,6 +1314,37 @@ public class FakePlayerManager {
     // ── Delete one ───────────────────────────────────────────────────────────
 
     /**
+     * Drops all inventory contents and XP from a bot entity onto the ground at its
+     * current location, exactly as if the bot died naturally.  Called by {@link #delete}
+     * when {@code body.drop-items-on-despawn} is {@code true}.
+     */
+    private static void dropBotContents(FakePlayer target) {
+        Player bot = target.getPhysicsEntity();
+        if (bot == null || !bot.isOnline()) return;
+
+        Location loc = bot.getLocation();
+        World world = loc.getWorld();
+        if (world == null) return;
+
+        // Drop every non-air item from all inventory slots (main, armour, offhand)
+        for (ItemStack item : bot.getInventory().getContents()) {
+            if (item != null && item.getType() != Material.AIR) {
+                world.dropItemNaturally(loc, item);
+            }
+        }
+        bot.getInventory().clear();
+
+        // Drop XP as an experience orb
+        int xp = bot.getTotalExperience();
+        if (xp > 0) {
+            world.spawn(loc, ExperienceOrb.class, orb -> orb.setExperience(xp));
+            bot.setTotalExperience(0);
+            bot.setLevel(0);
+            bot.setExp(0f);
+        }
+    }
+
+    /**
      * Deletes a single fake player by name - kills the physics body, removes
      * from tab list, despawns the visual, broadcasts leave message.
      *
@@ -1255,13 +1371,24 @@ public class FakePlayerManager {
         // Clear head AI rotation state to prevent memory leaks
         botHeadRotation.remove(target.getUuid());
         botSpawnRotation.remove(target.getUuid());
-        // Clear mining lock so the tick loop doesn't hold a stale reference
-        miningLockedBots.remove(target.getUuid());
+        // Clear action lock so the tick loop doesn't hold a stale reference
+        actionLockedBots.remove(target.getUuid());
         // Clear navigation lock
         navLockedBots.remove(target.getUuid());
+        var pathfinding = plugin.getPathfindingService();
+        if (pathfinding != null) pathfinding.cancel(target.getUuid());
         // Clear navigation state (prevents memory leak)
         var moveCmd = plugin.getMoveCommand();
         if (moveCmd != null) moveCmd.cleanupBot(target.getUuid());
+        var mineCmd = plugin.getMineCommand();
+        if (mineCmd != null) {
+            mineCmd.cleanupBot(target.getUuid());
+            mineCmd.clearSelection(target.getUuid());
+        }
+        var placeCmd = plugin.getPlaceCommand();
+        if (placeCmd != null) placeCmd.cleanupBot(target.getUuid());
+        var useCmd = plugin.getUseCommand();
+        if (useCmd != null) useCmd.stopUsing(target.getUuid());
 
 
         // Defer body removal, tab-list, despawn and leave message by a hardcoded 1-tick
@@ -1272,6 +1399,10 @@ public class FakePlayerManager {
         long leaveDelay = 1L;
 
         Runnable doVisualRemove = () -> {
+            // Drop inventory + XP before body removal when configured to do so
+            if (Config.dropItemsOnDespawn()) {
+                dropBotContents(target);
+            }
             // Mark as despawning so quit handlers (onQuitEarly/onQuit) suppress
             // the vanilla "X left the game" message - the MONITOR quit handler
             // builds and broadcasts the custom bot-leave message from en.yml.
@@ -1293,7 +1424,8 @@ public class FakePlayerManager {
             // Local leave message is broadcast by PlayerJoinListener.onQuit (MONITOR)
             // via event.quitMessage() - no manual broadcast needed here.
             // Forward to proxy network for cross-server leave message.
-            if (Config.leaveMessage()) {
+            // Skip proxy broadcast during renames — a dedicated rename message is sent instead.
+            if (Config.leaveMessage() && !renamingBotIds.contains(target.getUuid())) {
                 var vc = plugin.getVelocityChannel();
                 if (vc != null) vc.broadcastLeaveToNetwork(target.getDisplayName());
             }
@@ -1490,7 +1622,7 @@ public class FakePlayerManager {
             usedNames.remove(fp.getName());
             botHeadRotation.remove(fp.getUuid());
             botSpawnRotation.remove(fp.getUuid());
-            miningLockedBots.remove(fp.getUuid());
+            actionLockedBots.remove(fp.getUuid());
             navLockedBots.remove(fp.getUuid());
             pvpAI.stopBot(fp.getUuid());
             if (db != null) db.recordRemoval(fp.getUuid(), "DIED");
@@ -1722,6 +1854,30 @@ public class FakePlayerManager {
         return nameIndex.get(name.toLowerCase());
     }
 
+    /**
+     * Renames a bot's display name (internal name remains unchanged since it's final).
+     * Updates tab-list packets to reflect the new name.
+     *
+     * @param bot     the bot to rename
+     * @param newName the new display name
+     */
+    public void renameBot(FakePlayer bot, String newName) {
+        String oldDisplay = bot.getDisplayName();
+        if (oldDisplay.equalsIgnoreCase(newName)) return;  // no-op
+
+        // Update display name and raw display name
+        bot.setDisplayName(newName);
+        bot.setRawDisplayName(newName);
+
+        // Update tab-list for all players
+        if (Config.tabListEnabled() && bot.getPlayer() != null) {
+            for (Player p : Bukkit.getOnlinePlayers()) {
+                PacketHelper.sendTabListRemove(p, bot);
+                PacketHelper.sendTabListAdd(p, bot);
+            }
+        }
+    }
+
     // ── Spawn cooldown helpers ────────────────────────────────────────────────
 
     /**
@@ -1764,13 +1920,13 @@ public class FakePlayerManager {
      *   <li>Head-AI is suppressed for this bot - it will not rotate to look at players.</li>
      *   <li>The physics tick enforces the locked position every tick so the bot stays on its spot.</li>
      * </ul>
-     * Call {@link #unlockMining(UUID)} when mining stops.
+     * Call {@link #unlockAction(UUID)} when the action stops.
      *
      * @param botUuid the bot to lock
      * @param loc     the exact position + facing direction to lock to (yaw + pitch included)
      */
-    public void lockForMining(UUID botUuid, Location loc) {
-        miningLockedBots.put(botUuid, loc.clone());
+    public void lockForAction(UUID botUuid, Location loc) {
+        actionLockedBots.put(botUuid, loc.clone());
         // Initialise head rotation state to the locked direction so the head-AI
         // position snapshot never overwrites the locked rotation.
         botHeadRotation.put(botUuid, new float[]{loc.getYaw(), loc.getPitch()});
@@ -1778,20 +1934,20 @@ public class FakePlayerManager {
     }
 
     /**
-     * Removes the mining position lock for this bot, re-enabling head-AI.
+     * Removes the action-position lock for this bot, re-enabling head-AI.
      *
      * @param botUuid the bot to unlock
      */
-    public void unlockMining(UUID botUuid) {
-        miningLockedBots.remove(botUuid);
+    public void unlockAction(UUID botUuid) {
+        actionLockedBots.remove(botUuid);
     }
 
     /**
-     * Returns {@code true} if the bot is currently mining-locked
+     * Returns {@code true} if the bot is currently action-locked
      * (head-AI disabled, position enforced every tick).
      */
-    public boolean isMiningLocked(UUID botUuid) {
-        return miningLockedBots.containsKey(botUuid);
+    public boolean isActionLocked(UUID botUuid) {
+        return actionLockedBots.containsKey(botUuid);
     }
 
     /**
@@ -1941,17 +2097,24 @@ public class FakePlayerManager {
         }
 
         display = sanitizeDisplayName(display, fp.getName());
+        // Guard (Trigger 3): if LP prefix/suffix contain only colour tags and no visible text,
+        // the MiniMessage-stripped display may be blank, which causes the vanilla client to show
+        // "Anonymous Player". Fall back to the raw bot name to guarantee a visible tab entry.
+        if (display == null || display.isBlank()) {
+            display = fp.getName();
+            Config.debug("[LP] Display name was blank after sanitise for '"
+                    + fp.getName() + "' — falling back to raw bot name.");
+        }
         fp.setDisplayName(display);
 
-        // Update the entity's display name for death messages and chat
+        // Update the entity's display name for death messages and chat.
+        // Use plain colorize (not colorizeOrYellow) so the entity display name stays
+        // neutral — LP applies prefix/suffix in chat natively. Yellow is only added by
+        // BotBroadcast for join/leave messages via its own parseDisplayName helper.
         Player body = fp.getPlayer();
         if (body != null && body.isValid()) {
             try {
-                // Use raw display name to preserve color intent, then strip for vanilla compatibility
-                String plainName = rawContent.replaceAll("§[0-9a-fk-or]", "")
-                        .replaceAll("<[^>]+>", "")  // Remove MiniMessage tags
-                        .replaceAll("\\{#[0-9A-Fa-f]{6}[><]\\}", "");  // Remove LP gradient tags
-                body.displayName(Component.text(plainName));
+                body.displayName(me.bill.fakePlayerPlugin.util.TextUtil.colorize(rawContent));
             } catch (Exception ignored) {}
         }
 
@@ -2017,15 +2180,21 @@ public class FakePlayerManager {
      * Replaces any unreplaced {@code {placeholder}} patterns with a fallback name.
      */
     private String sanitizeDisplayName(String displayName, String context) {
-        if (displayName == null || !displayName.contains("{")) return displayName;
+        if (displayName == null || !displayName.contains("{")) {
+            // Still guard against blank even if no placeholders were found.
+            return (displayName == null || displayName.isBlank()) ? context : displayName;
+        }
         java.util.regex.Matcher m = PLACEHOLDER_PATTERN.matcher(displayName);
-        if (!m.find()) return displayName;
+        if (!m.find()) {
+            return displayName.isBlank() ? context : displayName;
+        }
         String fallback  = pickRandomSkinName();
         String sanitized = PLACEHOLDER_PATTERN.matcher(displayName).replaceAll(fallback);
         FppLogger.warn("Unreplaced placeholder(s) in display name for '"
                 + context + "': '" + displayName + "' - replaced with '" + fallback
                 + "'. Check bot-name.user-format / bot-name.admin-format in config.yml.");
-        return sanitized;
+        // Final guard: if stripping somehow produces a blank string, fall back to the bot name.
+        return sanitized.isBlank() ? context : sanitized;
     }
 
     // ── Name generation ──────────────────────────────────────────────────────
@@ -2058,12 +2227,16 @@ public class FakePlayerManager {
     }
 
     private String generateName() {
-        List<String> pool = Config.namePool();
+        // Use ONLY the pre-filtered clean pool — never fall back to the raw name list here.
+        // If the clean pool is empty, generate a generic Bot#### fallback instead of re-running
+        // expensive badword checks or accidentally using a filtered-out pool entry.
+        List<String> pool = cleanNamePool;
         if (pool.isEmpty()) return fallbackName();
 
         String chosen = null;
         int    count  = 0;
         for (String n : pool) {
+            // Basic validity (already guaranteed by cleanNamePool, but kept as a cheap guard)
             if (n == null || n.isEmpty() || n.length() > 16
                     || !n.matches("[a-zA-Z0-9_]+")) continue;
             if (usedNames.contains(n) || Bukkit.getPlayerExact(n) != null) continue;
@@ -2084,7 +2257,9 @@ public class FakePlayerManager {
      * Falls back to {@code pvp_Bot<random>} if the pool is exhausted.
      */
     private String generatePvpName() {
-        List<String> pool = Config.namePool();
+        // Same rule as generateName(): only use the pre-filtered clean pool.
+        // If it is empty, fall straight back to pvp_Bot####.
+        List<String> pool = cleanNamePool;
         if (!pool.isEmpty()) {
             String chosen = null;
             int count = 0;
@@ -2092,6 +2267,7 @@ public class FakePlayerManager {
                 if (n == null || n.isEmpty() || !n.matches("[a-zA-Z0-9_]+")) continue;
                 // Truncate base name to 12 chars so pvp_ prefix fits in 16
                 String base = n.length() > 12 ? n.substring(0, 12) : n;
+                // Pool is pre-filtered against badwords — no need to re-check here.
                 String candidate = "pvp_" + base;
                 if (usedNames.contains(candidate) || Bukkit.getPlayerExact(candidate) != null) continue;
                 count++;
@@ -2241,5 +2417,32 @@ public class FakePlayerManager {
         return from + diff * t;
     }
 
-}
+    // ── Per-bot settings persistence ──────────────────────────────────────────
 
+    /**
+     * Persists all mutable per-bot settings for the given bot to the database
+     * (frozen, chat, head-AI, nav overrides, pickup toggles, personality, right-click cmd).
+     * Safe to call on the main thread; writes are enqueued on the DB writer thread.
+     * No-op when the database is disabled or unavailable.
+     */
+    public void persistBotSettings(FakePlayer fp) {
+        DatabaseManager db = plugin.getDatabaseManager();
+        if (db == null || fp == null) return;
+        db.updateBotAllSettings(
+                fp.getUuid().toString(),
+                fp.isFrozen(),
+                fp.isChatEnabled(),
+                fp.getChatTier(),
+                fp.getRightClickCommand(),
+                fp.getAiPersonality(),
+                fp.isPickUpItemsEnabled(),
+                fp.isPickUpXpEnabled(),
+                fp.isHeadAiEnabled(),
+                fp.isNavParkour(),
+                fp.isNavBreakBlocks(),
+                fp.isNavPlaceBlocks(),
+                fp.isSwimAiEnabled(),
+                fp.getChunkLoadRadius()
+        );
+    }
+}

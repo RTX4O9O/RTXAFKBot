@@ -315,8 +315,10 @@ public final class PacketHelper {
      * may be returned by {@code getProperties()} in some builds.
      */
     private static Object buildProfileWithSkin(FakePlayer fp) throws Exception {
-        // Use packet profile name (may include invisible sort prefix) when building the GameProfile
+        // Use packet profile name (may include invisible sort prefix) when building the GameProfile.
+        // Guard: a blank profile name causes the vanilla 1.20+ client to show "Anonymous Player".
         String profileName = fp.getPacketProfileName();
+        if (profileName == null || profileName.isBlank()) profileName = fp.getName();
         Object profile = gameProfileCtor != null
                 ? gameProfileCtor.newInstance(fp.getUuid(), profileName)
                 : gameProfileClass.getDeclaredConstructors()[0].newInstance(fp.getUuid(), profileName);
@@ -515,10 +517,16 @@ public final class PacketHelper {
         try {
             Object nms = getHandle(receiver);
 
+            // Guard: a blank profile name causes the vanilla 1.20+ client to show "Anonymous Player".
+            // Use the first 8 chars of the UUID as a safe fallback when no name is available.
+            String safeProfileName = (packetProfileName == null || packetProfileName.isBlank())
+                    ? uuid.toString().replace("-", "").substring(0, 8)
+                    : packetProfileName;
+
             // Build GameProfile with the packet-profile name (includes sort prefix)
             Object profile = gameProfileCtor != null
-                    ? gameProfileCtor.newInstance(uuid, packetProfileName)
-                    : gameProfileClass.getDeclaredConstructors()[0].newInstance(uuid, packetProfileName);
+                    ? gameProfileCtor.newInstance(uuid, safeProfileName)
+                    : gameProfileClass.getDeclaredConstructors()[0].newInstance(uuid, safeProfileName);
 
             // Inject skin texture properties when present
             if (skinValue != null && !skinValue.isBlank()) {
@@ -537,7 +545,7 @@ public final class PacketHelper {
             Object actions = buildActionSet();
 
             sendPacket(nms, playerInfoUpdateCtor.newInstance(actions, buildSecondArg(entry)));
-            Config.debugPackets("Tab ADD raw → " + receiver.getName() + " for " + packetProfileName
+            Config.debugPackets("Tab ADD raw → " + receiver.getName() + " for " + safeProfileName
                     + (skinValue != null && !skinValue.isBlank() ? " [skinned]" : ""));
         } catch (Exception e) {
             FppLogger.error("sendTabListAddRaw failed: " + e.getMessage());

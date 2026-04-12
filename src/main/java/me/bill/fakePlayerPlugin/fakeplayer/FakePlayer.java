@@ -1,6 +1,7 @@
 package me.bill.fakePlayerPlugin.fakeplayer;
 
 import com.destroystokyo.paper.profile.PlayerProfile;
+import me.bill.fakePlayerPlugin.config.Config;
 import me.bill.fakePlayerPlugin.database.BotRecord;
 import org.bukkit.Location;
 import org.bukkit.entity.Entity;
@@ -20,7 +21,7 @@ import java.util.UUID;
  *
  * <p><b>Fake Connection:</b> The NMS player is backed by a fake {@code EmbeddedChannel} 
  * connection that discards all outbound packets. The channel uses a discard-proxy
- * (see {@link NmsPlayerSpawner#createDiscardChannel}) to prevent Netty NPEs during
+ * helper to prevent Netty NPEs during
  * server tick flush operations.
  *
  * <p><b>Auth bypass:</b> The player is created directly in JVM memory without a TCP 
@@ -180,6 +181,14 @@ public final class FakePlayer {
     private String chatTier = null;
 
     /**
+     * Persistent AI personality name for this bot (from the
+     * {@code personalities/} folder via {@link me.bill.fakePlayerPlugin.ai.PersonalityRepository}).
+     * Assigned randomly at first spawn and persisted to the database + YAML.
+     * {@code null} = no personality assigned yet; the config default will be used.
+     */
+    private String aiPersonality = null;
+
+    /**
      * Command to execute as this bot when any player right-clicks its body.
      * When non-null, the right-click fires {@code Bukkit.dispatchCommand(botPlayer, rightClickCommand)}
      * instead of opening the inventory GUI.
@@ -187,6 +196,43 @@ public final class FakePlayer {
      * {@code null} = not set (right-click falls through to inventory GUI).
      */
     private String rightClickCommand = null;
+
+    /**
+     * Whether head-AI (look-at-player tracking) is enabled for this bot.
+     * {@code true} = bot smoothly rotates to face the nearest player within range.
+     * {@code false} = bot's head stays locked in place (does not track players).
+     */
+    private boolean headAiEnabled = true;
+
+    /** Whether this bot can pick up item entities into its inventory. */
+    private boolean pickUpItemsEnabled = Config.bodyPickUpItems();
+
+    /** Whether this bot can pick up XP orbs / receive normal XP gains. */
+    private boolean pickUpXpEnabled = Config.bodyPickUpXp();
+
+    // ── Per-bot pathfinding overrides ──────────────────────────────────────────
+    /** Whether this bot may sprint-jump across gaps (per-bot override of global config). */
+    private boolean navParkour     = Config.pathfindingParkour();
+    /** Whether this bot may break obstructing blocks during navigation. */
+    private boolean navBreakBlocks = Config.pathfindingBreakBlocks();
+    /** Whether this bot may place bridge blocks during navigation. */
+    private boolean navPlaceBlocks = Config.pathfindingPlaceBlocks();
+
+    // ── Per-bot swim AI + chunk loading ───────────────────────────────────────
+    /**
+     * Whether swim-AI (auto-jump in water/lava) is enabled for this bot.
+     * Defaults to the global {@code swim-ai.enabled} config value at spawn time.
+     * {@code false} = bot will sink rather than swim up to the surface.
+     */
+    private boolean swimAiEnabled = Config.swimAiEnabled();
+
+    /**
+     * Per-bot chunk-loading radius override.
+     * {@code -1} = use the global {@code chunk-loading.radius} config value.
+     * {@code 0}  = no chunk loading for this bot (saves server load).
+     * {@code 1}–{@code N} = load this many chunks around the bot, capped at the global max.
+     */
+    private int chunkLoadRadius = -1;
 
     public FakePlayer(UUID uuid, String name, PlayerProfile profile) {
         this.uuid    = uuid;
@@ -338,6 +384,14 @@ public final class FakePlayer {
      */
     public String  getChatTier()                 { return chatTier; }
     public void    setChatTier(String tier)      { this.chatTier = tier; }
+
+    /**
+     * The persistent AI personality name assigned to this bot (from the personalities/ folder).
+     * {@code null} = no personality; config default personality is used in conversations.
+     */
+    public String  getAiPersonality()                  { return aiPersonality; }
+    public void    setAiPersonality(String personality) { this.aiPersonality = personality; }
+
     public void setSkinName(String name)          { this.skinName      = name; }
     public void setResolvedSkin(SkinProfile skin) { this.resolvedSkin  = skin; }
 
@@ -348,6 +402,51 @@ public final class FakePlayer {
     public void    setRightClickCommand(String cmd) { this.rightClickCommand = (cmd == null || cmd.isBlank()) ? null : cmd.stripLeading().replaceFirst("^/", ""); }
     /** Returns {@code true} when a right-click command is configured on this bot. */
     public boolean hasRightClickCommand()           { return rightClickCommand != null; }
+
+    // ── Head AI ───────────────────────────────────────────────────────────────
+    /** Whether head-AI (look-at-player tracking) is enabled for this bot. */
+    public boolean isHeadAiEnabled()               { return headAiEnabled; }
+    /** Enable/disable head-AI tracking for this bot. */
+    public void    setHeadAiEnabled(boolean v)     { this.headAiEnabled = v; }
+
+    // ── Pickup toggles ─────────────────────────────────────────────────────────
+    /** Whether this bot can pick up item entities into its inventory. */
+    public boolean isPickUpItemsEnabled()          { return pickUpItemsEnabled; }
+    /** Enable/disable item pickup for this bot. */
+    public void    setPickUpItemsEnabled(boolean v){ this.pickUpItemsEnabled = v; }
+
+    /** Whether this bot can pick up XP orbs / receive normal XP gains. */
+    public boolean isPickUpXpEnabled()             { return pickUpXpEnabled; }
+    /** Enable/disable XP pickup for this bot. */
+    public void    setPickUpXpEnabled(boolean v)   { this.pickUpXpEnabled = v; }
+
+    // ── Per-bot pathfinding overrides ──────────────────────────────────────────
+    /** Whether this bot may sprint-jump across gaps during navigation. */
+    public boolean isNavParkour()                  { return navParkour; }
+    public void    setNavParkour(boolean v)        { this.navParkour = v; }
+    /** Whether this bot may break obstructing blocks during navigation. */
+    public boolean isNavBreakBlocks()              { return navBreakBlocks; }
+    public void    setNavBreakBlocks(boolean v)    { this.navBreakBlocks = v; }
+    /** Whether this bot may place bridge blocks during navigation. */
+    public boolean isNavPlaceBlocks()              { return navPlaceBlocks; }
+    public void    setNavPlaceBlocks(boolean v)    { this.navPlaceBlocks = v; }
+
+    // ── Swim AI ────────────────────────────────────────────────────────────────
+    /** Whether swim-AI (auto-jump in fluid) is enabled for this bot. */
+    public boolean isSwimAiEnabled()               { return swimAiEnabled; }
+    /** Enable/disable swim-AI for this bot. */
+    public void    setSwimAiEnabled(boolean v)     { this.swimAiEnabled = v; }
+
+    // ── Per-bot chunk-load radius ──────────────────────────────────────────────
+    /**
+     * Per-bot chunk-loading radius override.
+     * {@code -1} = use the global config value.
+     * {@code 0}  = disabled for this bot.
+     * {@code 1}–{@code N} = override radius (capped at global max by {@code ChunkLoader}).
+     */
+    public int  getChunkLoadRadius()               { return chunkLoadRadius; }
+    /** Set the per-bot chunk-load radius; use {@code -1} to follow the global config. */
+    public void setChunkLoadRadius(int r)          { this.chunkLoadRadius = r; }
 
 
     /** The resolved skin for this bot, or {@code null} if not yet resolved or skin is off. */
@@ -387,14 +486,23 @@ public final class FakePlayer {
     /** Set nametag entity (legacy compatibility) */
     public void setNametagEntity(Entity entity) { this.nametagEntity = entity; }
     
-    /** Get packet profile name - for real NMS players this is just the real name */
-    public String getPacketProfileName() { 
-        return packetProfileName != null ? packetProfileName : name; 
+    /**
+     * Get packet profile name - for real NMS players this is just the real name.
+     * <p><b>Never returns blank</b>: if the stored value is null or blank (which would
+     * cause the vanilla client to display "Anonymous Player"), falls back to the
+     * bot's internal Minecraft username.
+     */
+    public String getPacketProfileName() {
+        String p = packetProfileName != null ? packetProfileName : name;
+        return (p == null || p.isBlank()) ? name : p;
     }
-    
-    /** Set packet profile name - for real NMS players this is just the real name */
-    public void setPacketProfileName(String name) { 
-        this.packetProfileName = name; 
+
+    /**
+     * Set packet profile name - sanitised so a blank value can never be stored.
+     * Blank or null values are silently replaced with the bot's internal MC username.
+     */
+    public void setPacketProfileName(String n) {
+        this.packetProfileName = (n == null || n.isBlank()) ? this.name : n;
     }
 }
 

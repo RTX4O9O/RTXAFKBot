@@ -1,37 +1,43 @@
-# Database
+# 💾 Database
 
-FPP logs every bot session to a database for auditing, analytics, the `/fpp info` command, and bot persistence across restarts.
+FPP stores bot sessions, restart state, analytics, and task persistence in a database.
 
-> **Version:** 1.5.8 · **Default backend:** SQLite (bundled, zero-config) · **Optional backend:** MySQL
+> **Current plugin line:** v1.6.2  
+> **Default backend:** SQLite  
+> **Optional backend:** MySQL  
+> **Important persistence feature:** active mine/use/place/patrol tasks survive restart
 
 ---
 
 ## Storage Backends
 
 | Backend | When used | Location |
-|---------|----------|----------|
-| **SQLite** | Default - always available | `plugins/FakePlayerPlugin/data/fpp.db` |
-| **MySQL** | When `database.mysql-enabled: true` and server is reachable | Remote MySQL server |
+|---------|-----------|----------|
+| SQLite | Default / single-server setups | `plugins/FakePlayerPlugin/data/fpp.db` |
+| MySQL | When `database.mysql-enabled: true` | External MySQL server |
 
-If MySQL is enabled but unreachable at startup, FPP automatically falls back to SQLite and logs a warning.
+SQLite is bundled and requires no extra setup.
 
 ---
 
-## SQLite (Default)
+## SQLite (default)
 
-No configuration required. The database file is created automatically at:
+No external dependency is required. FPP creates:
 
-```
+```text
 plugins/FakePlayerPlugin/data/fpp.db
 ```
 
-SQLite runs in **WAL mode** for improved concurrent read performance. It is ideal for single-server setups with no external dependencies.
+SQLite is ideal for:
+- single-server setups
+- testing / development
+- small to medium bot counts
 
 ---
 
 ## MySQL Setup
 
-To use MySQL, edit `config.yml`:
+Example config:
 
 ```yaml
 database:
@@ -41,18 +47,14 @@ database:
     host: "localhost"
     port: 3306
     database: "fpp"
-    username: "your_user"
+    username: "fpp_user"
     password: "your_password"
     use-ssl: false
     pool-size: 5
     connection-timeout: 30000
 ```
 
-Then restart the server or run `/fpp reload`.
-
-### Creating the MySQL Database
-
-Run this on your MySQL server before starting FPP:
+Example bootstrap SQL:
 
 ```sql
 CREATE DATABASE fpp CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
@@ -61,19 +63,19 @@ GRANT ALL PRIVILEGES ON fpp.* TO 'fpp_user'@'%';
 FLUSH PRIVILEGES;
 ```
 
-FPP creates all necessary tables automatically on first connection.
+FPP creates or migrates its tables automatically on startup.
 
 ---
 
-## NETWORK Mode (Multi-Server / Proxy)
+## `NETWORK` Mode (Proxy / Multi-Server)
 
-Set `database.mode: "NETWORK"` to share one MySQL database across multiple backend servers.
+Set `database.mode: "NETWORK"` when multiple backend servers share one MySQL database.
 
 ```yaml
 database:
   enabled: true
   mode: "NETWORK"
-  server-id: "survival"    # unique per server
+  server-id: "survival"
   mysql-enabled: true
   mysql:
     host: "mysql.example.com"
@@ -82,133 +84,204 @@ database:
     password: "your_password"
 ```
 
-In NETWORK mode:
-- Every backend server tags its rows with `server_id` so bots stay isolated per-server
-- `fpp_active_bots` is the **primary** restore source at startup (file fallback used only if DB is empty)
-- Remote bot registry is pre-populated from `fpp_active_bots` at startup and updated via plugin messaging
-- Server-specific keys (`database.server-id`, `database.mysql.*`, `debug`) are **never** pushed/pulled by Config Sync
+### What `NETWORK` mode changes
 
----
+- every row is tagged with `database.server-id`
+- each backend only restores and manages **its own** bots
+- remote bot data is cached for proxy-aware counts and `/fpp list`
+- config sync can push/pull shared config files over the DB
 
-## Schema
+### Important key name
 
-### `bot_sessions` table
-
-Records every bot session for `/fpp info` queries and analytics.
-
-| Column | Type | Description |
-|--------|------|-------------|
-| `id` | INTEGER (PK) | Auto-increment row ID |
-| `server_id` | TEXT | Server identifier (`database.server-id`) - distinguishes sessions in NETWORK mode |
-| `bot_name` | TEXT | Internal bot name (unique per session) |
-| `display_name` | TEXT | Display name (may differ for user-tier bots) |
-| `spawner_uuid` | TEXT | UUID of the player who spawned the bot |
-| `spawner_name` | TEXT | Name of the spawner at spawn time |
-| `world` | TEXT | World name where the bot was spawned |
-| `spawn_x` | REAL | X coordinate at spawn |
-| `spawn_y` | REAL | Y coordinate at spawn |
-| `spawn_z` | REAL | Z coordinate at spawn |
-| `last_x` | REAL | X coordinate at last save / despawn |
-| `last_y` | REAL | Y coordinate at last save / despawn |
-| `last_z` | REAL | Z coordinate at last save / despawn |
-| `spawned_at` | TEXT | ISO-8601 timestamp of when the bot was spawned |
-| `despawned_at` | TEXT | ISO-8601 timestamp of when the bot was removed (`null` if still active) |
-| `removal_reason` | TEXT | Why removed: `COMMAND`, `DEATH`, `RESTART`, `SERVER_STOP`, `SWAP` |
-| `active` | INTEGER | `1` = currently active; `0` = removed |
-
-### `fpp_active_bots` table
-
-Tracks bots that should be restored on next startup.
-
-| Column | Type | Description |
-|--------|------|-------------|
-| `server_id` | TEXT | Server that owns this bot |
-| `bot_uuid` | TEXT | Bot UUID (PK) |
-| `bot_name` | TEXT | Internal name |
-| `display_name` | TEXT | Display name |
-| `world` | TEXT | Last known world |
-| `x`, `y`, `z` | REAL | Last known coordinates |
-| `yaw`, `pitch` | REAL | Last known rotation |
-| `skin_name` | TEXT | Skin source name for restoration |
-| `spawner_uuid` | TEXT | Original spawner UUID |
-| `lp_group` | TEXT | LuckPerms group at despawn |
-
----
-
-## Querying Records - `/fpp info`
-
-### Admin tier (`fpp.info`)
-
-```
-/fpp info                        → all live bots + DB summary
-/fpp info <botname>              → full session history for the bot
-/fpp info bot <name>             → same as above
-/fpp info spawner <playername>   → all bots ever spawned by that player
-```
-
-Shown fields: spawn time, despawn time, uptime, world, coordinates, spawner, removal reason.
-
-### User tier (`fpp.user.info`)
-
-```
-/fpp info                → your own active bots
-/fpp info <botname>      → limited view (world, coords, uptime) for a bot you own
-```
-
----
-
-## Persistence & the Database
-
-When `persistence.enabled: true`, FPP:
-
-1. On **shutdown** - marks all active bot sessions as `removal_reason: SERVER_STOP`, records their last position in `fpp_active_bots`, and flushes coordinates to `bot_sessions`.
-2. On **startup** - queries `fpp_active_bots` (primary) or `data/active-bots.yml` (fallback) and respawns those bots at their last-known position.
-
-This ensures bots rejoin exactly where they were when the server stopped.
-
----
-
-## Location Flush
-
-Bot positions are batch-flushed to the database on a configurable interval:
+Use:
 
 ```yaml
 database:
-  location-flush-interval: 30   # Seconds between position flushes
+  server-id: "survival"
 ```
 
-Writes are serialised on a background thread to avoid blocking the main thread.
+Do **not** use the old `server.id` key.
 
 ---
 
-## `/fpp migrate` Database Commands
+## Main Tables
+
+The plugin uses `fpp_*` table names.
+
+### `fpp_bot_sessions`
+
+Historical session log used by `/fpp info`, analytics, and migration/export tools.
+
+Stores:
+- bot name / display name
+- spawner info
+- world / positions
+- spawn time / despawn time
+- removal reason
+- active flag
+- server id in network mode
+
+### `fpp_active_bots`
+
+The primary restart-persistence source of truth when DB is enabled.
+
+Stores the bot's last known:
+- UUID
+- name / display name
+- world / coordinates / rotation
+- LP group
+- frozen/chat/item/XP settings and other persistent bot state (depending on schema level)
+
+### `fpp_sleeping_bots`
+
+Crash-safe storage for the peak-hours sleeping queue.
+
+Used so peak-hours sleeping state can be restored after a crash/restart.
+
+### `fpp_bot_identities`
+
+Stable `(bot_name, server_id) -> UUID` mapping.
+
+Used so bots keep the same UUID on the same backend server across restarts.
+
+### `fpp_bot_tasks`
+
+Stores active task state for bots.
+
+This is the key table for **task persistence**.
+
+Task types:
+- `MINE`
+- `USE`
+- `PLACE`
+- `PATROL`
+
+High-level fields:
+- `bot_uuid`
+- `server_id`
+- `task_type`
+- world name
+- position / yaw / pitch
+- `once_flag`
+- `extra_str` (route name, etc.)
+- `extra_bool` (extra mode flag)
+
+### `fpp_meta`
+
+Stores schema version metadata.
+
+---
+
+## Task Persistence (Important in v1.6.x)
+
+Active bot jobs now survive restart.
+
+This includes:
+- mine jobs
+- use-item jobs
+- place jobs
+- patrol / waypoint jobs
+
+### Save flow
+
+On shutdown, FPP snapshots active tasks into:
+- `fpp_bot_tasks` when DB is enabled
+- `data/bot-tasks.yml` as YAML fallback
+
+### Restore flow
+
+On startup, tasks are read back and resumed.
+
+After loading, the task records are cleared from the DB snapshot source to prevent accidental double-restore on the next boot.
+
+---
+
+## Persistence Flow
+
+When `persistence.enabled: true`:
+
+### On shutdown
+- active bot positions are captured
+- sessions are finalized in the DB
+- restart-state is written to `fpp_active_bots`
+- task snapshot is written to `fpp_bot_tasks`
+
+### On startup
+- bots are restored from `fpp_active_bots` (DB primary)
+- file fallback is used only when DB is disabled or unavailable
+- task state is restored after bot recovery
+
+---
+
+## Session History Queries
+
+### Admin tier (`fpp.info`)
+
+```text
+/fpp info
+/fpp info bot <name>
+/fpp info spawner <name>
+```
+
+### User tier (`fpp.info.user`)
+
+```text
+/fpp info
+```
+
+User-tier access is limited to the sender's own bots.
+
+---
+
+## Location Flush Interval
+
+```yaml
+database:
+  location-flush-interval: 30
+```
+
+Bot positions are batch-flushed on this interval in **seconds**.
+
+This reduces write overhead while still keeping session history reasonably current.
+
+---
+
+## `/fpp migrate` Database Tools
+
+Permission: `fpp.migrate`
 
 | Command | Description |
 |---------|-------------|
-| `/fpp migrate status` | Config version, file-sync health, backup count, DB schema version |
-| `/fpp migrate backup` | Create a manual backup of all plugin files |
-| `/fpp migrate backups` | List all stored backups |
-| `/fpp migrate db export` | Export `bot_sessions` to a JSON file |
-| `/fpp migrate db merge [file]` | Merge a JSON export back into the current DB |
-| `/fpp migrate db tomysql` | Migrate data from SQLite to MySQL |
+| `/fpp migrate status` | Show config version, DB schema, backups, and sync state |
+| `/fpp migrate backup` | Create a manual backup |
+| `/fpp migrate backups` | List backup sets |
+| `/fpp migrate db export [file]` | Export session data to **CSV** |
+| `/fpp migrate db merge <file>` | Merge an older DB export/file |
+| `/fpp migrate db tomysql` | Copy data from SQLite to configured MySQL |
 
 ---
 
-## Backup
+## Backup Notes
 
 ### SQLite
 
-Back up the database by copying the file while the server is stopped, or use `/fpp migrate backup` for a live snapshot:
+Back up:
 
-```
+```text
 plugins/FakePlayerPlugin/data/fpp.db
+```
+
+Or use:
+
+```text
+/fpp migrate backup
 ```
 
 ### MySQL
 
-Use standard `mysqldump`:
+Use standard database backups, for example:
 
-```bash
+```sql
 mysqldump -u fpp_user -p fpp > fpp_backup.sql
 ```
 
@@ -216,8 +289,47 @@ mysqldump -u fpp_user -p fpp > fpp_backup.sql
 
 ## Disabling the Database
 
-Set `database.enabled: false` to disable all database I/O. In this mode:
-- No session history is recorded
-- Bot persistence falls back to `data/active-bots.yml` only
-- `/fpp info` returns in-memory data only (no historical records)
-- `/fpp stats` DB totals show `-`
+```yaml
+database:
+  enabled: false
+```
+
+When disabled:
+- no DB history is written
+- persistence falls back to YAML files only
+- `/fpp info` is limited to in-memory/YAML-backed data
+- task persistence falls back to YAML snapshot files
+
+---
+
+## Quick Troubleshooting
+
+### Bots from one backend appear on another
+
+Check:
+- all servers share the same MySQL DB intentionally
+- each server has a **unique** `database.server-id`
+- all backends are actually using `NETWORK` mode consistently
+
+### MySQL is enabled but nothing loads
+
+Check:
+- `database.mysql-enabled: true`
+- host/port/database/user/password are correct
+- server can reach the DB host
+- startup logs for DB initialization failures
+
+### Export format confusion
+
+Current export docs should be treated as:
+
+- **CSV export**, not JSON
+
+---
+
+## Related Pages
+
+- [Configuration](Configuration.md)
+- [Proxy-Support](Proxy-Support.md)
+- [Migration](Migration.md)
+- [Commands](Commands.md)

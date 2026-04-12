@@ -1204,11 +1204,28 @@ function updatePageNavigation() {
     }
 }
 
+// ==================== VERSION BADGE ====================
+
+async function fetchAndSetVersion() {
+    try {
+        const res = await fetch('/api/version');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!data.version) return;
+        const v = data.version.startsWith('v') ? data.version : 'v' + data.version;
+        const badge = document.getElementById('sidebarVersionBadge');
+        if (badge) badge.textContent = v;
+    } catch (_) { /* silent — static fallback text remains */ }
+}
+
 // ==================== INITIALIZATION ====================
 
 document.addEventListener('DOMContentLoaded', () => {
     // Initialize theme
     initTheme();
+
+    // Fetch and display live plugin version in sidebar badge
+    fetchAndSetVersion();
 
     // Theme toggle
     document.getElementById('themeToggle').addEventListener('click', toggleTheme);

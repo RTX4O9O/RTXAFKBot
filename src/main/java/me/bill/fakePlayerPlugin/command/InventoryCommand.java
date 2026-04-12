@@ -1,6 +1,7 @@
 package me.bill.fakePlayerPlugin.command;
 import me.bill.fakePlayerPlugin.fakeplayer.FakePlayer;
 import me.bill.fakePlayerPlugin.fakeplayer.FakePlayerManager;
+import me.bill.fakePlayerPlugin.gui.BotSettingGui;
 import me.bill.fakePlayerPlugin.lang.Lang;
 import me.bill.fakePlayerPlugin.permission.Perm;
 import net.kyori.adventure.text.Component;
@@ -108,11 +109,13 @@ public class InventoryCommand implements FppCommand, Listener {
     }
     private final FakePlayerManager manager;
     private final Plugin            plugin;
+    private final BotSettingGui     botSettingGui;
     private final Map<UUID, UUID>      sessions = new ConcurrentHashMap<>();
     private final Map<Inventory, UUID> invToBot = new ConcurrentHashMap<>();
-    public InventoryCommand(FakePlayerManager manager, Plugin plugin) {
+    public InventoryCommand(FakePlayerManager manager, Plugin plugin, BotSettingGui botSettingGui) {
         this.manager = manager;
         this.plugin  = plugin;
+        this.botSettingGui = botSettingGui;
     }
     // FppCommand
     @Override public String getName()        { return "inventory"; }
@@ -319,6 +322,30 @@ public class InventoryCommand implements FppCommand, Listener {
             syncToBotInventory(gui, fp.getPlayer().getInventory());
         });
     }
+
+    /**
+     * Refreshes every currently open GUI for the given bot UUID from the bot's live inventory.
+     * Use this after external inventory mutations (item pickup, mining/storage transfers, etc.)
+     * so viewers do not keep a stale snapshot that would overwrite the real inventory on close.
+     */
+    public void refreshOpenGui(UUID botUuid) {
+        Bukkit.getScheduler().runTask(plugin, () -> {
+            FakePlayer fp = manager.getByUuid(botUuid);
+            if (fp == null || fp.getPlayer() == null || fp.isBodyless()) return;
+            PlayerInventory botInv = fp.getPlayer().getInventory();
+            for (Map.Entry<Inventory, UUID> entry : new HashMap<>(invToBot).entrySet()) {
+                if (!botUuid.equals(entry.getValue())) continue;
+                Inventory gui = entry.getKey();
+                for (int guiSlot = 0; guiSlot < GUI_SIZE; guiSlot++) {
+                    if (DECO.contains(guiSlot)) continue;
+                    int botSlot = GUI_TO_BOT[guiSlot];
+                    if (botSlot < 0) continue;
+                    ItemStack item = botInv.getItem(botSlot);
+                    gui.setItem(guiSlot, (item == null || item.getType() == Material.AIR) ? null : item.clone());
+                }
+            }
+        });
+    }
     // ══════════════════════════════════════════════════════════════════════════
     //  Event listeners
     // ══════════════════════════════════════════════════════════════════════════
@@ -404,8 +431,9 @@ public class InventoryCommand implements FppCommand, Listener {
         }
     }
     /** Right-click a bot entity:
-     *  - If the bot has a right-click command set → bot executes it (no inventory).
-     *  - Otherwise → open the bot's inventory GUI (requires fpp.inventory). */
+     *  - Shift-right-click → open per-bot settings GUI (requires fpp.settings and config enabled)
+     *  - Normal right-click with stored command → bot executes it (requires config enabled).
+     *  - Normal right-click without command → open inventory GUI (requires fpp.inventory and config enabled). */
     @EventHandler(priority = EventPriority.NORMAL, ignoreCancelled = true)
     public void onRightClickBot(PlayerInteractAtEntityEvent event) {
         // PlayerInteractAtEntityEvent fires once per hand; skip the off-hand duplicate.
@@ -413,6 +441,55 @@ public class InventoryCommand implements FppCommand, Listener {
         if (!(event.getRightClicked() instanceof Player botPlayer)) return;
         FakePlayer fp = manager.getByEntity(botPlayer);
         if (fp == null || fp.isBodyless()) return;
+
+        Player player = event.getPlayer();
+
+        // ── Shift-right-click → bot settings GUI (coming soon) ────────────────
+        if (player.isSneaking()
+                && me.bill.fakePlayerPlugin.config.Config.isBotShiftRightClickSettingsEnabled()
+                && Perm.has(player, Perm.SETTINGS)) {
+            event.setCancelled(true);
+
+            // Developer-only preview: only the owner UUID may open the real GUI.
+            final java.util.UUID OWNER_UUID =
+                    java.util.UUID.fromString("a318f9f4-e2bf-479c-a47a-6a2c1b0b9e66");
+
+            if (player.getUniqueId().equals(OWNER_UUID)) {
+                botSettingGui.open(player, fp);
+            } else {
+                // Coming-soon message for everyone else
+                player.playSound(player.getLocation(),
+                        org.bukkit.Sound.ENTITY_VILLAGER_NO,
+                        org.bukkit.SoundCategory.MASTER, 0.8f, 1.0f);
+                player.sendMessage(net.kyori.adventure.text.Component.empty()
+                    .decoration(net.kyori.adventure.text.format.TextDecoration.ITALIC, false)
+                    .append(net.kyori.adventure.text.Component.text("⊘ ").color(
+                            net.kyori.adventure.text.format.TextColor.fromHexString("#FFA500")))
+                    .append(net.kyori.adventure.text.Component.text("ʙᴏᴛ ꜱᴇᴛᴛɪɴɢꜱ ɢᴜɪ  ").color(
+                            net.kyori.adventure.text.format.NamedTextColor.WHITE)
+                        .decoration(net.kyori.adventure.text.format.TextDecoration.BOLD, false))
+                    .append(net.kyori.adventure.text.Component.text("ɪꜱ ᴄᴏᴍɪɴɢ ꜱᴏᴏɴ!").color(
+                            net.kyori.adventure.text.format.TextColor.fromHexString("#FFA500"))
+                        .decoration(net.kyori.adventure.text.format.TextDecoration.BOLD, true)));
+                player.sendMessage(net.kyori.adventure.text.Component.empty()
+                    .decoration(net.kyori.adventure.text.format.TextDecoration.ITALIC, false)
+                    .append(net.kyori.adventure.text.Component.text("  ᴛʜɪꜱ ꜰᴇᴀᴛᴜʀᴇ ɪꜱ ꜱᴛɪʟʟ ɪɴ ᴅᴇᴠᴇʟᴏᴘᴍᴇɴᴛ ᴀɴᴅ ᴡɪʟʟ ʙᴇ").color(
+                            net.kyori.adventure.text.format.NamedTextColor.GRAY)));
+                player.sendMessage(net.kyori.adventure.text.Component.empty()
+                    .decoration(net.kyori.adventure.text.format.TextDecoration.ITALIC, false)
+                    .append(net.kyori.adventure.text.Component.text("  ᴀᴠᴀɪʟᴀʙʟᴇ ɪɴ ᴀ ꜰᴜᴛᴜʀᴇ ᴜᴘᴅᴀᴛᴇ.").color(
+                            net.kyori.adventure.text.format.NamedTextColor.GRAY)));
+                player.sendActionBar(net.kyori.adventure.text.Component.empty()
+                    .decoration(net.kyori.adventure.text.format.TextDecoration.ITALIC, false)
+                    .append(net.kyori.adventure.text.Component.text("⊘  ꜰᴇᴀᴛᴜʀᴇ ᴄᴏᴍɪɴɢ ꜱᴏᴏɴ").color(
+                            net.kyori.adventure.text.format.TextColor.fromHexString("#FFA500"))
+                        .decoration(net.kyori.adventure.text.format.TextDecoration.BOLD, true)));
+            }
+            return;
+        }
+
+        // Check if right-click interaction is globally disabled
+        if (!me.bill.fakePlayerPlugin.config.Config.isBotRightClickEnabled()) return;
 
         // ── Stored right-click command takes priority ──────────────────────────
         if (fp.hasRightClickCommand()) {
@@ -423,10 +500,10 @@ public class InventoryCommand implements FppCommand, Listener {
         }
 
         // ── No stored command → open inventory GUI (requires fpp.inventory) ────
-        if (!Perm.has(event.getPlayer(), Perm.INVENTORY)) return;
+        if (!Perm.has(player, Perm.INVENTORY)) return;
         event.setCancelled(true);
-        openGui(event.getPlayer(), fp);
-        event.getPlayer().sendMessage(Lang.get("inv-opened", "name", fp.getDisplayName()));
+        openGui(player, fp);
+        player.sendMessage(Lang.get("inv-opened", "name", fp.getDisplayName()));
     }
     @EventHandler(priority = EventPriority.MONITOR)
     public void onViewerQuit(PlayerQuitEvent event) {

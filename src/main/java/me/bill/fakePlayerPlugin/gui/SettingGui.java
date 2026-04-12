@@ -33,6 +33,8 @@ import com.destroystokyo.paper.profile.PlayerProfile;
 import me.bill.fakePlayerPlugin.fakeplayer.FakePlayer;
 import me.bill.fakePlayerPlugin.fakeplayer.NmsPlayerSpawner;
 import org.bukkit.Location;
+import org.bukkit.World;
+import org.bukkit.entity.ExperienceOrb;
 
 import java.util.*;
 
@@ -833,8 +835,37 @@ public final class SettingGui implements Listener {
 
         // ── Body: pick-up-items toggled OFF → drop everything bots are holding ──
         if (configKey.equals("body.pick-up-items")) {
-            if (!plugin.getConfig().getBoolean("body.pick-up-items", false) && fpm != null) {
-                fpm.getActivePlayers().forEach(this::dropBotInventoryWithAnimation);
+            boolean enabled = plugin.getConfig().getBoolean("body.pick-up-items", false);
+            if (fpm != null) {
+                // Sync NMS-level pickup flag on every active bot so the global change
+                // is reflected immediately without waiting for a respawn.
+                fpm.getActivePlayers().forEach(fp -> {
+                    Player body = fp.getPlayer();
+                    if (body != null) body.setCanPickupItems(enabled && fp.isPickUpItemsEnabled());
+                });
+                if (!enabled) {
+                    fpm.getActivePlayers().forEach(this::dropBotInventoryWithAnimation);
+                }
+            }
+            return;
+        }
+
+        // ── Body: pick-up-xp toggled OFF → drop all bots' current XP as orbs ──
+        if (configKey.equals("body.pick-up-xp")) {
+            boolean enabled = plugin.getConfig().getBoolean("body.pick-up-xp", true);
+            if (!enabled && fpm != null) {
+                fpm.getActivePlayers().forEach(fp -> {
+                    Player bot = fp.getPlayer();
+                    if (bot == null || !bot.isOnline()) return;
+                    int xp = bot.getTotalExperience();
+                    if (xp <= 0) return;
+                    World world = bot.getWorld();
+                    Location loc = bot.getLocation();
+                    world.spawn(loc, ExperienceOrb.class, orb -> orb.setExperience(xp));
+                    bot.setTotalExperience(0);
+                    bot.setLevel(0);
+                    bot.setExp(0f);
+                });
             }
             return;
         }
@@ -1231,15 +1262,47 @@ public final class SettingGui implements Listener {
             Material.COMPASS, Material.COMPASS,
             Material.CYAN_STAINED_GLASS_PANE,
             List.of(
-                SettingEntry.comingSoon("pathfinding.parkour",
+                SettingEntry.cycleDouble("pathfinding.arrival-distance",
+                    "ᴀʀʀɪᴠᴀʟ ᴅɪꜱᴛᴀɴᴄᴇ",
+                    "ʜᴏʀɪᴢᴏɴᴛᴀʟ ʀᴀᴅɪᴜꜱ ᴛʜᴀᴛ ᴄᴏᴜɴᴛꜱ ᴀꜱ\nᴀʀʀɪᴠᴇᴅ ꜰᴏʀ ꜰɪxᴇᴅ ɴᴀᴠɪɢᴀᴛɪᴏɴ ɢᴏᴀʟꜱ.",
+                    Material.TARGET, new double[]{ 0.8, 1.0, 1.2, 1.5, 2.0 }),
+                SettingEntry.cycleDouble("pathfinding.patrol-arrival-distance",
+                    "ᴘᴀᴛʀᴏʟ ᴀʀʀɪᴠᴀʟ ᴅɪꜱᴛᴀɴᴄᴇ",
+                    "ʜᴏʀɪᴢᴏɴᴛᴀʟ ʀᴀᴅɪᴜꜱ ᴛʜᴀᴛ ᴄᴏᴜɴᴛꜱ ᴀꜱ\nᴀʀʀɪᴠᴇᴅ ꜰᴏʀ ᴡᴀʏᴘᴏɪɴᴛ ᴘᴀᴛʀᴏʟꜱ.",
+                    Material.LEAD, new double[]{ 1.0, 1.2, 1.5, 2.0, 3.0 }),
+                SettingEntry.cycleDouble("pathfinding.waypoint-arrival-distance",
+                    "ᴡᴀʏᴘᴏɪɴᴛ ꜱɴᴀᴘ ʀᴀᴅɪᴜꜱ",
+                    "ʜᴏᴡ ᴄʟᴏꜱᴇ ᴀ ʙᴏᴛ ᴍᴜꜱᴛ ɢᴇᴛ ᴛᴏ ᴇᴀᴄʜ\nᴘᴀᴛʜ ɴᴏᴅᴇ ʙᴇꜰᴏʀᴇ ᴀᴅᴠᴀɴᴄɪɴɢ.",
+                    Material.STRING, new double[]{ 0.45, 0.65, 0.85, 1.0, 1.25 }),
+                SettingEntry.cycleDouble("pathfinding.sprint-distance",
+                    "ꜱᴘʀɪɴᴛ ᴅɪꜱᴛᴀɴᴄᴇ",
+                    "ʙᴏᴛꜱ ꜱᴛᴀʀᴛ ꜱᴘʀɪɴᴛɪɴɢ ᴡʜᴇɴ ᴛʜᴇʏ ᴀʀᴇ\nꜰᴀʀᴛʜᴇʀ ᴀᴡᴀʏ ᴛʜᴀɴ ᴛʜɪꜱ ᴅɪꜱᴛᴀɴᴄᴇ.",
+                    Material.SUGAR, new double[]{ 0.0, 3.0, 6.0, 8.0, 12.0, 16.0 }),
+                SettingEntry.cycleDouble("pathfinding.follow-recalc-distance",
+                    "ꜰᴏʟʟᴏᴡ ʀᴇᴄᴀʟᴄ ᴅɪꜱᴛᴀɴᴄᴇ",
+                    "ᴍᴏᴠɪɴɢ ᴛᴀʀɢᴇᴛꜱ ꜰᴏʀᴄᴇ ᴀ ɴᴇᴡ ᴘᴀᴛʜ ᴀꜰᴛᴇʀ\nᴛʜᴇʏ ᴍᴏᴠᴇ ᴛʜɪꜱ ꜰᴀʀ ꜰʀᴏᴍ ᴛʜᴇ ʟᴀꜱᴛ ᴄᴀʟᴄ.",
+                    Material.ENDER_EYE, new double[]{ 1.5, 2.5, 3.5, 5.0, 8.0 }),
+                SettingEntry.cycleInt("pathfinding.recalc-interval",
+                    "ʀᴇᴄᴀʟᴄ ɪɴᴛᴇʀᴠᴀʟ (ᴛɪᴄᴋꜱ)",
+                    "ʜᴇᴀʀᴛʙᴇᴀᴛ ɪɴᴛᴇʀᴠᴀʟ ꜰᴏʀ ᴀᴜᴛᴏᴍᴀᴛɪᴄ\nᴘᴀᴛʜ ʀᴇᴄᴀʟᴄᴜʟᴀᴛɪᴏɴ. 20 = 1 ꜱᴇᴄᴏɴᴅ.",
+                    Material.REPEATER, new int[]{ 10, 20, 40, 60, 100, 200 }),
+                SettingEntry.cycleInt("pathfinding.stuck-ticks",
+                    "ꜱᴛᴜᴄᴋ ᴛɪᴄᴋꜱ",
+                    "ʜᴏᴡ ᴍᴀɴʏ ʟᴏᴡ-ᴍᴏᴠᴇᴍᴇɴᴛ ᴛɪᴄᴋꜱ ʙᴇꜰᴏʀᴇ\nᴀ ʙᴏᴛ ɪꜱ ᴛʀᴇᴀᴛᴇᴅ ᴀꜱ ꜱᴛᴜᴄᴋ.",
+                    Material.COBWEB, new int[]{ 4, 6, 8, 10, 15, 20 }),
+                SettingEntry.cycleDouble("pathfinding.stuck-threshold",
+                    "ꜱᴛᴜᴄᴋ ᴍᴏᴠᴇᴍᴇɴᴛ ᴛʜʀᴇꜱʜᴏʟᴅ",
+                    "ᴍɪɴɪᴍᴜᴍ ʜᴏʀɪᴢᴏɴᴛᴀʟ ᴍᴏᴠᴇᴍᴇɴᴛ ᴘᴇʀ ᴛɪᴄᴋ\nʙᴇꜰᴏʀᴇ ᴀ ʙᴏᴛ ɪꜱ ᴄᴏɴꜱɪᴅᴇʀᴇᴅ ꜱᴛᴜᴄᴋ.",
+                    Material.SLIME_BALL, new double[]{ 0.01, 0.02, 0.04, 0.06, 0.08 }),
+                SettingEntry.toggle("pathfinding.parkour",
                     "ᴘᴀʀᴋᴏᴜʀ",
-                    "ʙᴏᴛꜱ ꜱᴘʀɪɴᴛ-ᴊᴜᴍᴘ ᴀᴄʀᴏꜱꜱ 1–2 ʙʟᴏᴄᴋ\nɢᴀᴘꜱ ᴅᴜʀɪɴɢ /ꜰᴘᴘ ᴍᴏᴠᴇ ɴᴀᴠɪɢᴀᴛɪᴏɴ.",
+                    "ʙᴏᴛꜱ ꜱᴘʀɪɴᴛ-ᴊᴜᴍᴘ ᴀᴄʀᴏꜱꜱ 1–2 ʙʟᴏᴄᴋ\nɢᴀᴘꜱ ᴅᴜʀɪɴɢ ɢʟᴏʙᴀʟ ɴᴀᴠɪɢᴀᴛɪᴏɴ.",
                     Material.LEATHER_BOOTS),
-                SettingEntry.comingSoon("pathfinding.break-blocks",
+                SettingEntry.toggle("pathfinding.break-blocks",
                     "ʙʀᴇᴀᴋ ʙʟᴏᴄᴋꜱ",
-                    "ʙᴏᴛꜱ ʙʀᴇᴀᴋ ꜱᴏʟɪᴅ ʙʟᴏᴄᴋꜱ ᴛʜᴀᴛ ʙʟᴏᴄᴋ\nᴛʜᴇɪʀ ɴᴀᴠɪɢᴀᴛɪᴏɴ ᴘᴀᴛʜ.",
+                    "ʙᴏᴛꜱ ʙʀᴇᴀᴋ ꜱᴏʟɪᴅ ʙʟᴏᴄᴋꜱ ᴛʜᴀᴛ\nʙʟᴏᴄᴋ ᴛʜᴇ ɢʟᴏʙᴀʟ ɴᴀᴠɪɢᴀᴛɪᴏɴ ᴘᴀᴛʜ.",
                     Material.IRON_PICKAXE),
-                SettingEntry.comingSoon("pathfinding.place-blocks",
+                SettingEntry.toggle("pathfinding.place-blocks",
                     "ᴘʟᴀᴄᴇ ʙʟᴏᴄᴋꜱ",
                     "ʙᴏᴛꜱ ᴘʟᴀᴄᴇ ʙʀɪᴅɢᴇ ʙʟᴏᴄᴋꜱ ᴛᴏ\nᴄʀᴏꜱꜱ 1-ʙʟᴏᴄᴋ ɢᴀᴘꜱ ᴅᴜʀɪɴɢ ɴᴀᴠɪɢᴀᴛɪᴏɴ.",
                     Material.DIRT)

@@ -300,8 +300,12 @@ public final class VelocityChannel implements PluginMessageListener {
 
         Config.debugNetwork("[VelocityChannel] BOT_SPAWN '" + name + "' from '" + originServer + "'.");
 
+        // Guard: a blank packetProfileName causes the vanilla client to show "Anonymous Player".
+        // Fall back to the bot's MC username which is always a valid non-blank identifier.
+        String safePacketName = (packetName == null || packetName.isBlank()) ? name : packetName;
+
         RemoteBotEntry entry = new RemoteBotEntry(
-                originServer, uuid, name, displayName, packetName, skinValue, skinSignature);
+                originServer, uuid, name, displayName, safePacketName, skinValue, skinSignature);
 
         RemoteBotCache cache = plugin.getRemoteBotCache();
         if (cache != null) cache.add(entry);
@@ -309,7 +313,7 @@ public final class VelocityChannel implements PluginMessageListener {
         // Add virtual tab-list entry for all currently online players
         if (Config.tabListEnabled()) {
             for (Player online : Bukkit.getOnlinePlayers()) {
-                PacketHelper.sendTabListAddRaw(online, uuid, packetName, displayName,
+                PacketHelper.sendTabListAddRaw(online, uuid, safePacketName, displayName,
                         skinValue, skinSignature);
             }
         }

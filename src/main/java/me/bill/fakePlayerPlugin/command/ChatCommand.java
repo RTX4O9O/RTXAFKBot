@@ -110,11 +110,13 @@ public class ChatCommand implements FppCommand {
                         manager.getActivePlayers().forEach(fp -> fp.setChatEnabled(true));
                         sender.sendMessage(Lang.get("chat-all-enabled",
                                 "count", String.valueOf(manager.getActivePlayers().size())));
+                        manager.getActivePlayers().forEach(fp -> manager.persistBotSettings(fp));
                     }
                     case "off", "false" -> {
                         manager.getActivePlayers().forEach(fp -> fp.setChatEnabled(false));
                         sender.sendMessage(Lang.get("chat-all-disabled",
                                 "count", String.valueOf(manager.getActivePlayers().size())));
+                        manager.getActivePlayers().forEach(fp -> manager.persistBotSettings(fp));
                     }
                     case "status" -> {
                         long enabled = manager.getActivePlayers().stream()
@@ -154,6 +156,7 @@ public class ChatCommand implements FppCommand {
                         if (chatAI != null) {
                             for (FakePlayer fp : manager.getActivePlayers()) {
                                 chatAI.setActivityTier(fp.getUuid(), reset ? null : tier);
+                                manager.persistBotSettings(fp);
                             }
                         }
                         sender.sendMessage(reset
@@ -203,6 +206,7 @@ public class ChatCommand implements FppCommand {
             bot.setChatEnabled(enable);
             sender.sendMessage(Lang.get(enable ? "chat-bot-enabled" : "chat-bot-disabled",
                     "name", bot.getDisplayName()));
+            manager.persistBotSettings(bot);
             Config.debugChat(bot.getName() + " chat toggled to " + enable + " by " + sender.getName());
             return true;
         }
@@ -222,12 +226,14 @@ public class ChatCommand implements FppCommand {
         if (sub.equals("on") || sub.equals("true") || sub.equals("1")) {
             bot.setChatEnabled(true);
             sender.sendMessage(Lang.get("chat-bot-enabled", "name", bot.getDisplayName()));
+            manager.persistBotSettings(bot);
             Config.debugChat(bot.getName() + " chat re-enabled by " + sender.getName());
             return true;
         }
         if (sub.equals("off") || sub.equals("false") || sub.equals("0")) {
             bot.setChatEnabled(false);
             sender.sendMessage(Lang.get("chat-bot-disabled", "name", bot.getDisplayName()));
+            manager.persistBotSettings(bot);
             Config.debugChat(bot.getName() + " chat disabled by " + sender.getName());
             return true;
         }
@@ -290,6 +296,7 @@ public class ChatCommand implements FppCommand {
                 BotChatAI chatAI = manager.getBotChatAI();
                 if (chatAI != null) chatAI.setActivityTier(bot.getUuid(), null);
                 sender.sendMessage(Lang.get("chat-bot-tier-reset", "name", bot.getDisplayName()));
+                manager.persistBotSettings(bot);
                 return true;
             }
             if (!TIERS.contains(tier)) {
@@ -301,6 +308,7 @@ public class ChatCommand implements FppCommand {
             if (chatAI != null) chatAI.setActivityTier(bot.getUuid(), tier);
             sender.sendMessage(Lang.get("chat-bot-tier-set",
                     "name", bot.getDisplayName(), "tier", tier));
+            manager.persistBotSettings(bot);
             return true;
         }
 

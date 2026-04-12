@@ -11,13 +11,17 @@ import net.kyori.adventure.text.minimessage.MiniMessage;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
+import io.papermc.paper.advancement.AdvancementDisplay;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDeathEvent;
+import org.bukkit.event.entity.PlayerDeathEvent;
+import org.bukkit.event.player.PlayerAdvancementDoneEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
+import org.bukkit.event.player.PlayerLevelChangeEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 
 import java.time.LocalDate;
@@ -32,75 +36,54 @@ import java.util.concurrent.atomic.AtomicLong;
  *
  * <h3>Realism features</h3>
  * <ul>
- *   <li><b>Typing delay</b> - optional 0–2.5 s pause before each message fires.</li>
- *   <li><b>Burst messages</b> - configurable chance of sending a short follow-up
- *       message 2–5 s after the first, mimicking multi-line real chat.</li>
- *   <li><b>Mention replies</b> - when a real player says a bot's name in chat
- *       the bot has a configurable chance (default 65 %) of replying after a
- *       short delay - see {@code fake-chat.mention-reply-chance}.</li>
- *   <li><b>Stagger interval</b> - minimum gap (default 3 s) between any two bots
- *       chatting prevents message floods.</li>
- *   <li><b>Activity variation</b> - each bot is randomly assigned a quiet /
- *       normal / active / very-active tier that scales its chat interval.</li>
- *   <li><b>Per-bot tier override</b> - {@link FakePlayer#setChatTier(String)} locks a
- *       bot to a specific activity tier; changeable via {@code /fpp chat <bot> tier}.</li>
- *   <li><b>Per-bot mute</b> - {@link FakePlayer#setChatEnabled(boolean)} silences
- *       individual bots; changeable via {@code /fpp chat <bot> on|off}.</li>
- *   <li><b>History window</b> - per-bot Deque keeps the last N messages so the
- *       same line is never repeated back-to-back.</li>
- *   <li><b>Event-triggered chat</b> - bots react to player joins and deaths.</li>
- *   <li><b>Keyword reactions</b> - bots reply when players say configured keywords.</li>
- *   <li><b>Rich placeholders</b> - {@code {name}}, {@code {random_player}},
- *       {@code {online}}, {@code {world}}, {@code {time}}, {@code {biome}}.</li>
+ *   <li><b>Typing delay</b> — optional 0–2.5 s pause before each message fires.</li>
+ *   <li><b>Burst messages</b> — short follow-up a few seconds after the first.</li>
+ *   <li><b>Bot-to-bot conversations</b> — bots reply to each other forming multi-turn
+ *       chat threads up to {@code fake-chat.bot-to-bot.max-chain} exchanges.</li>
+ *   <li><b>Mention replies</b> — when a real player names a bot it may reply.</li>
+ *   <li><b>Stagger interval</b> — minimum gap between any two bots chatting.</li>
+ *   <li><b>Activity variation</b> — each bot has a random quiet/active tier.</li>
+ *   <li><b>History window</b> — per-bot deque avoids repeating recent messages.</li>
+ *   <li><b>Event-triggered chat</b> — join, leave, death, advancement, PvP kill,
+ *       first join, and XP-level milestones.</li>
+ *   <li><b>Keyword reactions</b> — reply when players say configured keywords.</li>
+ *   <li><b>Rich placeholders</b> — {@code {name}}, {@code {bot_name}},
+ *       {@code {random_player}}, {@code {online}}, {@code {world}}, {@code {time}},
+ *       {@code {biome}}, {@code {x}/{y}/{z}}, {@code {server}}, {@code {date}},
+ *       {@code {day}}, {@code {killer}}, {@code {victim}}, {@code {advancement}},
+ *       {@code {level}}.</li>
  * </ul>
- *
- * <p>All config values are re-read on every fire so {@code /fpp reload} and
- * {@code /fpp chat on|off} take effect immediately.
  */
 public final class BotChatAI implements Listener {
 
     private final FakePlayerPlugin  plugin;
     private final FakePlayerManager manager;
 
-    /**
-     * Thread-local flag marking whether the current broadcast is a remote echo
-     * received from another server. When true we must NOT re-forward the message
-     * via plugin messaging to prevent infinite loops.
-     */
+    /** Thread-local flag — true when re-broadcasting a remote-server message (prevents re-forward). */
     private static final ThreadLocal<Boolean> isRemoteBroadcast = ThreadLocal.withInitial(() -> false);
 
-    /** Per-bot rolling message history - avoids repeating recent messages. */
-    private final Map<UUID, Deque<String>> messageHistory = new ConcurrentHashMap<>();
-    /** Task IDs for each bot's main scheduler loop so we can cancel on removal. */
-    private final Map<UUID, Integer> taskIds = new ConcurrentHashMap<>();
-    /**
-     * Per-bot activity multiplier applied to the base chat interval.
-     * Assigned once when the bot's loop starts; preserved until the bot is removed.
-     * Can be overridden by {@link #setActivityTier(UUID, String)}.
-     */
-    private final Map<UUID, Double> activityMultipliers = new ConcurrentHashMap<>();
-    /** Pending mention-reply task per bot - only one reply queued at a time. */
-    private final Map<UUID, Integer> pendingReplyTasks = new ConcurrentHashMap<>();
-    /** Pending event-trigger task per bot - only one at a time. */
-    private final Map<UUID, Integer> pendingEventTasks = new ConcurrentHashMap<>();
-    /**
-     * Timed-mute expiry tasks - when active, the bot is silenced until the task fires
-     * and re-enables chat. Key = bot UUID, value = scheduler task ID.
-     */
-    private final Map<UUID, Integer> muteTaskIds = new ConcurrentHashMap<>();
+    /** Per-bot rolling message history — avoids repeating recent messages. */
+    private final Map<UUID, Deque<String>> messageHistory     = new ConcurrentHashMap<>();
+    /** Task IDs for each bot's main scheduler loop. */
+    private final Map<UUID, Integer>       taskIds            = new ConcurrentHashMap<>();
+    /** Per-bot activity multiplier (tier-based chat frequency scaling). */
+    private final Map<UUID, Double>        activityMultipliers = new ConcurrentHashMap<>();
+    /** Pending mention-reply task per bot — only one reply queued at a time. */
+    private final Map<UUID, Integer>       pendingReplyTasks  = new ConcurrentHashMap<>();
+    /** Pending event-trigger task per bot — only one at a time. */
+    private final Map<UUID, Integer>       pendingEventTasks  = new ConcurrentHashMap<>();
+    /** Timed-mute expiry tasks. */
+    private final Map<UUID, Integer>       muteTaskIds        = new ConcurrentHashMap<>();
 
-    /**
-     * Timestamp (ms) of the last time any bot actually sent a chat message.
-     * Used by the stagger logic to space out bot messages across the server.
-     */
-    private final AtomicLong lastAnyChatMs = new AtomicLong(0L);
+    /** Timestamp (ms) of the last time any bot sent a chat message (stagger enforcement). */
+    private final AtomicLong lastAnyChatMs     = new AtomicLong(0L);
+    /** Timestamp (ms) of the last bot-to-bot exchange (rate-limits conversation starts). */
+    private final AtomicLong lastBotToBotMs    = new AtomicLong(0L);
 
     public BotChatAI(FakePlayerPlugin plugin, FakePlayerManager manager) {
         this.plugin  = plugin;
         this.manager = manager;
-        // 1-second watcher: start loops for new bots, clean up removed ones.
         Bukkit.getScheduler().runTaskTimer(plugin, this::syncBotLoops, 20L, 20L);
-        // Register chat event listeners.
         Bukkit.getPluginManager().registerEvents(this, plugin);
     }
 
@@ -128,18 +111,17 @@ public final class BotChatAI implements Listener {
     }
 
     /**
-     * Assigns a random activity tier to a newly-discovered bot.
-     * If the bot has a {@link FakePlayer#getChatTier()} override, that tier is used.
+     * Assigns a random activity tier to a bot.
+     * If the bot has a {@link FakePlayer#getChatTier()} override that tier is used.
      * <ul>
-     *   <li>15 % - quiet    (2.0× interval → chats ~half as often)</li>
-     *   <li>25 % - passive  (1.4× interval)</li>
-     *   <li>30 % - normal   (1.0× interval)</li>
-     *   <li>18 % - active   (0.7× interval)</li>
-     *   <li>12 % - chatty   (0.5× interval → chats ~twice as often)</li>
+     *   <li>15 % — quiet   (2.0× interval)</li>
+     *   <li>25 % — passive (1.4×)</li>
+     *   <li>30 % — normal  (1.0×)</li>
+     *   <li>18 % — active  (0.7×)</li>
+     *   <li>12 % — chatty  (0.5×)</li>
      * </ul>
      */
     private void assignActivityMultiplier(UUID botUuid) {
-        // Check for a per-bot tier override
         FakePlayer fp = manager.getByUuid(botUuid);
         if (fp != null && fp.getChatTier() != null) {
             activityMultipliers.put(botUuid, tierToMultiplier(fp.getChatTier()));
@@ -159,34 +141,21 @@ public final class BotChatAI implements Listener {
         activityMultipliers.put(botUuid, mult);
     }
 
-    /**
-     * Converts a tier name to its activity multiplier.
-     * Unknown values fall back to {@code 1.0} (normal).
-     */
     private static double tierToMultiplier(String tier) {
         return switch (tier.toLowerCase(Locale.ROOT)) {
             case "quiet"   -> 2.0;
             case "passive" -> 1.4;
             case "active"  -> 0.7;
             case "chatty"  -> 0.5;
-            default        -> 1.0; // "normal" and unrecognised
+            default        -> 1.0;
         };
     }
 
-    /**
-     * Overrides the activity tier for a specific bot and resets its multiplier immediately.
-     * Pass {@code null} to return to random assignment.
-     *
-     * @param botUuid UUID of the bot
-     * @param tier    one of {@code "quiet"}, {@code "passive"}, {@code "normal"},
-     *                {@code "active"}, {@code "chatty"}, or {@code null}
-     */
     public void setActivityTier(UUID botUuid, String tier) {
         FakePlayer fp = manager.getByUuid(botUuid);
         if (fp == null) return;
         fp.setChatTier(tier);
         if (tier == null) {
-            // Re-roll randomly
             activityMultipliers.remove(botUuid);
             assignActivityMultiplier(botUuid);
         } else {
@@ -199,14 +168,10 @@ public final class BotChatAI implements Listener {
 
     private void scheduleNext(UUID botUuid) {
         if (!Config.fakeChatEnabled()) {
-            // Chat disabled - cancel any pending reply/event/burst tasks for this bot
-            // so they don't fire after the admin ran /fpp chat off.
             cancelPendingReply(botUuid);
             cancelPendingEvent(botUuid);
-            // Cancel the OLD long-delay main task so it can't fire a duplicate loop.
             Integer oldTask = taskIds.remove(botUuid);
             if (oldTask != null) Bukkit.getScheduler().cancelTask(oldTask);
-            // Re-check in 2 s - picks up quickly when chat is re-enabled via /fpp reload
             int id = Bukkit.getScheduler().runTaskLater(plugin,
                     () -> scheduleNext(botUuid), 40L).getTaskId();
             taskIds.put(botUuid, id);
@@ -241,14 +206,9 @@ public final class BotChatAI implements Listener {
         if (!Config.fakeChatEnabled()) return;
 
         FakePlayer bot = manager.getByUuid(botUuid);
-        if (bot == null) return;
-
-        // Per-bot mute check
-        if (!bot.isChatEnabled()) return;
+        if (bot == null || !bot.isChatEnabled()) return;
 
         if (Config.fakeChatRequirePlayer() && !hasRealPlayerOnline()) return;
-
-        // Chance roll - skip silently if unlucky
         if (ThreadLocalRandom.current().nextDouble() > Config.fakeChatChance()) return;
 
         List<String> messages = Config.fakeChatMessages();
@@ -256,46 +216,113 @@ public final class BotChatAI implements Listener {
 
         String message = pickMessage(botUuid, messages, bot);
 
-        // ── Stagger + typing delay ─────────────────────────────────────────────
         int delayTicks = computePreSendDelay();
         if (delayTicks > 0) {
-            Bukkit.getScheduler().runTaskLater(plugin,
-                    () -> sendMessage(bot, message, true), delayTicks);
+            Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                sendMessage(bot, message, true);
+                // After natural chat fires, maybe start a bot-to-bot conversation
+                triggerBotToBotReaction(bot, 0);
+            }, delayTicks);
         } else {
             sendMessage(bot, message, true);
+            triggerBotToBotReaction(bot, 0);
         }
     }
 
+    // ── Bot-to-bot conversation engine ────────────────────────────────────────
+
     /**
-     * Picks the next message for {@code botUuid}, resolves all placeholders,
-     * and updates the history deque.
+     * Tries to make another bot reply to {@code speaker}, potentially chaining
+     * back and forth up to {@code fake-chat.bot-to-bot.max-chain} exchanges.
      *
-     * <p>Supported placeholders:
-     * <ul>
- *   <li>{@code {name}}          - the bot's own name</li>
- *   <li>{@code {random_player}} - a random real player's name</li>
- *   <li>{@code {online}}        - number of real (non-bot) players online</li>
- *   <li>{@code {world}}         - the bot's current world name</li>
- *   <li>{@code {time}}          - {@code "day"} or {@code "night"} based on world time</li>
- *   <li>{@code {biome}}         - the bot's current biome name (human-readable)</li>
- *   <li>{@code {x}}/{@code {y}}/{@code {z}} - the bot's current block coordinates</li>
- *   <li>{@code {server}}        - the server ID from config ({@code database.server-id})</li>
- *   <li>{@code {date}}          - today's date (e.g. {@code 2026-04-05})</li>
- *   <li>{@code {day}}           - full day of week (e.g. {@code Sunday})</li>
- * </ul>
+     * <p>Called only from {@link #fireChat} (depth 0) and recursively from within
+     * the b2b reply task (depth 1+) — never from event reactions or burst messages.
+     *
+     * @param speaker    the bot that just spoke
+     * @param chainDepth current depth; 0 = first reply, 1 = second reply, etc.
+     */
+    private void triggerBotToBotReaction(FakePlayer speaker, int chainDepth) {
+        if (!Config.fakeChatBotToBotEnabled()) return;
+        if (!Config.fakeChatEnabled()) return;
+        if (chainDepth >= Config.fakeChatBotToBotMaxChain()) return;
+
+        // Rate-limit: only one conversation start per cooldown window
+        long cooldownMs = Config.fakeChatBotToBotCooldown() * 1000L;
+        long now = System.currentTimeMillis();
+        if (cooldownMs > 0 && (now - lastBotToBotMs.get()) < cooldownMs) return;
+
+        // Chance roll — use reply-chance for depth 0, chain-chance for continuation
+        double chance = (chainDepth == 0)
+                ? Config.fakeChatBotToBotReplyChance()
+                : Config.fakeChatBotToBotChainChance();
+        if (ThreadLocalRandom.current().nextDouble() > chance) return;
+
+        // Pick a different chat-enabled bot to respond
+        List<FakePlayer> eligible = manager.getActivePlayers().stream()
+                .filter(fp -> !fp.getUuid().equals(speaker.getUuid()))
+                .filter(FakePlayer::isChatEnabled)
+                .toList();
+        if (eligible.isEmpty()) return;
+        if (Config.fakeChatRequirePlayer() && !hasRealPlayerOnline()) return;
+
+        FakePlayer replier = eligible.get(ThreadLocalRandom.current().nextInt(eligible.size()));
+
+        // Reserve cooldown slot immediately so concurrent callers back off
+        lastBotToBotMs.set(now);
+
+        int minTicks = Math.max(20, Config.fakeChatBotToBotDelayMin() * 20);
+        int maxTicks = Math.max(minTicks, Config.fakeChatBotToBotDelayMax() * 20);
+        long delay   = minTicks + ThreadLocalRandom.current().nextInt(Math.max(1, maxTicks - minTicks + 1));
+
+        final UUID speakerUuid = speaker.getUuid();
+        final UUID replierUuid = replier.getUuid();
+        final int  nextDepth   = chainDepth + 1;
+
+        Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            if (!Config.fakeChatEnabled() || !Config.fakeChatBotToBotEnabled()) return;
+            FakePlayer s = manager.getByUuid(speakerUuid);
+            FakePlayer b = manager.getByUuid(replierUuid);
+            if (b == null || !b.isChatEnabled()) return;
+            if (Config.fakeChatRequirePlayer() && !hasRealPlayerOnline()) return;
+
+            // Prefer bot-to-bot-replies pool → replies pool → general messages
+            List<String> pool = Config.chatBotToBotReplyMessages();
+            if (pool.isEmpty()) pool = Config.chatReplyMessages();
+            if (pool.isEmpty()) pool = Config.fakeChatMessages();
+            if (pool.isEmpty()) return;
+
+            String speakerName = (s != null) ? s.getName() : b.getName();
+            String raw = pool.get(ThreadLocalRandom.current().nextInt(pool.size()));
+            // {random_player} resolves to the bot that was just speaking
+            String msg = resolvePlaceholders(raw.replace("{random_player}", speakerName), b);
+
+            // Update cooldown for this new exchange
+            lastBotToBotMs.set(System.currentTimeMillis());
+            sendMessage(b, msg, false);
+            Config.debugChat("[b2b chain=" + nextDepth + "] " + b.getName()
+                    + " → " + speakerName + ": " + msg);
+
+            // Continue the chain (explicit recursion — NOT via sendMessage/fireChat)
+            triggerBotToBotReaction(b, nextDepth);
+        }, delay);
+    }
+
+    // ── Message picking & placeholder resolution ──────────────────────────────
+
+    /**
+     * Picks a non-recently-used message from {@code pool}, resolves all
+     * placeholders, and updates the per-bot history deque.
      */
     private String pickMessage(UUID botUuid, List<String> pool, FakePlayer bot) {
         Deque<String> history = messageHistory.computeIfAbsent(botUuid, k -> new ArrayDeque<>());
         int historySize = Math.max(1, Config.fakeChatHistorySize());
 
-        // Exclude recently-sent messages so the bot doesn't repeat itself
         List<String> available = new ArrayList<>(pool);
         available.removeAll(history);
-        if (available.isEmpty()) available = new ArrayList<>(pool); // reset if pool exhausted
+        if (available.isEmpty()) available = new ArrayList<>(pool);
 
         String raw = available.get(ThreadLocalRandom.current().nextInt(available.size()));
 
-        // Roll history window
         history.addLast(raw);
         while (history.size() > historySize) history.pollFirst();
 
@@ -303,14 +330,39 @@ public final class BotChatAI implements Listener {
     }
 
     /**
-     * Resolves all chat placeholders in the given raw message string.
+     * Resolves all chat placeholders in {@code raw}.
+     *
+     * <p>Supported tokens:
+     * <ul>
+     *   <li>{@code {name}}          — the bot's own name</li>
+     *   <li>{@code {bot_name}}      — a random OTHER active bot's name</li>
+     *   <li>{@code {random_player}} — a random real player (falls back to a bot)</li>
+     *   <li>{@code {player_name}}   — the specific player being reacted to (pre-substituted
+     *                                  by the caller; left as-is here if not pre-subbed)</li>
+     *   <li>{@code {online}}        — real (non-bot) player count</li>
+     *   <li>{@code {server}}        — server ID from config</li>
+     *   <li>{@code {date}}          — today's date (e.g. 2026-04-09)</li>
+     *   <li>{@code {day}}           — full day-of-week name</li>
+     *   <li>{@code {world}}         — the bot's current world name</li>
+     *   <li>{@code {time}}          — "day" or "night"</li>
+     *   <li>{@code {biome}}         — the bot's current biome</li>
+     *   <li>{@code {x}/{y}/{z}}     — block coordinates</li>
+     * </ul>
+     * Contextual tokens ({@code {killer}}, {@code {victim}}, {@code {advancement}},
+     * {@code {level}}, {@code {player_name}}) are pre-substituted by the caller before
+     * this method is invoked.
      */
     private String resolvePlaceholders(String raw, FakePlayer bot) {
         String s = raw
                 .replace("{name}", bot.getName())
                 .replace("{random_player}", resolveRandomPlayer(bot));
 
-        // {online} - real player count
+        // {bot_name} — a random OTHER bot's name
+        if (s.contains("{bot_name}")) {
+            s = s.replace("{bot_name}", resolveRandomBotName(bot));
+        }
+
+        // {online}
         if (s.contains("{online}")) {
             int realCount = 0;
             for (Player p : Bukkit.getOnlinePlayers()) {
@@ -319,37 +371,31 @@ public final class BotChatAI implements Listener {
             s = s.replace("{online}", String.valueOf(realCount));
         }
 
-        // {server} - server ID from config
+        // {server}
         if (s.contains("{server}")) {
             s = s.replace("{server}", Config.serverId());
         }
 
-        // {date} / {day} - real-world date
+        // {date} / {day}
         if (s.contains("{date}") || s.contains("{day}")) {
             LocalDate today = LocalDate.now();
             if (s.contains("{date}")) s = s.replace("{date}", today.toString());
-            if (s.contains("{day}"))  s = s.replace("{day}",  today.getDayOfWeek()
-                    .getDisplayName(TextStyle.FULL, Locale.ROOT));
+            if (s.contains("{day}"))  s = s.replace("{day}",
+                    today.getDayOfWeek().getDisplayName(TextStyle.FULL, Locale.ROOT));
         }
 
-        // Location-based placeholders - only resolved when the bot has a valid entity
+        // Location-based placeholders
         if (s.contains("{world}") || s.contains("{time}") || s.contains("{biome}")
                 || s.contains("{x}") || s.contains("{y}") || s.contains("{z}")) {
             Location loc = bot.getLiveLocation();
             if (loc != null && loc.getWorld() != null) {
-                if (s.contains("{world}")) {
-                    s = s.replace("{world}", loc.getWorld().getName());
-                }
+                if (s.contains("{world}")) s = s.replace("{world}", loc.getWorld().getName());
                 if (s.contains("{time}")) {
-                    long worldTime = loc.getWorld().getTime();
-                    // Day: 0–12000, Night: 12000–24000 (approx)
-                    String timeLabel = (worldTime >= 0 && worldTime < 12300) ? "day" : "night";
+                    String timeLabel = (loc.getWorld().getTime() < 12300) ? "day" : "night";
                     s = s.replace("{time}", timeLabel);
                 }
                 if (s.contains("{biome}")) {
                     try {
-                        // getKey().getKey() returns the registry path already in lowercase
-                        // (e.g. "plains", "dark_forest") - avoids the deprecated OldEnum.name()
                         String biome = loc.getBlock().getBiome().getKey().getKey()
                                 .replace('_', ' ');
                         s = s.replace("{biome}", biome);
@@ -357,100 +403,72 @@ public final class BotChatAI implements Listener {
                         s = s.replace("{biome}", "unknown");
                     }
                 }
-                // {x}, {y}, {z} - block coordinates
                 if (s.contains("{x}")) s = s.replace("{x}", String.valueOf((int) loc.getX()));
                 if (s.contains("{y}")) s = s.replace("{y}", String.valueOf((int) loc.getY()));
                 if (s.contains("{z}")) s = s.replace("{z}", String.valueOf((int) loc.getZ()));
             } else {
-                s = s.replace("{world}", "unknown")
-                      .replace("{time}", "day")
-                      .replace("{biome}", "unknown")
-                      .replace("{x}", "?")
-                      .replace("{y}", "?")
-                      .replace("{z}", "?");
+                s = s.replace("{world}", "unknown").replace("{time}", "day")
+                     .replace("{biome}", "unknown")
+                     .replace("{x}", "?").replace("{y}", "?").replace("{z}", "?");
             }
         }
         return s;
     }
 
     /**
-     * Calculates extra pre-send delay ticks combining stagger enforcement and
-     * an optional simulated typing pause.
-     *
-     * <p>Stagger: if another bot sent a message less than {@code stagger-interval}
-     * seconds ago, we push this message past that gap.  The projected send time
-     * is written atomically so the next caller sees it immediately.
+     * Computes the pre-send delay combining stagger enforcement and typing simulation.
      */
     private int computePreSendDelay() {
         int staggerTicks = 0;
         int staggerSec = Config.fakeChatStaggerInterval();
         if (staggerSec > 0) {
-            long now       = System.currentTimeMillis();
-            long minGapMs  = staggerSec * 1000L;
+            long now      = System.currentTimeMillis();
+            long minGapMs = staggerSec * 1000L;
             long nextSend;
-            // CAS loop so concurrent callers (shouldn't happen on main thread, but be safe)
             while (true) {
                 long last = lastAnyChatMs.get();
                 nextSend  = Math.max(now, last + minGapMs);
                 if (lastAnyChatMs.compareAndSet(last, nextSend)) break;
             }
             long extraMs = nextSend - now;
-            if (extraMs > 0) {
-                staggerTicks = (int)(extraMs / 50L) + 1; // 50 ms per tick
-            }
+            if (extraMs > 0) staggerTicks = (int)(extraMs / 50L) + 1;
         }
 
         int typingTicks = 0;
         if (Config.fakeChatTypingDelay()) {
-            // Random pause 0–2.5 s converted to ticks
             typingTicks = ThreadLocalRandom.current().nextInt(50);
         }
 
         return staggerTicks + typingTicks;
     }
 
-    /**
-     * Delivers a resolved message for {@code bot} through the appropriate path
-     * and optionally schedules a burst follow-up.
-     * Respects both the global {@code fake-chat.enabled} flag and the per-bot mute.
-     * In-flight typing-delay tasks check this before sending.
-     */
+    // ── Send ──────────────────────────────────────────────────────────────────
+
     private void sendMessage(FakePlayer bot, String message, boolean allowBurst) {
-        if (manager.getByUuid(bot.getUuid()) == null) return; // bot removed while waiting
-        // Re-check both global and per-bot flags here so any in-flight typing-delay
-        // or burst tasks that were already queued BEFORE a /fpp chat off command
-        // respect the new state immediately.
+        if (manager.getByUuid(bot.getUuid()) == null) return;
         if (!Config.fakeChatEnabled()) return;
         if (!bot.isChatEnabled()) return;
         sendMessageForced(bot, message, allowBurst);
     }
 
-    /**
-     * Same as {@link #sendMessage} but bypasses the global {@code fake-chat.enabled}
-     * and per-bot mute checks. Used by admin force-send commands so the message
-     * always goes through regardless of chat state.
-     */
     private void sendMessageForced(FakePlayer bot, String message, boolean allowBurst) {
         if (manager.getByUuid(bot.getUuid()) == null) return;
 
         Player playerEntity = bot.getPlayer();
         if (playerEntity != null && playerEntity.isOnline() && !bot.isBodyless()) {
-            // Local bot with a body: fire through the real chat pipeline
             dispatchChat(playerEntity, message);
         } else {
-            // Bodyless / entity-less bot: broadcast using the configurable remote format
             broadcastFormatted(bot.getDisplayName(), message);
         }
         Config.debugChat(bot.getName() + " said: " + message);
 
-        // ── Cross-server sync via plugin messaging ─────────────────────────────
+        // Cross-server sync
         var vc = plugin.getVelocityChannel();
         if (vc != null) {
             vc.sendChatToNetwork(bot.getName(), bot.getDisplayName(), message, "", "");
-            Config.debugChat("Forwarded to other servers via plugin messaging.");
         }
 
-        // ── Burst follow-up ───────────────────────────────────────────────────
+        // Burst follow-up
         if (allowBurst) {
             double burstChance = Config.fakeChatBurstChance();
             if (burstChance > 0 && ThreadLocalRandom.current().nextDouble() < burstChance) {
@@ -459,28 +477,20 @@ public final class BotChatAI implements Listener {
         }
     }
 
-    /**
-     * Broadcasts a message using the configurable remote-format template.
-     * Used for bodyless bots and remote-bot echoes.
-     */
     private static void broadcastFormatted(String displayName, String message) {
         try {
             String format = Config.fakeChatRemoteFormat()
                     .replace("{name}", displayName)
                     .replace("{message}", message);
-            Component chatLine = MiniMessage.miniMessage().deserialize(format);
-            Bukkit.getServer().broadcast(chatLine);
+            Bukkit.getServer().broadcast(MiniMessage.miniMessage().deserialize(format));
         } catch (Throwable t) {
-            // Fallback to plain format if MiniMessage fails
-            Component chatLine = Component.text("<")
+            Bukkit.getServer().broadcast(Component.text("<")
                     .append(TextUtil.colorize(displayName))
                     .append(Component.text("> "))
-                    .append(Component.text(message));
-            Bukkit.getServer().broadcast(chatLine);
+                    .append(Component.text(message)));
         }
     }
 
-    /** Schedules a short burst follow-up message for {@code bot}. */
     private void scheduleBurst(FakePlayer bot) {
         List<String> pool = Config.chatBurstMessages();
         if (pool.isEmpty()) return;
@@ -494,32 +504,22 @@ public final class BotChatAI implements Listener {
         String raw = pool.get(ThreadLocalRandom.current().nextInt(pool.size()));
         String msg = resolvePlaceholders(raw, bot);
 
-        Bukkit.getScheduler().runTaskLater(plugin,
-                () -> sendMessage(bot, msg, false), delay);
+        Bukkit.getScheduler().runTaskLater(plugin, () -> sendMessage(bot, msg, false), delay);
     }
 
-    // ── Mention detection (AsyncChatEvent listener) ───────────────────────────
+    // ── Mention detection ─────────────────────────────────────────────────────
 
-    /**
-     * Listens for real player chat messages, schedules a reply for any bot
-     * whose name appears in the message text, and fires keyword-triggered
-     * reactions when configured.
-     */
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onPlayerChat(AsyncChatEvent event) {
         if (!Config.fakeChatEnabled()) return;
-
-        // Skip messages sent by bots to prevent infinite loops
+        // Ignore messages from bots (prevents infinite loops)
         if (manager.getByUuid(event.getPlayer().getUniqueId()) != null) return;
 
-        // Extract plain text (thread-safe read on the Adventure Component)
         final String plainText;
         try {
             plainText = PlainTextComponentSerializer.plainText()
                     .serialize(event.message()).toLowerCase(Locale.ROOT);
-        } catch (Throwable t) {
-            return;
-        }
+        } catch (Throwable t) { return; }
 
         // ── Mention replies ────────────────────────────────────────────────────
         if (Config.fakeChatReplyToMentions()) {
@@ -545,29 +545,45 @@ public final class BotChatAI implements Listener {
         if (Config.fakeChatKeywordReactionsEnabled()) {
             Map<String, String> keywordMap = Config.fakeChatKeywordMap();
             if (!keywordMap.isEmpty()) {
-                // Find all matching keywords (collect; react to at most one per message)
                 List<String> matchedPools = new ArrayList<>();
                 for (Map.Entry<String, String> entry : keywordMap.entrySet()) {
-                    if (plainText.contains(entry.getKey())) {
-                        matchedPools.add(entry.getValue());
-                    }
+                    if (plainText.contains(entry.getKey())) matchedPools.add(entry.getValue());
                 }
                 if (!matchedPools.isEmpty()) {
                     String poolKey = matchedPools.get(
                             ThreadLocalRandom.current().nextInt(matchedPools.size()));
-                    Bukkit.getScheduler().runTask(plugin,
-                            () -> scheduleKeywordReaction(poolKey));
+                    Bukkit.getScheduler().runTask(plugin, () -> scheduleKeywordReaction(poolKey));
                 }
             }
         }
+
+        // ── Player chat reactions ──────────────────────────────────────────────
+        // A random bot may spontaneously react to any real player's message.
+        // Filtered by chance, length, and command-prefix guards. Delayed with
+        // typing simulation for a human feel.
+        if (Config.fakeChatOnPlayerChatEnabled()
+                && Config.fakeChatEventTriggersEnabled()) {
+            // Filter: skip very short messages (e.g. "k", "ok")
+            if (Config.fakeChatOnPlayerChatIgnoreShort() && plainText.length() < 3) return;
+            // Filter: skip slash-commands
+            if (Config.fakeChatOnPlayerChatIgnoreCommands() && plainText.startsWith("/")) return;
+
+            final String senderName = event.getPlayer().getName();
+            // Capture original (non-lowercased) message text for the AI prompt
+            final String originalMessage;
+            try {
+                originalMessage = PlainTextComponentSerializer.plainText()
+                        .serialize(event.message());
+            } catch (Throwable t) { return; }
+
+            Bukkit.getScheduler().runTask(plugin, () ->
+                    schedulePlayerChatReaction(senderName, originalMessage));
+        }
     }
 
-    /** Schedules a mention-reply for {@code botUuid} (configurable chance of actually firing). */
     private void scheduleMentionReply(UUID botUuid) {
         FakePlayer bot = manager.getByUuid(botUuid);
         if (bot == null || !bot.isChatEnabled()) return;
-
-        // Configurable chance - bot may ignore the mention
         if (ThreadLocalRandom.current().nextDouble() > Config.fakeChatMentionReplyChance()) return;
 
         int minTicks = Math.max(20, Config.fakeChatReplyDelayMin() * 20);
@@ -581,90 +597,206 @@ public final class BotChatAI implements Listener {
             FakePlayer b = manager.getByUuid(botUuid);
             if (b == null || !b.isChatEnabled() || !hasRealPlayerOnline()) return;
 
-            // Prefer the dedicated reply pool; fall back to general messages
             List<String> pool = Config.chatReplyMessages();
             if (pool.isEmpty()) pool = Config.fakeChatMessages();
             if (pool.isEmpty()) return;
 
-            String raw = pool.get(ThreadLocalRandom.current().nextInt(pool.size()));
+            String raw   = pool.get(ThreadLocalRandom.current().nextInt(pool.size()));
             String reply = resolvePlaceholders(raw, b);
-
             sendMessage(b, reply, false);
-            Config.debugChat(b.getName() + " replied to a mention → " + reply);
+            Config.debugChat(b.getName() + " replied to mention → " + reply);
         }, delay).getTaskId();
 
         pendingReplyTasks.put(botUuid, taskId);
     }
 
-    /**
-     * Picks a random chat-enabled bot and schedules a keyword-reaction message
-     * drawn from {@code bot-messages.yml} under {@code keyword-reactions.<poolKey>}.
-     */
     private void scheduleKeywordReaction(String poolKey) {
         if (!Config.fakeChatEnabled()) return;
         List<String> pool = Config.chatKeywordReactionMessages(poolKey);
         if (pool.isEmpty()) return;
 
-        // Pick a random chat-enabled bot
         List<FakePlayer> eligible = manager.getActivePlayers().stream()
-                .filter(FakePlayer::isChatEnabled)
-                .toList();
+                .filter(FakePlayer::isChatEnabled).toList();
         if (eligible.isEmpty()) return;
         if (Config.fakeChatRequirePlayer() && !hasRealPlayerOnline()) return;
 
         FakePlayer bot = eligible.get(ThreadLocalRandom.current().nextInt(eligible.size()));
-
-        // Small random delay (0–3 s) so reaction feels natural
-        int delayTicks = ThreadLocalRandom.current().nextInt(60) + 20;
+        int delayTicks  = ThreadLocalRandom.current().nextInt(60) + 20;
         Bukkit.getScheduler().runTaskLater(plugin, () -> {
             FakePlayer b = manager.getByUuid(bot.getUuid());
             if (b == null || !b.isChatEnabled()) return;
             String raw = pool.get(ThreadLocalRandom.current().nextInt(pool.size()));
-            String msg = resolvePlaceholders(raw, b);
-            sendMessage(b, msg, false);
-            Config.debugChat(b.getName() + " keyword-reaction [" + poolKey + "]: " + msg);
+            sendMessage(b, resolvePlaceholders(raw, b), false);
+            Config.debugChat(b.getName() + " keyword-reaction [" + poolKey + "]");
         }, delayTicks);
     }
 
-    private void cancelPendingReply(UUID botUuid) {
-        Integer taskId = pendingReplyTasks.remove(botUuid);
-        if (taskId != null) Bukkit.getScheduler().cancelTask(taskId);
+    /**
+     * Handles the "player chat reaction" feature: when a real player sends any chat
+     * message, a random bot may spontaneously react with a short natural response.
+     *
+     * <p>When {@code fake-chat.event-triggers.on-player-chat.use-ai: true} and an AI
+     * provider is configured, the bot generates a contextual response via the AI using
+     * the player's actual message as input. Otherwise falls back to the static
+     * {@code player-chat-reactions} pool in {@code bot-messages.yml}.
+     *
+     * @param senderName    the Minecraft username of the player who sent the message
+     * @param originalMessage the original (unmodified) plain-text message content
+     */
+    private void schedulePlayerChatReaction(String senderName, String originalMessage) {
+        if (!Config.fakeChatEnabled()) return;
+
+        // Gather eligible bots (chat-enabled, not already mid-reply)
+        List<FakePlayer> eligible = manager.getActivePlayers().stream()
+                .filter(FakePlayer::isChatEnabled)
+                .filter(fp -> !pendingReplyTasks.containsKey(fp.getUuid()))
+                .toList();
+        if (eligible.isEmpty()) return;
+
+        int maxBots = Math.max(1, Config.fakeChatOnPlayerChatMaxBots());
+        double chance = Config.fakeChatOnPlayerChatChance();
+        double mentionChance = Config.fakeChatOnPlayerChatMentionChance();
+        boolean useAi = Config.fakeChatOnPlayerChatUseAi();
+
+        // Check AI availability once (avoid repeated lookups in the loop)
+        me.bill.fakePlayerPlugin.ai.BotConversationManager convMgr =
+                useAi ? plugin.getBotConversationManager() : null;
+        boolean aiAvailable = convMgr != null
+                && plugin.getBotConversationManager() != null;
+
+        // Shuffle so we don't always pick the same bots
+        List<FakePlayer> shuffled = new ArrayList<>(eligible);
+        java.util.Collections.shuffle(shuffled);
+
+        int scheduled = 0;
+        for (FakePlayer bot : shuffled) {
+            if (scheduled >= maxBots) break;
+            if (ThreadLocalRandom.current().nextDouble() > chance) continue;
+
+            final UUID botUuid = bot.getUuid();
+            int minTicks = Math.max(20, Config.fakeChatOnPlayerChatDelayMin() * 20);
+            int maxTicks = Math.max(minTicks, Config.fakeChatOnPlayerChatDelayMax() * 20);
+            long jitter  = minTicks == maxTicks ? 0
+                    : ThreadLocalRandom.current().nextInt(maxTicks - minTicks + 1);
+            // Stagger multiple bots so they don't all fire at the same tick
+            long stagger = scheduled * (10L + ThreadLocalRandom.current().nextInt(10));
+            long delay   = minTicks + jitter + stagger;
+
+            if (aiAvailable) {
+                // ── AI path ───────────────────────────────────────────────────
+                // Capture the message and schedule a delayed task that calls
+                // generatePublicChatReaction; the future resolves asynchronously
+                // (the AI HTTP call) and we then switch back to main thread to send.
+                final me.bill.fakePlayerPlugin.ai.BotConversationManager mgr = convMgr;
+                final FakePlayer capturedBot = bot;
+                Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                    if (!Config.fakeChatEnabled()) return;
+                    FakePlayer b = manager.getByUuid(botUuid);
+                    if (b == null || !b.isChatEnabled()) return;
+                    if (Config.fakeChatRequirePlayer() && !hasRealPlayerOnline()) return;
+
+                    mgr.generatePublicChatReaction(b, senderName, originalMessage)
+                            .thenAccept(aiResponse -> {
+                                // Strip surrounding quotes the AI sometimes adds
+                                String clean = aiResponse.trim()
+                                        .replaceAll("^\"|\"$", "")
+                                        .replaceAll("^'|'$", "")
+                                        .trim();
+                                if (clean.isEmpty()) return;
+                                // Back to main thread to send the message
+                                Bukkit.getScheduler().runTask(plugin, () -> {
+                                    FakePlayer finalBot = manager.getByUuid(botUuid);
+                                    if (finalBot == null || !finalBot.isChatEnabled()) return;
+                                    sendMessage(finalBot, clean, false);
+                                    Config.debugChat(finalBot.getName()
+                                            + " ai-player-chat-reaction → " + senderName
+                                            + ": " + clean);
+                                });
+                            })
+                            .exceptionally(err -> {
+                                // AI unavailable / rate-limited — fall back to static pool
+                                Config.debugChat(b.getName() + " ai-reaction failed ("
+                                        + err.getMessage() + ") — falling back to static pool");
+                                Bukkit.getScheduler().runTask(plugin, () ->
+                                        sendStaticPlayerChatReaction(botUuid, senderName, mentionChance));
+                                return null;
+                            });
+                }, delay);
+            } else {
+                // ── Static pool path ──────────────────────────────────────────
+                final boolean doMention = ThreadLocalRandom.current().nextDouble() < mentionChance;
+                Bukkit.getScheduler().runTaskLater(plugin, () ->
+                        sendStaticPlayerChatReaction(botUuid, senderName, doMention ? 1.0 : 0.0),
+                        delay);
+            }
+
+            scheduled++;
+        }
     }
 
-    private void cancelPendingEvent(UUID botUuid) {
-        Integer taskId = pendingEventTasks.remove(botUuid);
-        if (taskId != null) Bukkit.getScheduler().cancelTask(taskId);
-    }
+    /**
+     * Picks a message from the static {@code player-chat-reactions} pool and sends it.
+     * Called both when AI is disabled and as a fallback when the AI call fails.
+     */
+    private void sendStaticPlayerChatReaction(UUID botUuid, String senderName,
+                                               double mentionChance) {
+        if (!Config.fakeChatEnabled()) return;
+        FakePlayer b = manager.getByUuid(botUuid);
+        if (b == null || !b.isChatEnabled()) return;
+        if (Config.fakeChatRequirePlayer() && !hasRealPlayerOnline()) return;
 
-    private void cancelMuteTask(UUID botUuid) {
-        Integer taskId = muteTaskIds.remove(botUuid);
-        if (taskId != null) Bukkit.getScheduler().cancelTask(taskId);
+        List<String> pool = Config.chatPlayerChatReactionMessages();
+        if (pool.isEmpty()) return;
+
+        boolean doMention = ThreadLocalRandom.current().nextDouble() < mentionChance;
+        List<String> filtered;
+        if (doMention) {
+            filtered = pool.stream().filter(m -> m.contains("{player_name}")).toList();
+            if (filtered.isEmpty()) filtered = pool;
+        } else {
+            filtered = pool.stream().filter(m -> !m.contains("{player_name}")).toList();
+            if (filtered.isEmpty()) filtered = pool;
+        }
+
+        String raw = filtered.get(ThreadLocalRandom.current().nextInt(filtered.size()));
+        String resolved = resolvePlaceholders(raw.replace("{player_name}", senderName), b);
+        sendMessage(b, resolved, false);
+        Config.debugChat(b.getName() + " static-player-chat-reaction → " + senderName
+                + ": " + resolved);
     }
 
     // ── Event-triggered chat ──────────────────────────────────────────────────
 
     /**
-     * Reacts to a real player joining the server.
-     * Picks a random chat-enabled bot and has it send a join-reaction message.
+     * Reacts to a player joining. Distinguishes brand-new (first-join) players
+     * and gives them a special welcome using the {@code first-join-reactions} pool.
+     * For first joins, a second bot may also chime in shortly after.
      */
     @EventHandler(priority = EventPriority.MONITOR)
     public void onPlayerJoin(PlayerJoinEvent event) {
         if (!Config.fakeChatEnabled()) return;
         if (!Config.fakeChatEventTriggersEnabled()) return;
-        if (!Config.fakeChatOnJoinEnabled()) return;
-
-        // Ignore bots joining
         if (manager.getByUuid(event.getPlayer().getUniqueId()) != null) return;
 
-        // Chance roll
-        if (ThreadLocalRandom.current().nextDouble() > Config.fakeChatOnJoinChance()) return;
+        boolean isFirstJoin = !event.getPlayer().hasPlayedBefore();
 
-        List<String> pool = Config.chatJoinReactionMessages();
+        // Choose pool and chance based on first-join vs. regular join
+        final List<String> pool;
+        final double chance;
+        if (isFirstJoin && Config.fakeChatOnFirstJoinEnabled()) {
+            List<String> fjPool = Config.chatFirstJoinReactionMessages();
+            pool   = fjPool.isEmpty() ? Config.chatJoinReactionMessages() : fjPool;
+            chance = Config.fakeChatOnFirstJoinChance();
+        } else {
+            if (!Config.fakeChatOnJoinEnabled()) return;
+            pool   = Config.chatJoinReactionMessages();
+            chance = Config.fakeChatOnJoinChance();
+        }
         if (pool.isEmpty()) return;
+        if (ThreadLocalRandom.current().nextDouble() > chance) return;
 
         List<FakePlayer> eligible = manager.getActivePlayers().stream()
-                .filter(FakePlayer::isChatEnabled)
-                .toList();
+                .filter(FakePlayer::isChatEnabled).toList();
         if (eligible.isEmpty()) return;
 
         FakePlayer bot = eligible.get(ThreadLocalRandom.current().nextInt(eligible.size()));
@@ -681,21 +813,41 @@ public final class BotChatAI implements Listener {
             if (Config.fakeChatRequirePlayer() && !hasRealPlayerOnline()) return;
 
             String raw = pool.get(ThreadLocalRandom.current().nextInt(pool.size()));
-            // Allow {random_player} to resolve to the joiner for natural-looking reactions
-            String msg = resolvePlaceholders(
-                    raw.replace("{random_player}", joinerName), b);
+            String msg = resolvePlaceholders(raw.replace("{random_player}", joinerName), b);
             sendMessage(b, msg, false);
-            Config.debugChat(b.getName() + " join-reaction for " + joinerName + ": " + msg);
+            Config.debugChat(b.getName() + (isFirstJoin ? " first-join-reaction" : " join-reaction")
+                    + " for " + joinerName + ": " + msg);
+
+            // For first joins: maybe a second bot also welcomes the newcomer
+            if (isFirstJoin && manager.getActivePlayers().size() >= 2
+                    && ThreadLocalRandom.current().nextDouble() < 0.50) {
+                List<FakePlayer> others = manager.getActivePlayers().stream()
+                        .filter(FakePlayer::isChatEnabled)
+                        .filter(fp -> !fp.getUuid().equals(b.getUuid()))
+                        .toList();
+                if (!others.isEmpty()) {
+                    FakePlayer second = others.get(
+                            ThreadLocalRandom.current().nextInt(others.size()));
+                    long extraDelay = 20L + ThreadLocalRandom.current().nextInt(60);
+                    Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                        FakePlayer sb = manager.getByUuid(second.getUuid());
+                        if (sb == null || !sb.isChatEnabled()) return;
+                        List<String> p2 = Config.chatJoinReactionMessages();
+                        if (p2.isEmpty()) return;
+                        String r2 = p2.get(ThreadLocalRandom.current().nextInt(p2.size()));
+                        String m2 = resolvePlaceholders(r2.replace("{random_player}", joinerName), sb);
+                        sendMessage(sb, m2, false);
+                    }, extraDelay);
+                }
+            }
         }, delay).getTaskId();
 
         pendingEventTasks.put(bot.getUuid(), taskId);
     }
 
     /**
-     * Reacts to any entity death (players and other bots).
-     * Has a configurable chance of picking a bot to send a death-reaction message.
-     * When {@code fake-chat.event-triggers.on-death.players-only} is {@code true},
-     * only reactions to real player deaths fire (mobs and animals are ignored).
+     * Reacts to entity deaths. When the deceased is a player killed by another real player,
+     * the kill-reactions pool may ALSO fire (see {@link #onPlayerKill}).
      */
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onEntityDeath(EntityDeathEvent event) {
@@ -704,17 +856,12 @@ public final class BotChatAI implements Listener {
         if (!Config.fakeChatOnDeathEnabled()) return;
 
         Entity deceased = event.getEntity();
-
-        // Optional player-only filter
         if (Config.fakeChatOnDeathPlayersOnly() && !(deceased instanceof Player)) return;
-
         if (ThreadLocalRandom.current().nextDouble() > Config.fakeChatOnDeathChance()) return;
 
         List<String> pool = Config.chatDeathReactionMessages();
         if (pool.isEmpty()) return;
 
-
-        // Prefer bots not already queued for another event
         List<FakePlayer> eligible = manager.getActivePlayers().stream()
                 .filter(FakePlayer::isChatEnabled)
                 .filter(fp -> !pendingEventTasks.containsKey(fp.getUuid()))
@@ -733,10 +880,10 @@ public final class BotChatAI implements Listener {
             pendingEventTasks.remove(bot.getUuid());
             FakePlayer b = manager.getByUuid(bot.getUuid());
             if (b == null || !b.isChatEnabled()) return;
-
             String raw = pool.get(ThreadLocalRandom.current().nextInt(pool.size()));
             String msg = resolvePlaceholders(
-                    raw.replace("{random_player}", deceasedName), b);
+                    raw.replace("{random_player}", deceasedName)
+                       .replace("{victim}", deceasedName), b);
             sendMessage(b, msg, false);
             Config.debugChat(b.getName() + " death-reaction for " + deceasedName + ": " + msg);
         }, delay).getTaskId();
@@ -745,27 +892,186 @@ public final class BotChatAI implements Listener {
     }
 
     /**
-     * Reacts to a real player leaving the server.
-     * Picks a random chat-enabled bot and has it send a leave-reaction message.
+     * Reacts specifically to a real player killing another real player.
+     * Uses the {@code kill-reactions} pool with {@code {killer}} and {@code {victim}} placeholders.
+     * Fires independently from the general death reaction — both can occur for the same event.
+     */
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onPlayerKill(PlayerDeathEvent event) {
+        if (!Config.fakeChatEnabled()) return;
+        if (!Config.fakeChatEventTriggersEnabled()) return;
+        if (!Config.fakeChatOnKillEnabled()) return;
+
+        Player killer = event.getEntity().getKiller();
+        if (killer == null) return;
+
+        // Ignore bot-on-player or player-on-bot kills
+        if (manager.getByUuid(killer.getUniqueId()) != null) return;
+        if (manager.getByUuid(event.getEntity().getUniqueId()) != null) return;
+
+        if (ThreadLocalRandom.current().nextDouble() > Config.fakeChatOnKillChance()) return;
+
+        List<String> pool = Config.chatKillReactionMessages();
+        if (pool.isEmpty()) return;
+
+        List<FakePlayer> eligible = manager.getActivePlayers().stream()
+                .filter(FakePlayer::isChatEnabled)
+                .filter(fp -> !pendingEventTasks.containsKey(fp.getUuid()))
+                .toList();
+        if (eligible.isEmpty()) return;
+
+        FakePlayer bot = eligible.get(ThreadLocalRandom.current().nextInt(eligible.size()));
+        final String killerName = killer.getName();
+        final String victimName = event.getEntity().getName();
+
+        int minTicks = Math.max(20, Config.fakeChatOnKillDelayMin() * 20);
+        int maxTicks = Math.max(minTicks, Config.fakeChatOnKillDelayMax() * 20);
+        long delay   = minTicks + ThreadLocalRandom.current().nextInt(Math.max(1, maxTicks - minTicks + 1));
+
+        int taskId = Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            pendingEventTasks.remove(bot.getUuid());
+            FakePlayer b = manager.getByUuid(bot.getUuid());
+            if (b == null || !b.isChatEnabled()) return;
+            if (Config.fakeChatRequirePlayer() && !hasRealPlayerOnline()) return;
+            String raw = pool.get(ThreadLocalRandom.current().nextInt(pool.size()));
+            String msg = resolvePlaceholders(
+                    raw.replace("{random_player}", killerName)
+                       .replace("{killer}", killerName)
+                       .replace("{victim}", victimName), b);
+            sendMessage(b, msg, false);
+            Config.debugChat(b.getName() + " kill-reaction: " + killerName
+                    + " killed " + victimName + ": " + msg);
+        }, delay).getTaskId();
+
+        pendingEventTasks.put(bot.getUuid(), taskId);
+    }
+
+    /**
+     * Reacts when a player earns an advancement that is announced to chat.
+     * Supports {@code {advancement}} and {@code {random_player}} placeholders.
+     */
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onPlayerAdvancement(PlayerAdvancementDoneEvent event) {
+        if (!Config.fakeChatEnabled()) return;
+        if (!Config.fakeChatEventTriggersEnabled()) return;
+        if (!Config.fakeChatOnAdvancementEnabled()) return;
+        if (manager.getByUuid(event.getPlayer().getUniqueId()) != null) return;
+
+        // Only react to advancements that show in chat
+        AdvancementDisplay display = event.getAdvancement().getDisplay();
+        if (display == null || !display.doesAnnounceToChat()) return;
+
+        if (ThreadLocalRandom.current().nextDouble() > Config.fakeChatOnAdvancementChance()) return;
+
+        List<String> pool = Config.chatAdvancementReactionMessages();
+        if (pool.isEmpty()) return;
+
+        List<FakePlayer> eligible = manager.getActivePlayers().stream()
+                .filter(FakePlayer::isChatEnabled)
+                .filter(fp -> !pendingEventTasks.containsKey(fp.getUuid()))
+                .toList();
+        if (eligible.isEmpty()) return;
+
+        FakePlayer bot = eligible.get(ThreadLocalRandom.current().nextInt(eligible.size()));
+        final String playerName = event.getPlayer().getName();
+        final String advTitle;
+        try {
+            advTitle = PlainTextComponentSerializer.plainText().serialize(display.title());
+        } catch (Throwable t) { return; }
+
+        int minTicks = Math.max(20, Config.fakeChatOnAdvancementDelayMin() * 20);
+        int maxTicks = Math.max(minTicks, Config.fakeChatOnAdvancementDelayMax() * 20);
+        long delay   = minTicks + ThreadLocalRandom.current().nextInt(Math.max(1, maxTicks - minTicks + 1));
+
+        int taskId = Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            pendingEventTasks.remove(bot.getUuid());
+            FakePlayer b = manager.getByUuid(bot.getUuid());
+            if (b == null || !b.isChatEnabled()) return;
+            if (Config.fakeChatRequirePlayer() && !hasRealPlayerOnline()) return;
+            String raw = pool.get(ThreadLocalRandom.current().nextInt(pool.size()));
+            String msg = resolvePlaceholders(
+                    raw.replace("{random_player}", playerName)
+                       .replace("{advancement}", advTitle), b);
+            sendMessage(b, msg, false);
+            Config.debugChat(b.getName() + " advancement-reaction [" + advTitle + "] for "
+                    + playerName + ": " + msg);
+        }, delay).getTaskId();
+
+        pendingEventTasks.put(bot.getUuid(), taskId);
+    }
+
+    /**
+     * Reacts when a player hits a significant XP level milestone (30, 50, 75, 100, …).
+     * Supports {@code {level}} and {@code {random_player}} placeholders.
+     */
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onPlayerLevelChange(PlayerLevelChangeEvent event) {
+        if (!Config.fakeChatEnabled()) return;
+        if (!Config.fakeChatEventTriggersEnabled()) return;
+        if (!Config.fakeChatOnHighLevelEnabled()) return;
+        if (manager.getByUuid(event.getPlayer().getUniqueId()) != null) return;
+
+        int newLevel   = event.getNewLevel();
+        int minLevel   = Config.fakeChatOnHighLevelMinLevel();
+        if (newLevel < minLevel) return;
+
+        // Only react at milestone levels: min-level, then every 25 above that, plus 50/75/100
+        boolean isMilestone = (newLevel == minLevel)
+                || (newLevel >= 50 && newLevel % 25 == 0);
+        if (!isMilestone) return;
+
+        if (ThreadLocalRandom.current().nextDouble() > Config.fakeChatOnHighLevelChance()) return;
+
+        List<String> pool = Config.chatHighLevelReactionMessages();
+        if (pool.isEmpty()) return;
+
+        List<FakePlayer> eligible = manager.getActivePlayers().stream()
+                .filter(FakePlayer::isChatEnabled)
+                .filter(fp -> !pendingEventTasks.containsKey(fp.getUuid()))
+                .toList();
+        if (eligible.isEmpty()) return;
+
+        FakePlayer bot = eligible.get(ThreadLocalRandom.current().nextInt(eligible.size()));
+        final String playerName = event.getPlayer().getName();
+        final String levelStr   = String.valueOf(newLevel);
+
+        int minTicks = Math.max(20, Config.fakeChatOnHighLevelDelayMin() * 20);
+        int maxTicks = Math.max(minTicks, Config.fakeChatOnHighLevelDelayMax() * 20);
+        long delay   = minTicks + ThreadLocalRandom.current().nextInt(Math.max(1, maxTicks - minTicks + 1));
+
+        int taskId = Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            pendingEventTasks.remove(bot.getUuid());
+            FakePlayer b = manager.getByUuid(bot.getUuid());
+            if (b == null || !b.isChatEnabled()) return;
+            if (Config.fakeChatRequirePlayer() && !hasRealPlayerOnline()) return;
+            String raw = pool.get(ThreadLocalRandom.current().nextInt(pool.size()));
+            String msg = resolvePlaceholders(
+                    raw.replace("{random_player}", playerName)
+                       .replace("{level}", levelStr), b);
+            sendMessage(b, msg, false);
+            Config.debugChat(b.getName() + " level-reaction [lvl " + levelStr + "] for "
+                    + playerName + ": " + msg);
+        }, delay).getTaskId();
+
+        pendingEventTasks.put(bot.getUuid(), taskId);
+    }
+
+    /**
+     * Reacts to a real player leaving.
      */
     @EventHandler(priority = EventPriority.MONITOR)
     public void onPlayerQuit(PlayerQuitEvent event) {
         if (!Config.fakeChatEnabled()) return;
         if (!Config.fakeChatEventTriggersEnabled()) return;
         if (!Config.fakeChatOnLeaveEnabled()) return;
-
-        // Ignore bots disconnecting
         if (manager.getByUuid(event.getPlayer().getUniqueId()) != null) return;
-
-        // Chance roll
         if (ThreadLocalRandom.current().nextDouble() > Config.fakeChatOnLeaveChance()) return;
 
         List<String> pool = Config.chatLeaveReactionMessages();
         if (pool.isEmpty()) return;
 
         List<FakePlayer> eligible = manager.getActivePlayers().stream()
-                .filter(FakePlayer::isChatEnabled)
-                .toList();
+                .filter(FakePlayer::isChatEnabled).toList();
         if (eligible.isEmpty()) return;
 
         FakePlayer bot = eligible.get(ThreadLocalRandom.current().nextInt(eligible.size()));
@@ -780,11 +1086,8 @@ public final class BotChatAI implements Listener {
             FakePlayer b = manager.getByUuid(bot.getUuid());
             if (b == null || !b.isChatEnabled()) return;
             if (Config.fakeChatRequirePlayer() && !hasRealPlayerOnline()) return;
-
             String raw = pool.get(ThreadLocalRandom.current().nextInt(pool.size()));
-            // Allow {random_player} to resolve to the player who left
-            String msg = resolvePlaceholders(
-                    raw.replace("{random_player}", leaverName), b);
+            String msg = resolvePlaceholders(raw.replace("{random_player}", leaverName), b);
             sendMessage(b, msg, false);
             Config.debugChat(b.getName() + " leave-reaction for " + leaverName + ": " + msg);
         }, delay).getTaskId();
@@ -792,34 +1095,38 @@ public final class BotChatAI implements Listener {
         pendingEventTasks.put(bot.getUuid(), taskId);
     }
 
-    /**
-     * Cancels all current main-loop tasks and immediately reschedules every active bot
-     * using fresh interval, chance, and stagger values read from config.
-     *
-     * <p>Call this after {@code /fpp reload} so changes to
-     * {@code fake-chat.interval}, {@code fake-chat.chance}, and
-     * {@code fake-chat.stagger-interval} take effect instantly instead of waiting
-     * for each bot's old long-delay task to naturally expire.
-     *
-     * <p>Per-bot tier overrides ({@code /fpp chat <bot> tier}) and per-bot mute
-     * states are preserved across the restart.
-     */
+    // ── Cancellation helpers ──────────────────────────────────────────────────
+
+    private void cancelPendingReply(UUID botUuid) {
+        Integer taskId = pendingReplyTasks.remove(botUuid);
+        if (taskId != null) Bukkit.getScheduler().cancelTask(taskId);
+    }
+
+    private void cancelPendingEvent(UUID botUuid) {
+        Integer taskId = pendingEventTasks.remove(botUuid);
+        if (taskId != null) Bukkit.getScheduler().cancelTask(taskId);
+    }
+
+    private void cancelMuteTask(UUID botUuid) {
+        Integer taskId = muteTaskIds.remove(botUuid);
+        if (taskId != null) Bukkit.getScheduler().cancelTask(taskId);
+    }
+
+    // ── Public API ────────────────────────────────────────────────────────────
+
     public void restartLoops() {
-        // Cancel every queued main-loop delayed task so bots don't fire on the old delay
         taskIds.values().forEach(Bukkit.getScheduler()::cancelTask);
         taskIds.clear();
-        // Re-read activity multipliers (picks up activity-variation config changes;
-        // honours per-bot tier overrides set via /fpp chat <bot> tier)
         for (FakePlayer fp : manager.getActivePlayers()) {
             assignActivityMultiplier(fp.getUuid());
             scheduleNext(fp.getUuid());
         }
-        Config.debugChat("BotChatAI loops restarted - new interval "
-                + Config.fakeChatIntervalMin() + "–" + Config.fakeChatIntervalMax() + "s,"
-                + " stagger " + Config.fakeChatStaggerInterval() + "s");
+        Config.debugChat("BotChatAI loops restarted - interval "
+                + Config.fakeChatIntervalMin() + "–" + Config.fakeChatIntervalMax() + "s, "
+                + "stagger " + Config.fakeChatStaggerInterval() + "s, "
+                + "b2b " + (Config.fakeChatBotToBotEnabled() ? "on" : "off"));
     }
 
-    /** Cancels all pending tasks. Call this on plugin shutdown / disable. */
     public void cancelAll() {
         taskIds.values().forEach(Bukkit.getScheduler()::cancelTask);
         pendingReplyTasks.values().forEach(Bukkit.getScheduler()::cancelTask);
@@ -833,92 +1140,36 @@ public final class BotChatAI implements Listener {
         muteTaskIds.clear();
     }
 
-    /**
-     * Immediately cancels all pending chat tasks (main loop, replies, events, bursts)
-     * and restarts each bot's loop in the "chat disabled" polling mode (re-checks
-     * every 2 s so it picks up immediately when chat is re-enabled).
-     *
-     * <p>Call this from {@code /fpp chat off} so in-flight typing-delay and event
-     * tasks are killed right away rather than waiting until the current long delay fires.
-     */
     public void stopAllLoopsNow() {
-        // Cancel every tracked task immediately
         taskIds.values().forEach(Bukkit.getScheduler()::cancelTask);
         pendingReplyTasks.values().forEach(Bukkit.getScheduler()::cancelTask);
         pendingEventTasks.values().forEach(Bukkit.getScheduler()::cancelTask);
         taskIds.clear();
         pendingReplyTasks.clear();
         pendingEventTasks.clear();
-        // Do NOT clear activityMultipliers / messageHistory - preserve tier overrides
-        // and history so they're still active when chat is re-enabled.
-        // Restart each bot's loop in disabled-polling mode (scheduleNext will see
-        // fakeChatEnabled() == false and create a 2-s re-check task).
         for (FakePlayer fp : manager.getActivePlayers()) {
             scheduleNext(fp.getUuid());
         }
     }
 
-    // ── Public API ────────────────────────────────────────────────────────────
-
-    /**
-     * Forces a specific bot to immediately send {@code message} through the
-     * appropriate chat path. Does not trigger a burst follow-up.
-     * The message is delivered even when global fake-chat is disabled.
-     *
-     * @param bot     the bot that should speak
-     * @param message fully resolved message text (placeholders NOT re-expanded)
-     */
     public void forceSendMessage(FakePlayer bot, String message) {
         if (manager.getByUuid(bot.getUuid()) == null) return;
-        // Bypass global enabled check - force-send is explicitly requested by admin
         sendMessageForced(bot, message, false);
-    }    /**
-     * Forces a specific bot to immediately send {@code message}, first expanding
-     * all supported chat placeholders ({@code {name}}, {@code {random_player}},
-     * {@code {online}}, {@code {world}}, {@code {time}}, {@code {biome}},
-     * {@code {x}}, {@code {y}}, {@code {z}}, {@code {server}}, {@code {date}},
-     * {@code {day}}).
-     *
-     * <p>Use this variant when the message string comes directly from a command
-     * argument so admin-supplied placeholders are properly resolved.
-     *
-     * @param bot     the bot that should speak
-     * @param message message template with optional placeholder tokens
-     */
-    public void forceSendMessageResolved(FakePlayer bot, String message) {
-        if (manager.getByUuid(bot.getUuid()) == null) return;
-        String resolved = resolvePlaceholders(message, bot);
-        // Bypass global enabled check - force-send is explicitly requested by admin
-        sendMessageForced(bot, resolved, false);
     }
 
-    /**
-     * Returns the current activity multiplier for the given bot.
-     * A multiplier &lt; 1.0 means the bot chats more frequently than the base
-     * interval; &gt; 1.0 means less frequently; 1.0 = normal.
-     *
-     * @param botUuid bot's UUID
-     * @return the multiplier, or {@code 1.0} if not yet assigned
-     */
+    public void forceSendMessageResolved(FakePlayer bot, String message) {
+        if (manager.getByUuid(bot.getUuid()) == null) return;
+        sendMessageForced(bot, resolvePlaceholders(message, bot), false);
+    }
+
     public double getActivityMultiplier(UUID botUuid) {
         return activityMultipliers.getOrDefault(botUuid, 1.0);
     }
 
-    /**
-     * Silences a bot for {@code seconds} seconds, then automatically re-enables it.
-     *
-     * <p>Any existing timed mute for the bot is cancelled and replaced.
-     * Passing {@code 0} or a negative value permanently silences the bot
-     * (same as {@link FakePlayer#setChatEnabled(boolean) setChatEnabled(false)}).
-     *
-     * @param botUuid bot's UUID
-     * @param seconds duration of the mute; 0 = permanent
-     */
     public void timedMute(UUID botUuid, int seconds) {
         FakePlayer fp = manager.getByUuid(botUuid);
         if (fp == null) return;
 
-        // Cancel any previous timed mute
         Integer prev = muteTaskIds.remove(botUuid);
         if (prev != null) Bukkit.getScheduler().cancelTask(prev);
 
@@ -938,36 +1189,21 @@ public final class BotChatAI implements Listener {
         }
     }
 
-    // ── Public static dispatch API ────────────────────────────────────────────
+    // ── Static dispatch helpers ───────────────────────────────────────────────
 
     /**
-     * Dispatches a bot chat message through the server's real chat pipeline
-     * <b>without</b> the {@code [Not Secure]} label that {@link Player#chat(String)}
-     * appends in Paper 1.19+ for unsigned messages.
-     *
-     * <p>Fires {@link AsyncChatEvent} with {@code async=false} (safe from the main
-     * thread) so chat-formatting plugins (EssentialsChat, VentureChat, etc.) receive
-     * and process the event normally.  Broadcasting is handled directly via
-     * {@link Audience#sendMessage}, bypassing the NMS {@code broadcastChatMessage()}
-     * path that writes {@code [Not Secure]} to the console log.
-     *
-     * <p>Falls back to {@link Player#chat(String)} if Paper API is unavailable.
-     *
-     * @param player     the bot's live {@link Player} entity
-     * @param rawMessage resolved message text (placeholders already substituted)
+     * Dispatches a bot chat message through the real chat pipeline without the
+     * {@code [Not Secure]} label. Falls back to {@link Player#chat} if Paper API fails.
      */
     public static void dispatchChat(Player player, String rawMessage) {
         try {
-            // Initial viewer set: all online players + console.
             Set<Audience> viewers = new LinkedHashSet<>(Bukkit.getOnlinePlayers());
             viewers.add(Bukkit.getConsoleSender());
-
             Component message = Component.text(rawMessage);
 
             @SuppressWarnings("UnstableApiUsage")
             AsyncChatEvent event = new AsyncChatEvent(
-                    false, player, viewers,
-                    ChatRenderer.defaultRenderer(),
+                    false, player, viewers, ChatRenderer.defaultRenderer(),
                     message, message, null);
 
             Bukkit.getPluginManager().callEvent(event);
@@ -975,8 +1211,7 @@ public final class BotChatAI implements Listener {
             if (!event.isCancelled()) {
                 Component displayName = player.displayName();
                 for (Audience viewer : event.viewers()) {
-                    viewer.sendMessage(
-                            event.renderer().render(player, displayName, event.message(), viewer));
+                    viewer.sendMessage(event.renderer().render(player, displayName, event.message(), viewer));
                 }
             }
         } catch (Throwable t) {
@@ -987,18 +1222,8 @@ public final class BotChatAI implements Listener {
     }
 
     /**
-     * Broadcasts a bot chat message received from another server via plugin messaging.
-     *
-     * <p>Uses the configurable {@code fake-chat.remote-format} template.
-     *
-     * <p><b>Loop prevention:</b> sets {@link #isRemoteBroadcast} so the message is
-     * NOT re-forwarded via plugin messaging.
-     *
-     * @param botName        internal bot name
-     * @param botDisplayName display name with prefix / formatting
-     * @param message        the resolved message text
-     * @param prefix         unused - kept for wire-format compatibility
-     * @param suffix         unused - kept for wire-format compatibility
+     * Broadcasts a remote (cross-server) bot message. Loop-prevention via
+     * {@link #isRemoteBroadcast}.
      */
     public static void broadcastRemote(String botName, String botDisplayName,
                                        String message, String prefix, String suffix) {
@@ -1015,11 +1240,8 @@ public final class BotChatAI implements Listener {
         }
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
+    // ── Internal helpers ──────────────────────────────────────────────────────
 
-    /**
-     * Returns {@code true} when at least one non-bot player is currently online.
-     */
     private boolean hasRealPlayerOnline() {
         for (Player p : Bukkit.getOnlinePlayers()) {
             if (manager.getByUuid(p.getUniqueId()) == null) return true;
@@ -1028,8 +1250,8 @@ public final class BotChatAI implements Listener {
     }
 
     /**
-     * Resolves the {@code {random_player}} placeholder.
-     * Prefers real (non-bot) players; falls back to other bots, then the bot itself.
+     * Resolves {@code {random_player}}: prefers real players, falls back to other bots,
+     * then the bot itself.
      */
     private String resolveRandomPlayer(FakePlayer self) {
         List<String> real = new ArrayList<>();
@@ -1044,6 +1266,19 @@ public final class BotChatAI implements Listener {
         if (!others.isEmpty())
             return others.get(ThreadLocalRandom.current().nextInt(others.size())).getName();
 
+        return self.getName();
+    }
+
+    /**
+     * Resolves {@code {bot_name}}: returns a random OTHER active bot's name,
+     * or the bot's own name if no others are online.
+     */
+    private String resolveRandomBotName(FakePlayer self) {
+        List<FakePlayer> others = manager.getActivePlayers().stream()
+                .filter(fp -> !fp.getUuid().equals(self.getUuid()))
+                .toList();
+        if (!others.isEmpty())
+            return others.get(ThreadLocalRandom.current().nextInt(others.size())).getName();
         return self.getName();
     }
 }

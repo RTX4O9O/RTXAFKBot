@@ -413,7 +413,7 @@
         <div class="footer-bottom">
             <p>&copy; 2026 Fake Player Plugin. All rights reserved. · Made by Bill_Hub</p>
             <div class="footer-badges">
-                <span class="footer-badge"><span class="footer-badge-dot dot-primary"></span>v1.5.8</span>
+                <span class="footer-badge"><span class="footer-badge-dot dot-primary"></span><span id="footerVersionBadge">v1.6.2</span></span>
                 <span class="footer-badge"><span class="footer-badge-dot dot-blue"></span>Paper 1.21.x</span>
                 <span class="footer-badge"><span class="footer-badge-dot dot-green"></span>Java 21+</span>
             </div>
@@ -555,6 +555,19 @@
 
     // ── Init ──────────────────────────────────────────────────────────────────
     loadLegalPage(getPageFromPath());
+
+    // ── Live version badge ────────────────────────────────────────────────────
+    (async function () {
+        try {
+            const res = await fetch('/api/version');
+            if (!res.ok) return;
+            const data = await res.json();
+            if (!data.version) return;
+            const v = data.version.startsWith('v') ? data.version : 'v' + data.version;
+            const badge = document.getElementById('footerVersionBadge');
+            if (badge) badge.textContent = v;
+        } catch (_) { /* silent — static fallback text remains */ }
+    })();
 </script>
 </body>
 </html>

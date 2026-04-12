@@ -1,307 +1,275 @@
-# ᴍɪɢʀᴀᴛɪᴏɴ & ʙᴀᴄᴋᴜᴘꜱ
+# 🔧 Migration & Backups
 
-> **Version:** 1.5.15  **Platform:** Paper 1.21+
+> **Current plugin line:** 1.6.2  
+> **Bundled config stamp:** 53  
+> **Current migration target:** 55
 
-This page covers the **automatic config migration system**, **manual backup tools**, and **database migration utilities** built into FPP since v1.1.4. These features ensure you never lose your config or bot session data when updating the plugin.
-
----
-
-## Table of Contents
-
-1. [Overview](#overview)
-2. [Automatic Config Migration](#automatic-config-migration)
-3. [Backup System](#backup-system)
-4. [The `/fpp migrate` Command](#the-fpp-migrate-command)
-5. [Merging an Old Database](#merging-an-old-database)
-6. [Exporting Data to CSV](#exporting-data-to-csv)
-7. [SQLite → MySQL Migration](#sqlite--mysql-migration)
-8. [Manual Rollback](#manual-rollback)
-9. [Config Version Reference](#config-version-reference)
+This page covers:
+- automatic config migration
+- backup behavior
+- `/fpp migrate` tools
+- DB export / merge / MySQL migration
+- current config version history
 
 ---
 
 ## Overview
 
-Every time you update FPP, three things may have changed:
+When FPP starts, it can migrate three kinds of state:
 
 | What changed | How FPP handles it |
-|---|---|
-| New `config.yml` keys added | **Auto-filled** from defaults on startup |
-| Old keys renamed or restructured | **Auto-migrated** via the version chain |
-| Database schema updated | **Auto-applied** via incremental SQL migrations |
+|--------------|--------------------|
+| New config keys | Added automatically |
+| Renamed/restructured config paths | Migrated through the version chain |
+| Database schema changes | Applied incrementally in the DB layer |
 
-The migration system runs **automatically on every startup** - you don't need to do anything manually for routine updates. Manual tools (`/fpp migrate`) exist for advanced cases like merging databases, exporting data, or switching from SQLite to MySQL.
+The normal update flow is automatic — you only use `/fpp migrate` when you want manual control.
 
 ---
 
 ## Automatic Config Migration
 
-When FPP starts, it checks the `config-version` key in your `config.yml`. If it is lower than the current version, the migration chain runs automatically:
+FPP reads `config-version` from `config.yml` and upgrades older configs step-by-step.
 
-```
-[FPP] ══════════════════════════════════════════════════════
-[FPP] ── Config Migration ──────────────────────────────────
-[FPP] Upgrading config from v5 → v10…
-[FPP] A backup will be created before any changes are written.
-[FPP] Backup created → backups/2026-03-14_12-00-00_pre-migration-v5/
-[FPP] Config migrated to v10 successfully.
-```
+Important rule:
+- your existing values are preserved whenever possible
+- missing keys are added from defaults
+- renamed paths are moved forward
 
-### What gets migrated automatically
-
-- **New sections** are added with sensible defaults (e.g. `swap:`, `fake-chat:`, `database:`)
-- **Renamed keys** are moved to their new paths (e.g. `max-bots` → `limits.max-bots`)
-- **Restructured values** are converted (e.g. `skin.enabled: true` → `skin.mode: auto`)
-- **Any missing keys** are filled from the jar's bundled default config
-
-### What is preserved
-
-**All your existing values are preserved.** The migrator only:
-- Adds new keys that don't exist yet
-- Renames old keys to their new names
-- Converts value types where the format changed
-
-It **never** overwrites a key you've already set.
+Before risky migration work, FPP creates a backup.
 
 ---
 
 ## Backup System
 
-FPP automatically creates a backup before any migration. Backups are also triggered by database merges.
+Backups are stored under:
 
-### Backup location
-
-```
-plugins/FakePlayerPlugin/
-└── backups/
-    ├── 2026-03-14_12-00-00_pre-migration-v5/
-    │   ├── config.yml
-    │   ├── bot-names.yml
-    │   ├── bot-messages.yml
-    │   ├── language/
-    │   │   └── en.yml
-    │   ├── active-bots.yml
-    │   ├── fpp.db
-    │   └── MANIFEST.txt
-    └── 2026-03-10_09-30-00_manual/
-        └── ...
+```text
+plugins/FakePlayerPlugin/backups/
 ```
 
-### What is backed up
+Two backup styles exist:
 
-| File | Description |
-|---|---|
-| `config.yml` | Main plugin config |
-| `bot-names.yml` | Bot name pool |
-| `bot-messages.yml` | Fake chat messages |
-| `language/en.yml` | Language file |
-| `active-bots.yml` | Last known bot positions (YAML persistence) |
-| `fpp.db` | SQLite database (with WAL/SHM files if present) |
-| `MANIFEST.txt` | Backup reason, plugin version, timestamp |
+### Full backups
 
-### Retention policy
+Used for heavier migration actions.
 
-FPP keeps the **10 most recent** backup sets. Older ones are pruned automatically to save disk space.
+Can include:
+- `config.yml`
+- `bot-names.yml`
+- `bot-messages.yml`
+- `language/`
+- SQLite DB files
+- other important plugin data
 
-### Manual backup
+### Config-file backups
 
-```
-/fpp migrate backup
-```
+Used for lighter YAML sync/update actions.
 
-Create a backup at any time - useful before making large config changes or switching database backends.
+### Retention
+
+FPP keeps the most recent backup sets and prunes older ones automatically.
 
 ---
 
-## The `/fpp migrate` Command
+## `/fpp migrate` Command
 
-**Permission:** `fpp.admin.migrate` (default: op, included in `fpp.*`)
+Permission:
 
+```text
+fpp.migrate
 ```
-/fpp migrate <subcommand>
-```
 
-| Subcommand | Description |
-|---|---|
-| `backup` | Create a manual backup of all plugin files now |
-| `backups` | List all stored backup directories with ages |
-| `status` | Show config version, database stats, backup count |
-| `config` | Re-run the full config migration chain |
-| `db merge [file]` | Merge records from an old `fpp.db` into the current database |
-| `db export` | Export all session history to a CSV file |
-| `db tomysql` | Migrate all data from local SQLite into configured MySQL |
+Not the older `fpp.admin.migrate` wording.
 
-### `/fpp migrate status` output
+### Subcommands
 
-```
-[FPP] ᴍɪɢʀᴀᴛɪᴏɴ ꜱᴛᴀᴛᴜꜱ
-[FPP]   Config version  : 10 / 10  ✔ current
-[FPP]   DB backend      : SQLite
-[FPP]   Sessions        : 1,482 total, 23 active
-[FPP]   Unique bots     : 340
-[FPP]   Unique spawners : 7
-[FPP]   Combined uptime : 14d 6h 22m
-[FPP]   Backups stored  : 3 (max 10 kept)
-[FPP]   Latest backup   : 2026-03-14_12-00-00_pre-migration-v5
-[FPP]   Backup storage  : 48.3 MB
-```
+| Command | Description |
+|---------|-------------|
+| `/fpp migrate status` | Show config version, DB status, backup count, sync health |
+| `/fpp migrate backup` | Create a manual backup now |
+| `/fpp migrate backups` | List stored backups |
+| `/fpp migrate config` | Re-run the config migration chain |
+| `/fpp migrate lang` | Force-sync language keys from the bundled jar |
+| `/fpp migrate names` | Force-sync bot names from the bundled jar |
+| `/fpp migrate messages` | Force-sync bot messages from the bundled jar |
+| `/fpp migrate db export [file]` | Export session data to **CSV** |
+| `/fpp migrate db merge <file>` | Merge older DB data into the current DB |
+| `/fpp migrate db tomysql` | Move/copy SQLite data into configured MySQL |
 
 ---
 
-## Merging an Old Database
+## Exporting Data
 
-If you deleted and reinstalled FPP (or moved servers), you may have an old `fpp.db` you want to merge back in.
+Current export format:
 
-### Steps
+- **CSV**
 
-1. Copy your old `fpp.db` file into:
-   ```
-   plugins/FakePlayerPlugin/data/fpp_old.db
-   ```
+Use:
 
-2. Run:
-   ```
-   /fpp migrate db merge fpp_old.db
-   ```
-
-3. FPP will:
-   - Create a backup first
-   - Read all rows from the old database
-   - Insert them into the current database using `INSERT OR IGNORE` - existing rows are **never overwritten**
-   - Report how many rows were merged
-
-### Notes
-
-- You can specify just the filename (relative to `data/`) or a full absolute path
-- The merge is safe to run while the server is live - it never deletes or updates existing records
-- If a bot UUID already exists in the current database, that row is silently skipped (no duplicate inserts)
-
----
-
-## Exporting Data to CSV
-
-Export all session history to a CSV file for external analysis in Excel, Google Sheets, etc.
-
-```
+```text
 /fpp migrate db export
 ```
 
-The file is saved to:
-```
-plugins/FakePlayerPlugin/exports/sessions_<timestamp>.csv
+This is the current documented behavior — older JSON wording is outdated.
+
+---
+
+## Merging Old Data
+
+If you have an older DB file or export, use:
+
+```text
+/fpp migrate db merge <file>
 ```
 
-### CSV columns
+Typical use cases:
+- moving hosts
+- restoring archived session history
+- re-importing an old SQLite file
 
-```
-id, bot_name, bot_uuid, spawned_by, spawned_by_uuid,
-world_name, spawn_x, spawn_y, spawn_z,
-last_world, last_x, last_y, last_z,
-spawned_at_ms, removed_at_ms, remove_reason
-```
+FPP creates a backup first.
 
 ---
 
 ## SQLite → MySQL Migration
 
-When you're ready to move from a local SQLite database to a shared MySQL instance:
+Example workflow:
 
-### Steps
+1. Configure MySQL in `config.yml`
+2. Enable:
 
-1. **Set up MySQL** - create a database and user.
+```yaml
+database:
+  enabled: true
+  mysql-enabled: true
+```
 
-2. **Update `config.yml`:**
-   ```yaml
-   database:
-     mysql-enabled: true
-     mysql:
-       host: "your-mysql-host"
-       port: 3306
-       database: "fpp"
-       username: "fppuser"
-       password: "yourpassword"
-   ```
+3. Reload:
 
-3. **Reload FPP** so it connects to MySQL and creates tables:
-   ```
-   /fpp reload
-   ```
+```text
+/fpp reload
+```
 
-4. **Verify** the connection in `/fpp migrate status` - it should show `DB backend: MySQL`.
+4. Run:
 
-5. **Migrate the data:**
-   ```
-   /fpp migrate db tomysql
-   ```
+```text
+/fpp migrate db tomysql
+```
 
-6. FPP reads the local `data/fpp.db`, merges all rows into MySQL, and reports the count.
+---
+
+## YAML Sync Helpers
+
+FPP can also sync bundled YAML defaults into existing files without overwriting user values.
+
+Important files:
+- `language/en.yml`
+- `bot-names.yml`
+- `bot-messages.yml`
+
+Commands:
+
+```text
+/fpp migrate lang
+/fpp migrate names
+/fpp migrate messages
+```
+
+These add missing keys while preserving user-edited values.
+
+---
+
+## Config Version History
+
+The current config history important to modern installs is:
+
+| Version | What changed |
+|---------|--------------|
+| 46 | Added `performance.position-sync-distance` |
+| 47 | Swap enhancements such as `swap.min-online`, retry behavior, and better logging alignment |
+| 48 | Added `body.pick-up-items` |
+| 49 | Added `body.pick-up-xp` |
+| 50 | Added / expanded `pathfinding` section |
+| 51 | XP/cmd-era config finalization used by the earlier 1.6.0 line |
+| 52 | Added player-chat reaction era fake-chat improvements |
+| 53 | Reworked chunk-loading radius semantics (`"auto"` vs `0`) in the bundled config line |
+| 54 | Added `body.drop-items-on-despawn` |
+| 55 | Added shared pathfinding tuning keys and latest migration target updates |
+
+### Additional 1.6.x-era structural additions
+
+These are also important in the current docs/config structure:
+- `bot-interaction`
+- `badword-filter`
+- `ai-conversations`
+
+Depending on when a user upgraded from, those sections may be added by migration even if their older config never had them.
+
+---
+
+## Bundled Config vs Migration Target
+
+One confusing but normal detail:
+
+- the shipped `config.yml` in resources can be stamped at `53`
+- the runtime migrator can target `55`
+
+That does **not** mean the install is broken.
+
+It just means:
+- the bundled file reflects a stable packaged default
+- runtime migration code can still add/reshape newer keys on first boot or reload
+
+---
 
 ## Manual Rollback
 
-If something goes wrong after an update, you can restore from a backup:
+If an update goes wrong:
 
-1. Stop the server.
+1. stop the server
+2. open `plugins/FakePlayerPlugin/backups/`
+3. restore the desired backup copy of your files
+4. restore the SQLite DB if needed
+5. start the server again
 
-2. Navigate to `plugins/FakePlayerPlugin/backups/` and find the backup you want.
+Tip:
 
-3. Copy `config.yml` back to `plugins/FakePlayerPlugin/config.yml`.
+```text
+/fpp migrate backup
+```
 
-4. Copy `fpp.db` back to `plugins/FakePlayerPlugin/data/fpp.db`.
+Run this manually before any big production update.
 
-5. Reset the `config-version` in `config.yml` to match the old plugin version (or set it to `0` to force a full re-migration).
-
-6. Start the server.
-
-> **Tip:** Keep at least one manual backup before every major version update:
-> ```
-> /fpp migrate backup
-> ```
-
-## Config Version Reference
-
-| Config Version | Plugin Version | What changed |
-|---|---|---|
-| 1 | 1.0.0 | Initial config |
-| 2 | 1.0.1 | Added `update-checker` section |
-| 3 | 1.0.3 | Added `luckperms` section |
-| 4 | 1.0.5 | `skin-enabled` (bool) → `skin.mode` (string); skin pool restructured |
-| 5 | 1.0.7 | Added `body` section; `spawn-body` deprecated |
-| 6 | 1.0.9 | Added `chunk-loading` section |
-| 7 | 1.0.11 | Added `head-ai` section |
-| 8 | 1.0.13 | Added `collision` section |
-| 9 | 1.0.15 | Added `swap` and `fake-chat` sections |
-| **10** | **1.1.4** | Added `limits`, `bot-name`, `persistence`, `death`, `database` sections; normalised join/leave-delay keys |
-| 33 | 1.5.0 | Added proxy/network mode, config-sync, BotTabTeam, spawn cooldown, per-subsystem debug logging |
-| 34 | 1.5.0 | Added `swim-ai` section |
-| 35 | 1.5.0 | Added `swim-ai.enabled` key |
-| **36** | **1.5.4** | Removed orphaned LuckPerms keys; removed `skin.fallback-pool`, `skin.fallback-name`; `skin.guaranteed-skin` reset to `false` |
-| 37 | 1.5.8 | Version stamp only - no structural key changes (ghost player fix, proxy list improvements) |
-| 38 | 1.5.10 | Removed `bot-name.tab-list-format` - LP manages prefix/suffix natively for real NMS entities |
-| 39 | 1.5.10 | Removed `fake-chat.chat-format` - bots now send via `Player.chat()` (real pipeline) |
-| 40 | 1.5.10 | Added fake-chat realism keys: `typing-delay`, `burst-chance`, `burst-delay`, `reply-to-mentions`, `mention-reply-chance`, `reply-delay`, `stagger-interval`, `activity-variation`, `history-size` |
-| **41** | **1.5.10** | Added `logging.debug.chat`, `fake-chat.remote-format`, `fake-chat.event-triggers` (on-player-join, on-death, on-player-leave), `fake-chat.keyword-reactions` |
-| 42 | 1.5.12 | Added `peak-hours` section with schedule, day-overrides, stagger-seconds, timezone |
-| 43 | 1.5.12 | Added `peak-hours.min-online`, `peak-hours.notify-transitions` |
-| 44 | 1.5.12 | Removed `peak-hours.auto-enable-swap` |
-| **45** | **1.5.15** | Config version stamp update - no structural key changes; timing comments clarified throughout (ticks vs seconds with conversion examples) |
+---
 
 ## Troubleshooting
 
-### Config migration ran but my values were reset
+### My values changed after migration
 
-The migrator only adds missing keys - it should never overwrite existing values. If your values changed, check:
-1. Whether you had the key under an old name that was migrated to a new path (e.g. `max-bots` → `limits.max-bots`)
-2. The backup in `backups/` for your original values
+Check:
+- whether the key moved to a new path
+- whether you are looking at the latest generated config copy
+- whether the backup folder contains your previous state
 
-### "File not found" when running `db merge`
+### `db merge` says file not found
 
-Make sure the file is in `plugins/FakePlayerPlugin/data/` and you're using just the filename:
-```
-/fpp migrate db merge fpp_old.db
-```
+Make sure:
+- the file exists where you expect it
+- you passed the correct filename/path
 
-### "Database is offline" error
+### DB schema / runtime mismatch
 
-The DatabaseManager failed to initialise. Check console logs for SQLite/MySQL connection errors and verify your `database:` config block.
+Check:
+- startup logs
+- `/fpp migrate status`
+- DB connectivity if using MySQL
 
+---
 
+## Related Pages
+
+- [Configuration](Configuration.md)
+- [Database](Database.md)
+- [Proxy-Support](Proxy-Support.md)
+- [Changelog](Changelog.md)

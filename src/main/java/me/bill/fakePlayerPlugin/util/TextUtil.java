@@ -1,6 +1,7 @@
 package me.bill.fakePlayerPlugin.util;
 
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 
@@ -25,8 +26,8 @@ public final class TextUtil {
     private static final String NORMAL =
             "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
     private static final String SMALL_CAPS =
-            "ᴀʙᴄᴅᴇꜰɢʜɪᴊᴋʟᴍɴᴏᴘQʀꜱᴛᴜᴠᴡxʏᴢ" +   // lower  (a-z)
-            "ᴀʙᴄᴅᴠᴡxʏᴢ";  // upper  (A-Z)
+            "ᴀʙᴄᴅᴇꜰɢʜɪᴊᴋʟᴍɴᴏᴘǫʀѕᴛᴜᴠᴡхʏᴢ" +   // lower  (a-z)
+            "ᴀʙᴄᴅᴠᴡхʏᴢ";  // upper  (A-Z)
 
     /**
      * Converts every ASCII letter in {@code text} to its small-caps Unicode equivalent.
@@ -77,6 +78,24 @@ public final class TextUtil {
         // during any transition period, then parse with MiniMessage.
         String converted = legacyToMiniMessage(text);
         return MM.deserialize(converted);
+    }
+
+    /**
+     * Like {@link #colorize(String)} but applies yellow as the default colour for plain
+     * bot names that contain no explicit colour markup (no MiniMessage tags, no legacy
+     * {@code §}/{@code &} codes, no LuckPerms gradient shorthand {@code {#…}}).
+     * <p>
+     * Used for bot display names so plain names such as {@code "Steve"} appear
+     * <yellow>yellow</yellow> in chat, death messages, and join/leave broadcasts
+     * instead of the default white.  Names that already carry markup keep their own colour.
+     */
+    public static Component colorizeOrYellow(String raw) {
+        if (raw == null || raw.isEmpty()) return Component.empty();
+        // Plain text (no colour markup) → yellow default
+        if (!raw.contains("<") && !raw.contains("§") && !raw.contains("&") && !raw.contains("{#")) {
+            return Component.text(raw).color(NamedTextColor.YELLOW);
+        }
+        return colorize(raw);
     }
 
     /** Shorthand: applies {@link #toSmallCaps(String)} then {@link #colorize(String)}. */

@@ -1,346 +1,381 @@
 # 🚀 Getting Started
 
-> **Your Complete Guide to Setting Up Fake Player Plugin**  
-> **From Zero to Bot Army in 5 Minutes!**
+> **Your complete setup guide for Fake Player Plugin v1.6.2**  
+> Install it correctly, verify the important systems, and get your first bots online fast.
 
 ---
 
 ## 📋 System Requirements
 
-### 🖥️ **Server Requirements**
-| Component | Requirement | Recommended |
-|-----------|-------------|-------------|
-| **Server Software** | Paper 1.21+ | Paper 1.21.3+ (latest) |
-| **Java Version** | JDK 21+ | JDK 21+ (Oracle/Temurin) |
-| **RAM** | 1GB+ | 2GB+ for optimal performance |
-| **CPU** | 2+ cores | 4+ cores for 50+ bots |
-| **Storage** | 100MB+ | 500MB+ (with database) |
+### 🖥️ Server Requirements
 
-### 🔧 **Dependencies**
+| Component | Minimum | Recommended |
+|-----------|---------|-------------|
+| Server software | Paper 1.21+ | Paper 1.21.11 |
+| Java | JDK 21+ | JDK 21+ (Temurin / Oracle) |
+| RAM | 1 GB+ | 2 GB+ |
+| CPU | 2 cores | 4+ cores for larger bot pools |
+| Storage | 100 MB+ | 500 MB+ if using DB backups / MySQL exports |
+
+### 🔧 Optional Integrations
+
 | Plugin | Required | Purpose |
 |--------|----------|---------|
-| **PacketEvents** | ✅ **Required** | Packet manipulation for tab list |
-| **PlaceholderAPI** | ⚠️ Optional | Placeholder support for other plugins |
-| **LuckPerms** | ⚠️ Optional | Advanced permissions & prefix/suffix |
+| PlaceholderAPI | Optional | `%fpp_*%` placeholders for scoreboards, TAB, holograms, etc. |
+| LuckPerms | Optional | Per-bot groups, prefix/suffix integration, group diagnostics |
+| WorldGuard | Optional | Prevents player-sourced PvP damage to bots in no-PvP regions |
 
-### 🌐 **Server Configuration**
-- **Online Mode:** Recommended (required for `auto` skin mode)
-- **View Distance:** 8+ chunks (for bot visibility)
-- **Entity Limit:** Consider increasing for large bot counts
+> `PacketEvents` is **not** a current dependency.
+
+### 🌐 Server Notes
+
+- **Online mode:** recommended if you want `skin.mode: auto` to match real Mojang skins reliably
+- **Simulation distance:** matters when `chunk-loading.radius: "auto"` is used
+- **Version support:** FPP is currently tested up to **1.21.11**; newer MC versions are guarded by the plugin's version check
 
 ---
 
-## 📦 Installation Guide
+## 📦 Installation
 
-### Step 1: **Install Dependencies**
+### 1) Install FPP
 
-#### **PacketEvents (Required)**
-1. Download from [PacketEvents Releases](https://github.com/retrooper/packetevents/releases)
-2. Get the **latest** `packetevents-spigot-X.X.X.jar`
-3. Place in your `plugins/` folder
+1. Download the latest jar from [Modrinth](https://modrinth.com/plugin/fake-player-plugin-(fpp))
+2. Place it in your server's `plugins/` folder
+3. Start the server once
+4. Wait for FPP to finish its first-run setup
 
-#### **PlaceholderAPI (Optional)**
-1. Download from [PAPI SpigotMC](https://www.spigotmc.org/resources/placeholderapi.6245/)
-2. Place `PlaceholderAPI-X.X.X.jar` in `plugins/` folder
+Example folder layout after copying the jar:
 
-#### **LuckPerms (Optional)**
-1. Download from [LuckPerms Downloads](https://luckperms.net/download)
-2. Place `LuckPerms-Bukkit-X.X.X.jar` in `plugins/` folder
-
-### Step 2: **Install FPP**
-
-1. **Download FPP** from [Modrinth](https://modrinth.com/plugin/fake-player-plugin-(fpp))
-2. **Place** `fpp-1.5.15.jar` in your `plugins/` folder
-3. **Verify** your plugins folder:
-
-```
-📁 plugins/
-├── 📦 packetevents-spigot-2.x.x.jar
-├── 📦 PlaceholderAPI-2.11.6.jar (optional)
-├── 📦 LuckPerms-Bukkit-5.5.x.jar (optional)
-└── 📦 fpp-1.5.15.jar
+```text
+plugins/
+├── fpp-1.6.2.jar
+├── PlaceholderAPI-2.11.x.jar      (optional)
+├── LuckPerms-Bukkit-5.5.x.jar     (optional)
+└── WorldGuard-Bukkit-7.x.jar      (optional)
 ```
 
-### Step 3: **First Launch**
+### 2) Verify first boot
 
-1. **Start your server**
-2. **Watch the console** for FPP startup messages:
+After first launch, check that these files/folders were generated:
 
-```
-[FPP] ══════════════════════════════════════════════════
-[FPP]   FakePlayerPlugin v1.5.15
-[FPP] ──────────────────────────────────────────────────
-[FPP] ── Runtime ─────────────────────────────────────────
-[FPP]   [+] Database ........ SQLite (local)
-[FPP]   Config version ...... v45 ✔
-[FPP] ── Features ────────────────────────────────────────
-[FPP]   [+] Physical bodies . enabled
-[FPP]   [+] Persistence ..... enabled
-[FPP]   [+] Chunk loading ... enabled
-[FPP]   [-] Fake chat ....... disabled
-[FPP]   [-] Bot swap ........ disabled
-[FPP] ── Integrations ──────────────────────────────────
-[FPP]   [-] LuckPerms ....... disabled
-[FPP]   [-] Metrics ......... disabled
-[FPP] ── Pools & Limits ──────────────────────────────────
-[FPP]   Name pool ........... 50
-[FPP]   Message pool ........ 30
-[FPP]   Skin mode ........... auto
-[FPP]   Max bots ............ unlimited
-[FPP] ──────────────────────────────────────────────────
-[FPP]   Ready: /fpp help
-[FPP] ══════════════════════════════════════════════════
+```text
+plugins/FakePlayerPlugin/
+├── config.yml
+├── bot-names.yml
+├── bot-messages.yml
+├── secrets.yml
+├── bad-words.yml
+├── language/
+│   └── en.yml
+├── personalities/
+│   ├── default.txt
+│   ├── friendly.txt
+│   ├── grumpy.txt
+│   └── noob.txt
+├── skins/
+│   └── README.txt
+└── data/
+    └── fpp.db
 ```
 
-3. **Check generated files**:
+What these are for:
 
-```
-📁 plugins/FakePlayerPlugin/
-├── 📄 config.yml          # Main configuration
-├── 📄 bot-names.yml       # Bot name pools
-├── 📄 bot-messages.yml    # Chat message pools
-├── 📁 language/
-│   └── 📄 en.yml          # All plugin messages
-├── 📁 skins/              # Custom skin storage
-└── 📁 data/
-    └── 📄 fpp.db          # SQLite database
-```
+- `config.yml` — main plugin config
+- `bot-names.yml` — random bot name pool
+- `bot-messages.yml` — fake chat message pools
+- `secrets.yml` — AI provider API keys and endpoints
+- `bad-words.yml` — local profanity list for the badword filter
+- `personalities/` — AI personality prompt files
+- `data/fpp.db` — SQLite database (default backend)
 
 ---
 
 ## ⚡ Quick Setup
 
-### 🎯 **Basic Configuration** (5 minutes)
+### 1) Give yourself permissions
 
-1. **Set Permissions** (choose one):
+#### Full admin access
 
-   **Option A: Give yourself full access**
-   ```
-   /lp user <yourname> permission set fpp.*
-   ```
-   
-   **Option B: Add to admin group**
-   ```yaml
-   # In your permissions plugin
-   permissions:
-     - fpp.admin.*
-   ```
+```text
+/lp user <yourname> permission set fpp.op true
+```
 
-2. **Test Basic Functionality**
-   ```
-   /fpp spawn 3
-   ```
-   ✅ Should spawn 3 bots with random names and skins
+#### Or basic user access only
 
-3. **Verify Tab List Integration**
-   - Press **Tab** - see bots listed with real players
-   - Check **server list** - player count should include bots
+```text
+/lp user <yourname> permission set fpp.use true
+/lp user <yourname> permission set fpp.spawn.limit.5 true
+```
 
-### 🎨 **Recommended Tweaks** (10 minutes)
+Current permission structure:
 
-1. **Configure Bot Names** (`bot-names.yml`):
-   ```yaml
-   # Add your preferred names
-   male-names:
-     - "Steve"
-     - "Alex"
-     - "Notch" 
-   
-   female-names:
-     - "Alice"
-     - "Emma"
-     - "Sarah"
-   ```
+- `fpp.op` — admin wildcard
+- `fpp.use` — user wildcard
+- `fpp.spawn.user` — user spawn permission
+- `fpp.tph` — user teleport-home-bot permission
+- `fpp.xp` — user XP collection permission
+- `fpp.info.user` — user info permission
 
-2. **Set Global Bot Limit** (`config.yml`):
-   ```yaml
-   limits:
-     max-bots: 50          # Max bots on server (0 = unlimited)
-     user-bot-limit: 5     # Max per regular player
-   ```
+### 2) Spawn your first bots
 
-3. **Enable Fake Chat** (`config.yml`):
-   ```yaml
-   fake-chat:
-     enabled: true
-     interval:
-       min: 300
-       max: 900
-   ```
+```text
+/fpp spawn 3
+/fpp list
+```
 
-4. **Configure Physical Bodies** (`config.yml`):
-   ```yaml
-   body:
-     enabled: true         # Physical NMS player entities
-     pushable: true        # Players can push bots
-     damageable: false     # Bots take no damage
-   ```
+Expected result:
+
+- bots appear in the tab list
+- server player count increases
+- bots appear in-world if `body.enabled: true`
+- `/fpp list` shows their names, uptime, and location
+
+### 3) Test direct interaction shortcuts
+
+- **Right-click a bot** → opens inventory, unless it has a stored right-click command
+- **Shift + right-click a bot** → opens the per-bot settings GUI (`BotSettingGui`) when enabled
+
+### 4) Enable a few useful systems
+
+```yaml
+# config.yml
+fake-chat:
+  enabled: true
+
+bot-interaction:
+  right-click-enabled: true
+  shift-right-click-settings: true
+
+body:
+  enabled: true
+  pushable: true
+  damageable: true
+```
+
+Then apply live:
+
+```text
+/fpp reload
+```
 
 ---
 
-## 🏆 Advanced Setup
+## 🤖 AI Setup (Optional)
 
-### 🔐 **Permission System Setup**
+If you want bots to reply to `/msg`, `/tell`, or `/whisper` with AI-generated responses:
 
-**For Regular Users:**
+### 1) Add a provider key to `secrets.yml`
+
+Example:
+
 ```yaml
-permissions:
-  - fpp.user.spawn        # Can spawn personal bots
-  - fpp.user.delete       # Can delete own bots  
-  - fpp.user.list         # Can list all bots
-  - fpp.bot.5             # Max 5 personal bots
+openai-api-key: "your-key-here"
 ```
 
-**For Staff Members:**
+### 2) Keep AI conversations enabled in `config.yml`
+
 ```yaml
-permissions:
-  - fpp.admin.spawn       # Spawn admin bots
-  - fpp.admin.delete      # Delete any bot
-  - fpp.admin.reload      # Reload configuration
-  - fpp.bypass.cooldown   # No spawn cooldown
+ai-conversations:
+  enabled: true
+  default-personality: "default"
 ```
 
-**For Administrators:**
-```yaml
-permissions:
-  - fpp.*                 # Full access
+### 3) Reload
+
+```text
+/fpp reload
+/fpp personality reload
 ```
 
-### 🎨 **LuckPerms Integration**
+### 4) Test it
 
-1. **Create Bot Group**:
-   ```
-   /lp creategroup bots
-   /lp group bots permission set group.bots
-   /lp group bots meta setweight 1
-   /lp group bots meta setprefix "&7[Bot] &f"
-   /lp group bots meta setsuffix " &8(AI)"
-   ```
+```text
+/msg <botname> hello
+```
 
-2. **Configure FPP** (`config.yml`):
-   ```yaml
-   luckperms:
-     default-group: "bots"   # LP group for all bots
-   ```
+The bot should reply using the prompt from `plugins/FakePlayerPlugin/personalities/default.txt` unless that bot has its own assigned personality.
 
-3. **Result**: Bots appear with prefixes in chat and tab list!
+Useful AI commands:
 
-### 📊 **Database Setup (MySQL)**
-
-For better performance with many bots:
-
-1. **Create Database**:
-   ```sql
-   CREATE DATABASE fpp_data;
-   CREATE USER 'fpp'@'localhost' IDENTIFIED BY 'secure_password';
-   GRANT ALL PRIVILEGES ON fpp_data.* TO 'fpp'@'localhost';
-   ```
-
-2. **Configure FPP** (`config.yml`):
-   ```yaml
-   database:
-     enabled: true
-     mysql:
-       enabled: true
-       host: "localhost"
-       port: 3306
-       database: "fpp_data"
-       username: "fpp"
-       password: "secure_password"
-   ```
+```text
+/fpp personality list
+/fpp personality <bot> set default
+/fpp personality <bot> show
+/fpp personality <bot> reset
+```
 
 ---
 
-## 🧪 Testing & Verification
+## 🔐 Permissions Quick Start
 
-### ✅ **Functionality Checklist**
+### User-tier example
 
-**Basic Features:**
-- [ ] Bots spawn with `/fpp spawn`
-- [ ] Bots appear in tab list
-- [ ] Server player count increases
-- [ ] Bots have skins (if online mode)
-- [ ] Bots can be deleted with `/fpp despawn`
+```yaml
+permissions:
+  - fpp.use
+  - fpp.spawn.user
+  - fpp.spawn.limit.5
+  - fpp.tph
+  - fpp.xp
+  - fpp.info.user
+```
 
-**Physical Bodies:**
-- [ ] Mannequin entities appear in world
-- [ ] Bots have proper hitboxes
-- [ ] Head rotation works
-- [ ] Push physics work
+### Moderator example
 
-**Advanced Features:**
-- [ ] Fake chat messages appear
-- [ ] LuckPerms prefixes show
-- [ ] Placeholders work in other plugins
-- [ ] Database records sessions
+```yaml
+permissions:
+  - fpp.spawn
+  - fpp.delete
+  - fpp.list
+  - fpp.freeze
+  - fpp.inventory
+  - fpp.move
+  - fpp.mine
+  - fpp.place
+  - fpp.storage
+  - fpp.useitem
+  - fpp.waypoint
+```
 
-### 🐛 **Common Issues**
+### Administrator example
 
-**"Bots have no skins"**
-- ✅ Enable online mode OR use `custom` skin mode
+```yaml
+permissions:
+  - fpp.op
+```
 
-**"Tab list not working"**
-- ✅ Ensure PacketEvents is installed and loaded
-
-**"Permission denied"**
-- ✅ Check you have `fpp.user.spawn` or higher
-
-**"Bots disappear after restart"**
-- ✅ Enable `persistence.enabled: true` in config.yml (default: true - bots rejoin on restart)
+See [Permissions](Permissions.md) for the full list.
 
 ---
 
-## 🎓 Next Steps
+## ⚙️ Recommended First Tweaks
 
-### 📖 **Recommended Reading Order**
+### Bot limits
 
-1. **[⌨️ Commands](Commands.md)** - Learn all available commands
-2. **[🔐 Permissions](Permissions.md)** - Set up user access
-3. **[⚙️ Configuration](Configuration.md)** - Customize behavior
-4. **[🤖 Bot Behaviour](Bot-Behaviour.md)** - Understanding bot AI
-5. **[🎨 Skin System](Skin-System.md)** - Managing bot appearances
+```yaml
+limits:
+  max-bots: 50
+  user-bot-limit: 5
+```
 
-### 🚀 **Pro Tips**
+### Fake chat
 
-- **Start Small**: Begin with 5-10 bots, increase gradually
-- **Monitor Performance**: Watch for TPS drops with many bots
-- **Use Swap System**: For persistent server population
-- **Backup Configs**: Before major changes
-- **Join Discord**: Get help from the community
+```yaml
+fake-chat:
+  enabled: true
+  require-player-online: true
+  interval:
+    min: 30
+    max: 120
+```
 
-### 🎯 **Common Use Cases**
+### Safe starter body config
 
-**Minigame Servers:**
-- Populate waiting lobbies
-- Fill teams for PvP games
-- Create NPCs for tutorials
+```yaml
+body:
+  enabled: true
+  pushable: true
+  damageable: false
+  pick-up-items: true
+  pick-up-xp: true
+  drop-items-on-despawn: true
+```
 
-**Survival Servers:**
-- Maintain active appearance
-- Replace AFK players
-- Populate spawn areas
+### LuckPerms default group
 
-**Creative Servers:**
-- Showcase building areas
-- Populate cities/towns
-- Create busy atmospheres
+```yaml
+luckperms:
+  default-group: "bots"
+```
+
+### AI conversations default personality file
+
+```yaml
+ai-conversations:
+  enabled: true
+  default-personality: "default"
+```
+
+---
+
+## 🧪 Test Checklist
+
+### Basic checks
+
+- [ ] `/fpp spawn 1` works
+- [ ] Bot appears in tab list
+- [ ] Bot appears in world (if `body.enabled: true`)
+- [ ] `/fpp despawn <name>` works
+- [ ] `/fpp list` shows the bot
+
+### Interaction checks
+
+- [ ] Right-click bot opens inventory or runs stored command
+- [ ] Shift-right-click bot opens per-bot settings GUI
+- [ ] `/fpp inventory <bot>` opens the 54-slot GUI
+- [ ] `/fpp settings` opens the 3-row config GUI
+
+### Optional integration checks
+
+- [ ] LuckPerms prefixes/suffixes appear on bots
+- [ ] PlaceholderAPI placeholders resolve in another plugin
+- [ ] AI bot replies work after configuring `secrets.yml`
+- [ ] WorldGuard blocks player damage in no-PvP regions
+
+---
+
+## 🐛 Common Problems
+
+### "Bots have no skins"
+
+- `skin.mode: auto` works best on online-mode servers
+- generated names without Mojang accounts will show Steve/Alex when `guaranteed-skin: false`
+- use `skin.mode: custom` if you want full control via usernames or PNG files
+
+### "Tab list not working"
+
+- check `tab-list.enabled: true`
+- run `/fpp reload`
+- if using LP/TAB-style plugins, make sure they are not hiding bot entries intentionally
+
+### "Permission denied"
+
+- user spawning needs `fpp.spawn.user` or `fpp.use`
+- admin spawning needs `fpp.spawn` or `fpp.op`
+- personal limits come from `fpp.spawn.limit.<N>`
+
+### "Bots disappear after restart"
+
+- keep `persistence.enabled: true`
+- ensure database/storage is writable
+- in DB mode, FPP restores from `fpp_active_bots`; with DB disabled it falls back to YAML files
+
+### "AI conversations do nothing"
+
+- make sure `ai-conversations.enabled: true`
+- add a valid provider key in `secrets.yml`
+- run `/fpp reload`
+- run `/fpp personality reload` if you edited personality files
+
+---
+
+## 🎓 Good Next Pages
+
+1. [Commands](Commands.md) — all command modes and examples
+2. [Permissions](Permissions.md) — every node and example group setups
+3. [Configuration](Configuration.md) — detailed config reference
+4. [Bot Behaviour](Bot-Behaviour.md) — physical bodies, AI, interaction systems
+5. [Fake Chat](Fake-Chat.md) — bot-to-bot chat, event triggers, AI-linked reactions
+6. [Database](Database.md) — SQLite/MySQL, task persistence, schema
 
 ---
 
 ## 🆘 Need Help?
 
-### 💬 **Get Support**
-- **Discord:** [Join Community](https://discord.gg/QSN7f67nkJ) - Fastest response
-- **Discord:** [Report Issues](https://discord.gg/QSN7f67nkJ) - Bug reports
-- **Wiki:** [Browse Docs](.) - Comprehensive guides
-
-### 📚 **Additional Resources**
-- **FAQ:** Common questions and solutions
-- **Video Tutorials:** Coming soon!
-- **Community Configs:** Shared setups
+- **Discord:** [Join Community](https://discord.gg/QSN7f67nkJ)
+- **Wiki Home:** [Home](Home.md)
+- **Changelog:** [Changelog](Changelog.md)
 
 ---
 
-**🎉 Congratulations! You're ready to manage your bot army!**
-
-Your fake players are now ready to make your server feel more alive and engaging. Happy botting! 🤖
+**🎉 You're ready to start building your bot setup.**

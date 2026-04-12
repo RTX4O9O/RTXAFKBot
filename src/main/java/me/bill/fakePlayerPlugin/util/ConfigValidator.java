@@ -62,13 +62,17 @@ public final class ConfigValidator {
 
         // ── Chunk loading ─────────────────────────────────────────────────────
         if (Config.chunkLoadingEnabled()) {
-            int radius    = Config.chunkLoadingRadius();
-            int viewDist  = Bukkit.getSimulationDistance();
-            if (radius > viewDist) {
-                FppLogger.warn("[Config] chunk-loading.radius (" + radius + ") exceeds "
-                        + "server simulation-distance (" + viewDist + "). "
-                        + "Tickets beyond simulation distance have no effect.");
-                issues++;
+            int radius   = Config.chunkLoadingRadius();
+            if (radius == 0) {
+                FppLogger.info("[Config] chunk-loading.radius is 0 — bots will not load any chunks.");
+            } else {
+                int viewDist = Bukkit.getSimulationDistance();
+                if (radius > viewDist) {
+                    FppLogger.warn("[Config] chunk-loading.radius (" + radius + ") exceeds "
+                            + "server simulation-distance (" + viewDist + "). "
+                            + "Tickets beyond simulation distance have no effect.");
+                    issues++;
+                }
             }
         }
 
@@ -184,6 +188,34 @@ public final class ConfigValidator {
                         + "solid block - falling back to DIRT.");
                 issues++;
             }
+        }
+        if (Config.pathfindingArrivalDistance() <= 0) {
+            FppLogger.warn("[Config] pathfinding.arrival-distance must be > 0.");
+            issues++;
+        }
+        if (Config.pathfindingPatrolArrivalDistance() <= 0) {
+            FppLogger.warn("[Config] pathfinding.patrol-arrival-distance must be > 0.");
+            issues++;
+        }
+        if (Config.pathfindingWaypointArrivalDistance() <= 0) {
+            FppLogger.warn("[Config] pathfinding.waypoint-arrival-distance must be > 0.");
+            issues++;
+        }
+        if (Config.pathfindingSprintDistance() < 0) {
+            FppLogger.warn("[Config] pathfinding.sprint-distance must be >= 0.");
+            issues++;
+        }
+        if (Config.pathfindingRecalcInterval() < 1) {
+            FppLogger.warn("[Config] pathfinding.recalc-interval must be >= 1.");
+            issues++;
+        }
+        if (Config.pathfindingStuckTicks() < 1) {
+            FppLogger.warn("[Config] pathfinding.stuck-ticks must be >= 1.");
+            issues++;
+        }
+        if (Config.pathfindingMaxNodesExtended() < Config.pathfindingMaxNodes()) {
+            FppLogger.warn("[Config] pathfinding.max-nodes-extended must be >= pathfinding.max-nodes.");
+            issues++;
         }
 
         if (issues == 0) {

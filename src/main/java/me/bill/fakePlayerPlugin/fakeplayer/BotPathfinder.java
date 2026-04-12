@@ -1,5 +1,6 @@
 package me.bill.fakePlayerPlugin.fakeplayer;
 
+import me.bill.fakePlayerPlugin.config.Config;
 import org.bukkit.World;
 
 import java.util.*;
@@ -88,19 +89,6 @@ public final class BotPathfinder {
 
     // ── Public API ────────────────────────────────────────────────────────────
 
-    /**
-     * Backward-compatible convenience wrapper.
-     * Calls {@link #findPathMoves} with {@link PathOptions#DEFAULT} and strips action metadata.
-     */
-    public static List<Pos> findPath(World world,
-                                     int sx, int sy, int sz,
-                                     int tx, int ty, int tz) {
-        List<Move> moves = findPathMoves(world, sx, sy, sz, tx, ty, tz, PathOptions.DEFAULT);
-        if (moves == null) return null;
-        List<Pos> out = new ArrayList<>(moves.size());
-        for (Move m : moves) out.add(m.toPos());
-        return out;
-    }
 
     /**
      * Full A* search with optional advanced movement types.
@@ -113,7 +101,8 @@ public final class BotPathfinder {
                                            int tx, int ty, int tz,
                                            PathOptions opts) {
         // Quick range gate
-        if (Math.abs(sx - tx) + Math.abs(sy - ty) + Math.abs(sz - tz) > MAX_RANGE * 3) {
+        int configuredMaxRange = Config.pathfindingMaxRange();
+        if (Math.abs(sx - tx) + Math.abs(sy - ty) + Math.abs(sz - tz) > configuredMaxRange * 3) {
             return null;
         }
 
@@ -122,7 +111,9 @@ public final class BotPathfinder {
         if (start == null || goal == null) return null;
         if (start.equals(goal)) return List.of(new Move(start.x(), start.y(), start.z(), MoveType.WALK));
 
-        int nodeLimit = opts.anyEnabled() ? MAX_NODES_EXTENDED : MAX_NODES;
+        int nodeLimit = opts.anyEnabled()
+                ? Config.pathfindingMaxNodesExtended()
+                : Config.pathfindingMaxNodes();
 
         PriorityQueue<Node> open = new PriorityQueue<>(Comparator.comparingInt(Node::f));
         Map<Pos, Integer>   best = new HashMap<>();

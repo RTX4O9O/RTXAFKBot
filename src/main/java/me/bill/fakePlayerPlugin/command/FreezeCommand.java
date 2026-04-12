@@ -72,6 +72,7 @@ public class FreezeCommand implements FppCommand {
         }
 
         applyFreeze(fp, nowFrozen);
+        manager.persistBotSettings(fp);
         if (nowFrozen) {
             sender.sendMessage(Lang.get("freeze-frozen",   "name", fp.getDisplayName()));
         } else {
@@ -100,6 +101,7 @@ public class FreezeCommand implements FppCommand {
 
         for (FakePlayer fp : bots) applyFreeze(fp, nowFrozen);
 
+        bots.forEach(fp -> manager.persistBotSettings(fp));
         if (nowFrozen) {
             sender.sendMessage(Lang.get("freeze-all-frozen",   "count", String.valueOf(bots.size())));
         } else {

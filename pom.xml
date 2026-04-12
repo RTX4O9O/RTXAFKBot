@@ -6,7 +6,7 @@
 
     <groupId>me.bill</groupId>
     <artifactId>fpp</artifactId>
-    <version>1.6.0</version>
+    <version>1.6.2</version>
     <packaging>jar</packaging>
 
     <name>fpp</name>
@@ -16,8 +16,10 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <!-- Server plugins folder — override with -Ddeploy.dir=... or edit here -->
         <deploy.dir>${user.home}/Desktop/dmc/plugins</deploy.dir>
-        <!-- Set to true to skip ProGuard obfuscation and deploy non-obfuscated jar -->
-        <skip.proguard>false</skip.proguard>
+        <!-- Default to skipping ProGuard so package still succeeds in workspaces that
+             only contain the ProGuard config files. A profile below automatically
+             re-enables obfuscation when the local ProGuard jar bundle is present. -->
+        <skip.proguard>true</skip.proguard>
         <!-- Local build output folder inside the project root -->
         <build.output.dir>${basedir}/build</build.output.dir>
         <!-- Java executable used to run ProGuard.
@@ -156,6 +158,15 @@
                         </goals>
                         <configuration>
                             <target>
+                                <!-- If ProGuard was skipped/unavailable, seed the expected
+                                     obfuscated output path with the shaded jar so the rest of
+                                     the deploy pipeline still copies a complete plugin jar. -->
+                                <copy
+                                    file="${project.build.directory}/${project.build.finalName}.jar"
+                                    tofile="${project.build.directory}/${project.build.finalName}-obfuscated.jar"
+                                    overwrite="false"
+                                    failonerror="false" />
+
                                 <!-- Merge MySQL + SQLite classes back into the obfuscated JAR.
                                      They were excluded from -injars so ProGuard's preverification
                                      never tries to analyse their internal method bodies (which
@@ -223,6 +234,20 @@
             </resource>
         </resources>
     </build>
+
+    <profiles>
+        <profile>
+            <id>local-proguard-bundle</id>
+            <activation>
+                <file>
+                    <exists>${basedir}/libs/proguard/proguard.jar</exists>
+                </file>
+            </activation>
+            <properties>
+                <skip.proguard>false</skip.proguard>
+            </properties>
+        </profile>
+    </profiles>
 
     <repositories>
         <repository>

@@ -92,7 +92,12 @@ public class StatsCommand implements FppCommand {
         // ── Systems ───────────────────────────────────────────────────────────
         sender.sendMessage(section("ꜱʏꜱᴛᴇᴍꜱ"));
         statusBoolRow(sender, "ꜰᴀᴋᴇ ᴄʜᴀᴛ",     Config.fakeChatEnabled(),     "enabled",     "disabled");
-        statusBoolRow(sender, "ᴄʜᴜɴᴋ ʟᴏᴀᴅɪɴɢ", Config.chunkLoadingEnabled(),  "enabled",     "disabled");
+        int chunkRadius = Config.chunkLoadingRadius();
+        boolean chunkActive = Config.chunkLoadingEnabled() && chunkRadius != 0;
+        String chunkLabel = !Config.chunkLoadingEnabled() ? "disabled"
+                          : (chunkRadius == 0 ? "disabled (radius 0)"
+                          : "enabled (r=" + chunkRadius + ")");
+        statusBoolRow(sender, "ᴄʜᴜɴᴋ ʟᴏᴀᴅɪɴɢ", chunkActive, chunkLabel, chunkLabel);
         statusBoolRow(sender, "ᴘᴇʀꜱɪꜱᴛᴇɴᴄᴇ",   Config.persistOnRestart(),     "enabled",     "disabled");
         statusBoolRow(sender, "ʙᴏᴛ ʙᴏᴅɪᴇꜱ",    Config.spawnBody(),            "enabled",     "disabled");
         sender.sendMessage(kvRow("ꜱᴋɪɴ ᴍᴏᴅᴇ", Config.skinMode()));

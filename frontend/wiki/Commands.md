@@ -1,39 +1,67 @@
 # ⌨️ Commands
 
-> **Complete FPP Command Reference - v1.6.0**  
-> All commands use `/fpp` · aliases `/fakeplayer` and `/fp`  
-> Tab-completion available for all commands and parameters
+> **Complete FPP command reference - v1.6.2**  
+> All commands use `/fpp` · aliases `/fakeplayer` and `/fp`
 
 ---
 
 ## 📋 Command Overview
 
 | Command | Permission | Description |
-|---------|-----------|-------------|
-| [`/fpp help`](#-fpp-help) | *(everyone)* | Interactive GUI help - paginated, permission-filtered |
-| [`/fpp spawn`](#-fpp-spawn) | `fpp.user.spawn` / `fpp.spawn` | Spawn fake player(s) |
-| [`/fpp despawn`](#-fpp-despawn) | `fpp.delete` | Remove bot(s) |
-| [`/fpp list`](#-fpp-list) | `fpp.list` | List all active bots |
-| [`/fpp info`](#-fpp-info) | `fpp.info` / `fpp.info.user` | Bot details and session history |
-| [`/fpp inventory`](#-fpp-inventory) | `fpp.inventory` | Open bot's 54-slot inventory GUI |
-| [`/fpp move`](#-fpp-move) | `fpp.move` | Navigate bot to player with A* pathfinding |
-| [`/fpp xp`](#-fpp-xp) | `fpp.user.xp` | Transfer bot XP to yourself |
-| [`/fpp cmd`](#-fpp-cmd) | `fpp.cmd` | Execute or store commands on a bot |
-| [`/fpp mine`](#-fpp-mine) | `fpp.mine` | Continuous or one-shot block mining |
-| [`/fpp chat`](#-fpp-chat) | `fpp.chat` | Control fake chat globally or per-bot |
-| [`/fpp freeze`](#-fpp-freeze) | `fpp.freeze` | Freeze/unfreeze bot movement |
-| [`/fpp swap`](#-fpp-swap) | `fpp.swap` | Toggle / manage bot swap/rotation |
-| [`/fpp peaks`](#-fpp-peaks) | `fpp.peaks` | Time-based bot pool scheduler |
-| [`/fpp tp`](#-fpp-tp) | `fpp.tp` | Teleport to bot location |
-| [`/fpp tph`](#-fpp-tph) | `fpp.user.tph` / `fpp.tph` | Teleport bot(s) to you |
-| [`/fpp rank`](#-fpp-rank) | `fpp.rank` | Set bot LuckPerms group |
-| [`/fpp settings`](#-fpp-settings) | `fpp.settings` | Open in-game settings GUI |
-| [`/fpp reload`](#-fpp-reload) | `fpp.reload` | Hot-reload configurations |
-| [`/fpp migrate`](#-fpp-migrate) | `fpp.migrate` | Data migration and backups |
-| [`/fpp stats`](#-fpp-stats) | `fpp.stats` | Server statistics |
-| [`/fpp lpinfo`](#-fpp-lpinfo) | `fpp.lpinfo` | LuckPerms integration info |
-| [`/fpp alert`](#-fpp-alert) | `fpp.alert` | Broadcast admin message (proxy) |
-| [`/fpp sync`](#-fpp-sync) | `fpp.sync` | Config push/pull across proxy |
+|---------|------------|-------------|
+| `/fpp help [page]` | *(everyone)* | Interactive help GUI (console gets text fallback) |
+| `/fpp spawn [amount] [--name <name>]` | `fpp.spawn.user` / `fpp.spawn` | Spawn fake player(s) |
+| `/fpp despawn <name\|all\|random [n]>` | `fpp.delete` | Remove bots |
+| `/fpp list` | `fpp.list` | List local and remote bots |
+| `/fpp info` | `fpp.info` / `fpp.info.user` | Query bot sessions and ownership |
+| `/fpp inventory <bot>` | `fpp.inventory` | Open bot inventory GUI |
+| `/fpp move <bot> <player>` | `fpp.move` | Follow / navigate to player |
+| `/fpp move <bot\|all> --wp <route> [--random]` | `fpp.move` | Follow a named waypoint route |
+| `/fpp move <bot\|all> --stop` | `fpp.move` | Stop movement / patrol |
+| `/fpp mine <bot>` | `fpp.mine` | Continuous mining |
+| `/fpp mine <bot> once\|stop` | `fpp.mine` | One-shot or stop mining |
+| `/fpp mine <bot> --pos1\|--pos2\|--start\|--status\|--stop` | `fpp.mine` | Area mining mode |
+| `/fpp place <bot> [once\|stop]` | `fpp.place` | Continuous or one-shot block placing |
+| `/fpp use <bot>` | `fpp.useitem` | Use / activate the block the bot is looking at |
+| `/fpp storage <bot> ...` | `fpp.storage` | Manage supply containers for mine/place |
+| `/fpp waypoint <route> ...` | `fpp.waypoint` | Manage named patrol routes |
+| `/fpp xp <bot>` | `fpp.xp` | Transfer bot XP to yourself |
+| `/fpp cmd <bot> ...` | `fpp.cmd` | Execute or store right-click commands |
+| `/fpp rename <old> <new>` | `fpp.rename` / `fpp.rename.own` | Rename an active bot |
+| `/fpp personality ...` | `fpp.personality` | Assign AI personalities to bots |
+| `/fpp badword ...` | `fpp.badword` | Manage runtime badword list |
+| `/fpp chat ...` | `fpp.chat` | Control fake chat globally or per-bot |
+| `/fpp freeze ...` | `fpp.freeze` | Freeze or unfreeze bots |
+| `/fpp swap ...` | `fpp.swap` | Session rotation controls |
+| `/fpp peaks ...` | `fpp.peaks` | Peak-hours scheduler |
+| `/fpp tp <name>` | `fpp.tp` | Teleport to a bot |
+| `/fpp tph [name\|all\|@mine]` | `fpp.tph` | Teleport owned / target bots to you |
+| `/fpp rank ...` | `fpp.rank` | Assign LuckPerms groups |
+| `/fpp lpinfo [bot]` | `fpp.lpinfo` | LuckPerms diagnostics |
+| `/fpp settings` | `fpp.settings` | Open the main settings GUI |
+| `/fpp stats` | `fpp.stats` | Live stats panel |
+| `/fpp migrate ...` | `fpp.migrate` | Backup, export, and migration tools |
+| `/fpp sync ...` | `fpp.sync` | Config sync across proxy network |
+| `/fpp alert <message>` | `fpp.alert` | Broadcast network alert |
+| `/fpp reload` | `fpp.reload` | Reload config and subsystems |
+
+---
+
+## 🖱️ Bot Interaction Shortcuts
+
+These happen in-world without typing a command:
+
+- **Right-click bot** → opens inventory GUI
+- **Right-click bot with stored RC command** → runs stored command instead of opening inventory
+- **Shift + right-click bot** → opens `BotSettingGui` when `bot-interaction.shift-right-click-settings: true`
+
+Related config:
+
+```yaml
+bot-interaction:
+  right-click-enabled: true
+  shift-right-click-settings: true
+```
 
 ---
 
@@ -41,397 +69,525 @@
 
 ### 🆘 `/fpp help`
 
-```bash
+```text
 /fpp help [page]
 ```
 
-**Description:** Opens an interactive **54-slot double-chest GUI** - paginated, permission-filtered.  
-Console senders receive text output instead.
+Opens the paginated **54-slot help GUI** for players. Console senders get a text fallback.
 
-**Features:**
-- Dynamically filters to only commands you can use
-- Each command has a semantic Material icon, description, usage modes, and permission node
-- Up to 45 commands per page; ◄/▶ navigation arrows; ✕ close button
-
-**Examples:**
-```bash
-/fpp help          # Open GUI (or page 1 for console)
-/fpp help 2        # Jump to page 2 (console only)
-```
+- permission-filtered
+- click-navigable
+- one item per command with usage + permission info
 
 ---
 
 ### 🎭 `/fpp spawn`
 
-```bash
+```text
 /fpp spawn [amount] [--name <name>] [--skin <skin>] [--group <group>]
 /fpp spawn [amount] [world] [x y z] [--name <name>]
 ```
 
-**Description:** Spawn one or more fake players at your location or specific coordinates.
+Spawn one or more bots.
 
-**Parameters:**
-- `amount` - Number of bots to spawn (default: 1)
-- `--name <name>` - Specific bot name
-- `--skin <skin>` - Skin to apply
-- `--group <group>` - LuckPerms group to assign
-- `world x y z` - Spawn at explicit coordinates (admin only)
+**Permissions**
+- `fpp.spawn.user` — spawn personal bots
+- `fpp.spawn` — full admin spawning
 
-**Permissions:**
-- `fpp.user.spawn` - Spawn personal bots (limited by `fpp.spawn.limit.<num>`)
-- `fpp.spawn` - Spawn unlimited admin bots
+**Related limits**
+- `fpp.spawn.limit.<N>` — personal cap
+- `fpp.bypass.maxbots` — bypass global cap
+- `fpp.bypass.cooldown` — bypass spawn cooldown
 
-**Examples:**
-```bash
-/fpp spawn                               # 1 random-name bot at your feet
-/fpp spawn 5                             # 5 random-name bots
-/fpp spawn --name Steve                  # Named "Steve"
-/fpp spawn --name Admin --group staff    # With LP group
-/fpp spawn world 100 64 200              # Spawn at coordinates
+**Examples**
+
+```text
+/fpp spawn
+/fpp spawn 5
+/fpp spawn --name Steve
+/fpp spawn 3 world 100 64 200
 ```
-
-**Bot Limits:**  
-Grant `fpp.spawn.limit.<N>` (1-100) to set user-tier caps. FPP picks the highest node the player has.  
-Bypass global cap: `fpp.bypass.maxbots` · Bypass cooldown: `fpp.bypass.cooldown`
 
 ---
 
 ### 🗑️ `/fpp despawn`
 
-```bash
+```text
 /fpp despawn <name|all|random [n]>
 ```
 
-**Aliases:** `/fpp delete`, `/fpp remove`
+Aliases: `delete`, `remove`
 
-**Description:** Remove fake players from the server.
+Remove one bot, all bots, or a random subset.
 
-**Examples:**
-```bash
-/fpp despawn Steve        # Remove Steve
-/fpp despawn all          # Remove all bots
-/fpp despawn random 3     # Remove 3 random bots
+```text
+/fpp despawn Steve
+/fpp despawn all
+/fpp despawn random 3
 ```
 
-**Permission:** `fpp.delete`
+Permission: `fpp.delete`
 
 ---
 
 ### 📋 `/fpp list`
 
-```bash
+```text
 /fpp list
 ```
 
-**Description:** List all active bots with uptime, world, and status.  
-In **NETWORK mode** remote bots from other proxy servers appear in a "Remote Bots" section with their server-id tag.
+List active bots with uptime, world, and status.
 
-**Permission:** `fpp.list`
+In `NETWORK` mode it also shows **remote bots** from other proxy servers in a separate section.
+
+Permission: `fpp.list`
 
 ---
 
 ### ℹ️ `/fpp info`
 
-```bash
+```text
+/fpp info
 /fpp info bot <name>
 /fpp info spawner <name>
 ```
 
-**Description:** Query the session database. `bot` returns sessions for a bot name; `spawner` returns sessions for a player who spawned bots.
+Query current bot ownership and historical session data.
 
-**Permissions:** `fpp.info` (any bot) · `fpp.info.user` (own bots only, user-tier)
+**Permissions**
+- `fpp.info` — full access
+- `fpp.info.user` — own-bot view only
 
 ---
 
 ### 📦 `/fpp inventory`
 
-```bash
+```text
 /fpp inventory <bot>
 /fpp inv <bot>
 ```
 
-**Description:** Opens the bot's full **54-slot double-chest inventory GUI**.
+Open the bot's **54-slot double-chest inventory GUI**.
 
-**Layout:**
-| Row | Contents |
-|-----|----------|
-| 1-3 | Main inventory storage (slots 0-26) |
-| 4 | Hotbar (slots 27-35) |
-| 5 | Label bar |
-| 6 | Helmet · Chestplate/Elytra · Leggings · Boots · Offhand |
+Layout:
+- rows 1-3 → main storage
+- row 4 → hotbar
+- row 5 → label bar
+- row 6 → helmet / chest / leggings / boots / offhand
 
-Equipment slots enforce type restrictions. Items can be moved freely.
+Equipment slots enforce item-type restrictions.
 
-**Shortcut:** Right-clicking a bot entity in the world opens this GUI directly.  
-> If the bot has a stored right-click command (set via `/fpp cmd --add`), right-clicking runs that command instead of opening this GUI.
-
-**Permission:** `fpp.inventory`
+Permission: `fpp.inventory`
 
 ---
 
 ### 🧭 `/fpp move`
 
-```bash
+```text
 /fpp move <bot> <player>
+/fpp move <bot|all> --wp <route> [--random]
+/fpp move <bot|all> --stop
 ```
 
-**Description:** Navigate a bot to an online player using **server-side A* pathfinding**.
+Shared A* navigation command.
 
-**Move types supported:**
-| Type | Description |
-|------|-------------|
-| WALK | Standard movement on flat terrain |
-| ASCEND | Step up one block |
-| DESCEND | Step down safely |
-| PARKOUR | Jump across a gap (requires `pathfinding.parkour: true`) |
-| BREAK | Break an obstructing block (requires `pathfinding.break-blocks: true`) |
-| PLACE | Bridge a gap (requires `pathfinding.place-blocks: true`) |
+#### Follow player mode
+Makes the bot navigate to an online player.
 
-**Behaviour:**
-- Path recalculates when target moves >3.5 blocks or every 60 ticks
-- Stuck detection: 8 ticks without movement triggers jump + recalculation
-- Max range: 64 blocks · Max search nodes: 2 000 (4 000 with advanced options)
-- Navigation stops when bot or target goes offline
+#### Waypoint route mode
+Makes the bot patrol a named route created with `/fpp waypoint`.
 
-**Config** (`config.yml`):
-```yaml
-pathfinding:
-  parkour: false          # Enable gap jumps
-  break-blocks: false     # Break obstructing blocks
-  place-blocks: false     # Place blocks to bridge gaps
-  place-material: DIRT    # Material used for bridging
-```
+#### Stop mode
+Stops the bot's active navigation or patrol without deleting the route.
 
-**Permission:** `fpp.move`
+**Move types used by pathfinding**
+- `WALK`
+- `ASCEND`
+- `DESCEND`
+- `PARKOUR`
+- `BREAK`
+- `PLACE`
 
----
+**Important behavior**
+- target-follow recalculates when target moves beyond `pathfinding.follow-recalc-distance`
+- stuck detection forces jump + recalc
+- patrols use `pathfinding.patrol-arrival-distance`
 
-### ⭐ `/fpp xp`
-
-```bash
-/fpp xp <bot>
-```
-
-**Description:** Transfer all of a bot's XP (levels + progress bar) to yourself. The bot's XP is cleared immediately.
-
-**Details:**
-- Imposes a 30-second cooldown on the bot's XP orb pickup after collection
-- `body.pick-up-xp: false` in config disables all bot XP pickup globally
-
-**Permission:** `fpp.user.xp` (user-tier, included in `fpp.use`)
-
----
-
-### 💻 `/fpp cmd`
-
-```bash
-/fpp cmd <bot> <command...>           # Execute a command as the bot
-/fpp cmd <bot> --add <command...>     # Store a right-click command
-/fpp cmd <bot> --clear                # Remove the stored command
-/fpp cmd <bot> --show                 # Display the stored command
-```
-
-**Description:** Dispatch a command as a bot, or manage its stored right-click command.
-
-**Details:**
-- Uses `Bukkit.dispatchCommand()` - bypasses `PlayerCommandPreprocessEvent`, so `BotCommandBlocker` does not interfere
-- Right-clicking a bot with a stored command runs it instead of opening the inventory GUI
-
-**Permission:** `fpp.cmd`
-
-**Examples:**
-```bash
-/fpp cmd Steve give @p diamond 1          # Steve gives you a diamond immediately
-/fpp cmd Steve --add give @p emerald 1    # Right-clicking Steve now gives emeralds
-/fpp cmd Steve --show                     # Display stored command
-/fpp cmd Steve --clear                    # Remove stored command
-```
+Permission: `fpp.move`
 
 ---
 
 ### ⛏️ `/fpp mine`
 
-```bash
-/fpp mine <bot>           # Start continuous mining
-/fpp mine <bot> once      # Mine one block then stop
-/fpp mine <bot> stop      # Stop mining this bot
-/fpp mine stop            # Stop all mining bots
+```text
+/fpp mine <bot>
+/fpp mine <bot> once
+/fpp mine <bot> stop
+/fpp mine stop
+
+/fpp mine <bot> --pos1
+/fpp mine <bot> --pos2
+/fpp mine <bot> --start
+/fpp mine <bot> --status
+/fpp mine <bot> --stop
 ```
 
-**Description:** The bot mines the block it is looking at.
+Mine the block the bot is looking at, or run a persistent **area mining** job.
 
-| Mode | Behaviour |
-|------|-----------|
-| Creative | Instant break with 5-tick cooldown between blocks |
-| Survival | Progressive mining with `destroyBlockProgress` packets; speed matches standard tool rates |
+#### Classic mode
+- continuous mining
+- `once` mines one block then stops
+- `stop` cancels mining
 
-Mining tasks auto-cancel when the bot goes offline. Runs as a 1-tick repeating task per active miner.
+#### Area mode
+- `--pos1` / `--pos2` define cuboid corners
+- `--start` begins mining the selected region continuously
+- `--status` shows job info
+- `--stop` cancels the area job
 
-**Permission:** `fpp.mine`
+**Notes**
+- survival mode uses progressive mining speed
+- creative mode breaks instantly with cooldown
+- tasks survive restart via DB/YAML task persistence
+- area selections persist in `data/mine-selections.yml`
+- can offload to nearby registered storage containers when inventory fills
+
+Permission: `fpp.mine`
+
+---
+
+### 🏗️ `/fpp place`
+
+```text
+/fpp place <bot>
+/fpp place <bot> once
+/fpp place <bot> stop
+/fpp place stop
+```
+
+Bot places blocks at its look target.
+
+- continuous mode keeps placing
+- `once` places one block and stops
+- `stop` cancels place mode
+- current classic place task survives restart via task persistence
+
+Permission: `fpp.place`
+
+---
+
+### 🔘 `/fpp use`
+
+```text
+/fpp use <bot>
+```
+
+Makes the bot right-click / use the block it is looking at.
+
+Useful for:
+- chests / barrels
+- buttons / levers
+- crafting tables
+- other interactable blocks
+
+Permission: `fpp.useitem`
+
+---
+
+### 📦 `/fpp storage`
+
+```text
+/fpp storage <bot> <name>
+/fpp storage <bot> --list
+/fpp storage <bot> --remove <name>
+/fpp storage <bot> --clear
+```
+
+Manage named supply containers for a bot.
+
+Used by:
+- `/fpp mine` for offloading mined items
+- `/fpp place` for fetching building supplies
+
+Permission: `fpp.storage`
+
+---
+
+### 🗺️ `/fpp waypoint`
+
+```text
+/fpp waypoint <route> add
+/fpp waypoint <route> remove
+/fpp waypoint <route> list
+/fpp waypoint <route> clear
+/fpp wp <route> ...
+```
+
+Manage named routes used by `/fpp move --wp`.
+
+Permission: `fpp.waypoint`
+
+---
+
+### ⭐ `/fpp xp`
+
+```text
+/fpp xp <bot>
+```
+
+Transfer the bot's total XP to yourself.
+
+Notes:
+- bot XP is cleared after transfer
+- adds a short XP pickup cooldown to that bot
+- blocked entirely if global/per-bot XP pickup is disabled
+
+Permission: `fpp.xp`
+
+---
+
+### 💻 `/fpp cmd`
+
+```text
+/fpp cmd <bot> <command...>
+/fpp cmd <bot> --add <command...>
+/fpp cmd <bot> --clear
+/fpp cmd <bot> --show
+```
+
+Dispatch a command or store a **right-click command** on the bot.
+
+Stored RC command behavior:
+- normal right-click runs the stored command
+- shift-right-click can still open `BotSettingGui` if enabled
+
+Permission: `fpp.cmd`
+
+---
+
+### 🔤 `/fpp rename`
+
+```text
+/fpp rename <old> <new>
+```
+
+Rename an active bot.
+
+The rename flow fully preserves:
+- inventory
+- armor / offhand
+- XP
+- LuckPerms group
+- chat settings
+- AI personality
+- frozen state
+- stored right-click command
+
+**Permissions**
+- `fpp.rename` — rename any bot
+- `fpp.rename.own` — rename only bots the sender spawned
+
+---
+
+### 🎭 `/fpp personality`
+
+```text
+/fpp personality list
+/fpp personality reload
+/fpp personality <bot> set <name>
+/fpp personality <bot> reset
+/fpp personality <bot> show
+/fpp persona ...
+```
+
+Manage AI personality files.
+
+- personalities live in `plugins/FakePlayerPlugin/personalities/`
+- `set` assigns a file by name (without `.txt`)
+- `reset` returns the bot to the configured default personality
+- `reload` reloads the folder contents
+
+Permission: `fpp.personality`
+
+---
+
+### 🚫 `/fpp badword`
+
+```text
+/fpp badword add <word>
+/fpp badword remove <word>
+/fpp badword list
+/fpp badword reload
+```
+
+Manage the runtime badword filter list.
+
+Used together with the `badword-filter` config section and `bad-words.yml`.
+
+Permission: `fpp.badword`
 
 ---
 
 ### 💬 `/fpp chat`
 
-```bash
+```text
 /fpp chat [on|off|status]
 /fpp chat <bot> [on|off|say <msg>|tier <tier>|mute [seconds]|info]
 /fpp chat all <on|off|tier <tier>|mute [seconds]>
 ```
 
-**Description:** Control the fake chat system globally or per-bot. No arguments **toggles** the global state.
+Control fake chat globally or per bot.
 
-**Chat tiers:** `quiet` · `passive` · `normal` · `active` · `chatty` · `reset` (random)
+Chat tiers:
+- `quiet`
+- `passive`
+- `normal`
+- `active`
+- `chatty`
+- `reset`
 
-**Permission:** `fpp.chat`
-
-**Examples:**
-```bash
-/fpp chat                            # Toggle on/off
-/fpp chat on
-/fpp chat Steve tier chatty          # Steve chats very frequently
-/fpp chat Steve mute 60              # Silence Steve for 60 seconds
-/fpp chat Steve say hello everyone   # Force Steve to say something now
-/fpp chat all off                    # Silence all bots
-```
+Permission: `fpp.chat`
 
 ---
 
 ### ❄️ `/fpp freeze`
 
-```bash
+```text
 /fpp freeze <name|all> [on|off|toggle]
 ```
 
-**Description:** Freeze or unfreeze bot movement and AI. Frozen bots are shown with ❄ in `/fpp list` and `/fpp stats`.
+Freeze or unfreeze bot movement and AI.
 
-**Permission:** `fpp.freeze`
+Permission: `fpp.freeze`
 
 ---
 
 ### 🔄 `/fpp swap`
 
-```bash
+```text
 /fpp swap [on|off|status|now <bot>|list|info <bot>]
 ```
 
-**Description:** Manage the bot session-rotation system. No arguments **toggles** the current state.
+Manage bot session rotation.
 
-| Subcommand | Description |
-|-----------|-------------|
-| `on` / `off` | Enable or disable swap |
-| `status` | Active sessions, offline-waiting count, min-online floor, next swap time |
-| `now <bot>` | Immediately swap out a specific bot |
-| `list` | List bots with scheduled sessions + time remaining |
-| `info <bot>` | Personality, cycle count, time until next leave |
+Important newer options reflected in config:
+- `swap.min-online`
+- `swap.retry-rejoin`
+- `swap.retry-delay`
 
-**Permission:** `fpp.swap`
+Permission: `fpp.swap`
 
 ---
 
 ### ⏰ `/fpp peaks`
 
-```bash
+```text
 /fpp peaks [on|off|status|next|force|list|wake [name]|sleep <name>]
 ```
 
-**Description:** Time-window bot pool scheduler. Scales the bot pool up/down based on configured time windows. Requires `swap.enabled: true`.
+Manage the peak-hours scheduler.
 
-| Subcommand | Description |
-|-----------|-------------|
-| `status` | Current window, active fraction, sleeping count |
-| `next` | Time until next transition + its fraction |
-| `force` | Immediately apply current window's fraction |
-| `list` | Show all sleeping bots with saved locations |
-| `wake [name]` | Wake a specific sleeping bot (or all) |
-| `sleep <name>` | Manually put a bot to sleep |
+Requires `swap.enabled: true`.
 
-**Permission:** `fpp.peaks`
+Permission: `fpp.peaks`
 
 ---
 
 ### 📍 `/fpp tp`
 
-```bash
+```text
 /fpp tp <name>
 ```
 
-**Description:** Teleport yourself to a bot's current location.
+Teleport yourself to a bot.
 
-**Permission:** `fpp.tp`
+Permission: `fpp.tp`
 
 ---
 
 ### 🏠 `/fpp tph`
 
-```bash
+```text
 /fpp tph [name|all|@mine]
 ```
 
-**Description:** Teleport bot(s) to your current location.
+Teleport owned or target bots to your location.
 
-**Permissions:** `fpp.user.tph` (own bots) · `fpp.tph` (any bot)
+Permission: `fpp.tph`
 
 ---
 
 ### 👑 `/fpp rank`
 
-```bash
+```text
 /fpp rank <bot> <group|clear>
 /fpp rank random <group> [num|all]
 /fpp rank list
 ```
 
-**Description:** Assign LuckPerms groups to bots at runtime - no respawn needed.
+Assign LuckPerms groups to bots without respawning them.
 
-**Permission:** `fpp.rank`
+Permission: `fpp.rank`
 
-**Examples:**
-```bash
-/fpp rank Steve admin         # Assign admin group to Steve
-/fpp rank Steve clear         # Reset to default group
-/fpp rank random vip 3        # Give 3 random bots the vip group
-/fpp rank list                # Show all bots' current LP groups
+---
+
+### 🔗 `/fpp lpinfo`
+
+```text
+/fpp lpinfo [bot]
 ```
+
+LuckPerms diagnostics.
+
+Shows integration status plus current bot group / prefix / suffix / display-name information.
+
+Permission: `fpp.lpinfo`
 
 ---
 
 ### ⚙️ `/fpp settings`
 
-```bash
+```text
 /fpp settings
 ```
 
-**Description:** Opens the **in-game settings GUI** - a 6-row chest with 7 category tabs.
+Open the main **3-row settings GUI**.
 
-**Categories:** General · Body · Chat · Swap · Peak Hours · PvP · Pathfinding
+This is the global config GUI, not the per-bot settings chest.
 
-- Toggle items flip boolean config values on click
-- Numeric/double items close chest and prompt for chat input (60-second timeout)
-- Reset button resets current category page to JAR defaults
-- All changes apply live without `/fpp reload`
+Categories:
+- General
+- Body
+- Chat
+- Swap
+- Peak Hours
+- PvP
+- Pathfinding
 
-**Permission:** `fpp.settings`
+Permission: `fpp.settings`
 
 ---
 
-### 🔃 `/fpp reload`
+### 📊 `/fpp stats`
 
-```bash
-/fpp reload
+```text
+/fpp stats
 ```
 
-**Description:** Hot-reload all configuration without restart.
+Show live stats:
+- bot count
+- frozen bots
+- DB totals
+- TPS
+- system/config state
 
-**Reloads:** config.yml · language files · bot name pool · bot message pool · skin repository · LuckPerms display names · subsystem states (chat loops, swap sessions, peak hours)
-
-**Permission:** `fpp.reload`
+Permission: `fpp.stats`
 
 ---
 
 ### 🔧 `/fpp migrate`
 
-```bash
+```text
 /fpp migrate status
 /fpp migrate backup
 /fpp migrate backups
@@ -442,142 +598,121 @@ Mining tasks auto-cancel when the bot goes offline. Runs as a 1-tick repeating t
 /fpp migrate db tomysql
 ```
 
-**Description:** Data migration, YAML sync, backup, and export utilities.
+Migration, export, backup, and YAML sync tools.
 
-| Subcommand | Description |
-|-----------|-------------|
-| `status` | Config version, file sync health, DB schema, backup count |
-| `backup` | Create a manual timestamped backup of all plugin data |
-| `config` | Re-run the full config migration chain |
-| `lang` / `names` / `messages` | Force-sync the YAML file from the bundled JAR |
-| `db export [file]` | Export session data to CSV |
-| `db merge <file>` | Merge an external database file |
-| `db tomysql` | Migrate SQLite data to MySQL |
-
-**Permission:** `fpp.migrate`
-
----
-
-### 📊 `/fpp stats`
-
-```bash
-/fpp stats
-```
-
-**Description:** Live statistics panel - bot count, frozen count, TPS, database totals, memory usage, config status.
-
-**Permission:** `fpp.stats`
-
----
-
-### 🔗 `/fpp lpinfo`
-
-```bash
-/fpp lpinfo [bot-name]
-```
-
-**Description:** LuckPerms integration diagnostics - integration status, bot group configuration, weight, prefix/suffix data, tab-list integration.
-
-**Permission:** `fpp.lpinfo`
-
----
-
-### 📣 `/fpp alert`
-
-```bash
-/fpp alert <message>
-```
-
-**Description:** Broadcast a formatted admin message to all servers on the proxy network (requires NETWORK mode).
-
-**Permission:** `fpp.alert`
+Permission: `fpp.migrate`
 
 ---
 
 ### 🔗 `/fpp sync`
 
-```bash
+```text
 /fpp sync push [file]
 /fpp sync pull [file]
 /fpp sync status [file]
 /fpp sync check [file]
 ```
 
-**Description:** Push or pull config files across the proxy network (requires NETWORK mode + MySQL).
+Push or pull config files across a proxy network.
 
-**Synced files:** `config.yml` · `bot-names.yml` · `bot-messages.yml` · `language/en.yml`  
-**Never synced:** `database.server-id` · `database.mysql.*` · `debug`
+Requires `NETWORK` mode + shared MySQL.
 
-**Permission:** `fpp.sync`
+Permission: `fpp.sync`
 
 ---
 
-## 🎮 Usage Patterns
+### 📣 `/fpp alert`
 
-### 🚀 Quick Start
-```bash
-/fpp spawn 5             # Spawn 5 bots
-/fpp list                # Verify they appeared
-/fpp chat on             # Enable chat messages
-/fpp despawn all         # Clean up
+```text
+/fpp alert <message>
 ```
 
-### 👤 Personal Bot (User)
-```bash
-/fpp spawn --name MyBot  # Spawn personal bot
-/fpp tph MyBot           # Bring to you
-/fpp xp MyBot            # Collect its XP
-/fpp despawn MyBot       # Remove it
+Broadcast an admin alert across the proxy network.
+
+Permission: `fpp.alert`
+
+---
+
+### 🔃 `/fpp reload`
+
+```text
+/fpp reload
 ```
 
-### 🔧 Admin Interaction Tools (v1.6.0)
-```bash
-/fpp inventory Steve          # Inspect Steve's inventory
-/fpp move Steve Notch         # Navigate Steve to Notch
-/fpp mine Steve               # Start Steve mining
-/fpp cmd Steve --add give @p diamond 1   # Set Steve's right-click command
-```
+Reload config, language, names, messages, skin repository, LP display names, and live subsystems.
 
-### 👑 Server Management
-```bash
-/fpp spawn 20             # Populate server
-/fpp swap on              # Enable auto-rotation
-/fpp chat on              # Enable realistic chat
-/fpp peaks on             # Enable time-window scheduling
-/fpp stats                # Monitor performance
-```
+Permission: `fpp.reload`
 
 ---
 
 ## 🔐 Permission Quick Reference
 
 ```yaml
-# Admin wildcard (default: op)
-fpp.op → grants all admin commands
+fpp.op               # admin wildcard
+fpp.use              # user wildcard
 
-# User wildcard (default: true for all players)
-fpp.use → grants:
-  fpp.user.spawn     # spawn own bot
-  fpp.user.tph       # tph own bot
-  fpp.user.xp        # collect bot XP (new in v1.6.0)
-  fpp.info.user      # view own bot info
-  fpp.spawn.limit.1  # 1-bot personal limit
+# user-tier nodes
+fpp.spawn.user
+fpp.tph
+fpp.xp
+fpp.info.user
+fpp.spawn.limit.<N>
 
-# Personal bot limits (FPP picks the highest node)
-fpp.spawn.limit.1 / 2 / 3 / 5 / 10 / 15 / 20 / 50 / 100
-
-# New in v1.6.0
-fpp.inventory   # bot inventory GUI
-fpp.move        # A* pathfinding navigation
-fpp.cmd         # execute / store commands on bots
-fpp.mine        # bot block mining
+# newer admin feature nodes
+fpp.inventory
+fpp.move
+fpp.mine
+fpp.place
+fpp.storage
+fpp.useitem
+fpp.waypoint
+fpp.rename
+fpp.rename.own
+fpp.personality
+fpp.badword
 ```
 
-For the full permission node list, see [Permissions](Permissions.md).
+For the full permission list, see [Permissions](Permissions.md).
 
 ---
 
-**🎉 Master these commands and become an FPP expert!**
+## 🚀 Example Workflows
 
-For configuration options see [Configuration](Configuration.md), for permission setup see [Permissions](Permissions.md).
+### Basic server-population setup
 
+```text
+/fpp spawn 10
+/fpp chat on
+/fpp swap on
+/fpp list
+```
+
+### Patrol route setup
+
+```text
+/fpp waypoint market add
+/fpp waypoint market add
+/fpp waypoint market list
+/fpp move Steve --wp market
+```
+
+### Mining + storage setup
+
+```text
+/fpp storage Steve mainchest
+/fpp mine Steve --pos1
+/fpp mine Steve --pos2
+/fpp mine Steve --start
+```
+
+### AI conversation setup
+
+```text
+/fpp personality list
+/fpp personality Steve set default
+/msg Steve yo
+```
+
+---
+
+For config details, see [Configuration](Configuration.md). For permission setup, see [Permissions](Permissions.md).

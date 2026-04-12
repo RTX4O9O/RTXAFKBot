@@ -420,7 +420,7 @@
     <div class="hero-content">
         <div class="hero-badge">
             <span class="hero-badge-dot"></span>
-            [FPP] Latest - v1.5.8 - Paper 1.21.x
+            [FPP] Latest - <span id="heroBadgeVersion">v1.6.2</span> - Paper 1.21.x
         </div>
         <img src="/Icon/FPP.png" alt="FPP Logo" class="hero-logo">
         <h1>Realistic Fake Players<br><span class="accent-text">for Paper Servers</span></h1>
@@ -738,7 +738,7 @@
         <div class="footer-bottom">
             <p>&copy; 2026 Fake Player Plugin. All rights reserved. · Made by Bill_Hub</p>
             <div class="footer-badges">
-                <span class="footer-badge"><span class="footer-badge-dot dot-primary"></span>v1.5.8</span>
+                <span class="footer-badge"><span class="footer-badge-dot dot-primary"></span><span id="footerVersionBadge">v1.6.2</span></span>
                 <span class="footer-badge"><span class="footer-badge-dot dot-blue"></span>Paper 1.21.x</span>
                 <span class="footer-badge"><span class="footer-badge-dot dot-green"></span>Java 21+</span>
             </div>
@@ -879,6 +879,21 @@
         requestAnimationFrame(update);
     }
 
+    // ── Fetch & display plugin version dynamically ──────────────────────────
+    async function fetchVersion() {
+        try {
+            const res = await fetch('/api/version');
+            if (!res.ok) return;
+            const data = await res.json();
+            if (!data.version) return;
+            const v = data.version.startsWith('v') ? data.version : 'v' + data.version;
+            const heroBadge  = document.getElementById('heroBadgeVersion');
+            const footerBadge = document.getElementById('footerVersionBadge');
+            if (heroBadge)   heroBadge.textContent  = v;
+            if (footerBadge) footerBadge.textContent = v;
+        } catch (_) { /* silent — static fallback text remains */ }
+    }
+
     // ── Fetch online stats ──────────────────────────────────────────────────
     async function fetchOnlineStats() {
         const serverEl = document.getElementById('serverCount');
@@ -929,9 +944,11 @@
     // Fetch stats on page load
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', () => {
+            fetchVersion();
             fetchOnlineStats();
         });
     } else {
+        fetchVersion();
         fetchOnlineStats();
     }
 

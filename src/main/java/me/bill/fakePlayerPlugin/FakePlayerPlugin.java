@@ -1,12 +1,14 @@
 package me.bill.fakePlayerPlugin;
 
 import me.bill.fakePlayerPlugin.command.*;
+import me.bill.fakePlayerPlugin.gui.BotSettingGui;
 import me.bill.fakePlayerPlugin.gui.SettingGui;
 import me.bill.fakePlayerPlugin.config.BotMessageConfig;
 import me.bill.fakePlayerPlugin.config.BotNameConfig;
 import me.bill.fakePlayerPlugin.config.Config;
 import me.bill.fakePlayerPlugin.database.DatabaseManager;
 import me.bill.fakePlayerPlugin.fakeplayer.BotChatAI;
+import me.bill.fakePlayerPlugin.fakeplayer.PathfindingService;
 import me.bill.fakePlayerPlugin.fakeplayer.BotPersistence;
 import me.bill.fakePlayerPlugin.fakeplayer.ChunkLoader;
 import me.bill.fakePlayerPlugin.fakeplayer.FakePlayerManager;
@@ -19,6 +21,7 @@ import me.bill.fakePlayerPlugin.listener.PlayerWorldChangeListener;
 import me.bill.fakePlayerPlugin.listener.ServerListListener;
 import me.bill.fakePlayerPlugin.messaging.VelocityChannel;
 import me.bill.fakePlayerPlugin.util.BackupManager;
+import me.bill.fakePlayerPlugin.util.BadwordFilter;
 import me.bill.fakePlayerPlugin.util.BotTabTeam;
 import me.bill.fakePlayerPlugin.util.CompatibilityChecker;
 import me.bill.fakePlayerPlugin.util.ConfigMigrator;
@@ -57,8 +60,18 @@ public final class FakePlayerPlugin extends JavaPlugin {
     private XpCommand xpCommand;
     private me.bill.fakePlayerPlugin.command.MoveCommand moveCommand;
     private me.bill.fakePlayerPlugin.command.MineCommand mineCommand;
+    private me.bill.fakePlayerPlugin.command.PlaceCommand placeCommand;
     private me.bill.fakePlayerPlugin.command.UseCommand  useCommand;
+    private PathfindingService pathfindingService;
     private me.bill.fakePlayerPlugin.command.WaypointStore waypointStore;
+    private me.bill.fakePlayerPlugin.command.StorageStore storageStore;
+    private me.bill.fakePlayerPlugin.command.MineSelectionStore mineSelectionStore;
+    private me.bill.fakePlayerPlugin.command.InventoryCommand inventoryCommand;
+
+    // ── AI Conversation System ────────────────────────────────────────────────
+    private me.bill.fakePlayerPlugin.ai.AIProviderRegistry aiProviderRegistry;
+    private me.bill.fakePlayerPlugin.ai.BotConversationManager botConversationManager;
+    private me.bill.fakePlayerPlugin.ai.PersonalityRepository personalityRepository;
 
     /** Update notification Component stored when an update is detected so it can be
      * delivered to admins who log in after startup. */
@@ -121,6 +134,16 @@ public final class FakePlayerPlugin extends JavaPlugin {
         // ── Config ────────────────────────────────────────────────────────────
         Config.init(this);
         Config.debugStartup("config.yml loaded.");
+
+        // Initialise badword filter cache immediately so it's ready before any spawn
+        BadwordFilter.reload(this);
+        if (Config.isBadwordFilterEnabled() && BadwordFilter.getBadwordCount() == 0) {
+            FppLogger.warn("═══════════════════════════════════════════════════════════════════");
+            FppLogger.warn("  ⚠  BADWORD FILTER IS ENABLED BUT NO SOURCES ARE ACTIVE  ⚠");
+            FppLogger.warn("  Enable 'badword-filter.use-global-list' or add words to");
+            FppLogger.warn("  'badword-filter.words' / 'bad-words.yml', then run /fpp reload");
+            FppLogger.warn("═══════════════════════════════════════════════════════════════════");
+        }
 
         Lang.init(this);
         Config.debugStartup("Language file loaded (lang=" + Config.getLanguage() + ").");
@@ -226,6 +249,10 @@ public final class FakePlayerPlugin extends JavaPlugin {
         if (databaseManager != null) fakePlayerManager.setDatabaseManager(databaseManager);
         fakePlayerManager.setIdentityCache(botIdentityCache);
 
+        // Pre-filter the name pool once so generateName() never runs the expensive badword
+        // regex passes on the main thread during a batch spawn of 100+ bots.
+        fakePlayerManager.refreshCleanNamePool();
+
         chunkLoader = new ChunkLoader(this, fakePlayerManager);
         fakePlayerManager.setChunkLoader(chunkLoader);
 
@@ -234,6 +261,7 @@ public final class FakePlayerPlugin extends JavaPlugin {
 
 
         // ── Commands ──────────────────────────────────────────────────────────
+        pathfindingService = new PathfindingService(this, fakePlayerManager);
         commandManager = new CommandManager(this);
         commandManager.register(new SpawnCommand(fakePlayerManager));
         commandManager.register(new DeleteCommand(fakePlayerManager));
@@ -246,6 +274,7 @@ public final class FakePlayerPlugin extends JavaPlugin {
         commandManager.register(new ReloadCommand(this));
         commandManager.register(new InfoCommand(databaseManager, fakePlayerManager));
         commandManager.register(new MigrateCommand(this));
+        commandManager.register(new me.bill.fakePlayerPlugin.command.BadwordCommand(this, fakePlayerManager));
         commandManager.register(new StatsCommand(fakePlayerManager, databaseManager));
         commandManager.register(new FreezeCommand(fakePlayerManager));
         commandManager.register(new LpInfoCommand(this, fakePlayerManager));
@@ -254,19 +283,30 @@ public final class FakePlayerPlugin extends JavaPlugin {
         commandManager.register(new SyncCommand(this));
         commandManager.register(new SwapCommand(this, fakePlayerManager));
         commandManager.register(new PeaksCommand(this, fakePlayerManager));
-        moveCommand = new me.bill.fakePlayerPlugin.command.MoveCommand(this, fakePlayerManager);
+        commandManager.register(new me.bill.fakePlayerPlugin.command.RenameCommand(this, fakePlayerManager));
+        commandManager.register(new me.bill.fakePlayerPlugin.command.PersonalityCommand(this));
+        moveCommand = new me.bill.fakePlayerPlugin.command.MoveCommand(this, fakePlayerManager, pathfindingService);
         waypointStore = new me.bill.fakePlayerPlugin.command.WaypointStore(this);
         waypointStore.load();
+        storageStore = new me.bill.fakePlayerPlugin.command.StorageStore(this);
+        storageStore.load();
+        mineSelectionStore = new me.bill.fakePlayerPlugin.command.MineSelectionStore(this);
+        mineSelectionStore.load();
         moveCommand.setWaypointStore(waypointStore);
         commandManager.register(moveCommand);
         commandManager.register(new me.bill.fakePlayerPlugin.command.WaypointCommand(waypointStore));
         commandManager.register(new me.bill.fakePlayerPlugin.command.CmdCommand(fakePlayerManager));
-        mineCommand = new me.bill.fakePlayerPlugin.command.MineCommand(this, fakePlayerManager);
+        mineCommand = new me.bill.fakePlayerPlugin.command.MineCommand(this, fakePlayerManager, storageStore, mineSelectionStore, pathfindingService);
         commandManager.register(mineCommand);
-        useCommand = new me.bill.fakePlayerPlugin.command.UseCommand(this, fakePlayerManager);
+        commandManager.register(new me.bill.fakePlayerPlugin.command.StorageCommand(fakePlayerManager, storageStore));
+        placeCommand = new me.bill.fakePlayerPlugin.command.PlaceCommand(this, fakePlayerManager, storageStore, pathfindingService);
+        commandManager.register(placeCommand);
+        useCommand = new me.bill.fakePlayerPlugin.command.UseCommand(this, fakePlayerManager, pathfindingService);
         commandManager.register(useCommand);
         // Inventory command - also a Listener (drag-fix guard + right-click), registered below
-        InventoryCommand inventoryCommand = new InventoryCommand(fakePlayerManager, this);
+        // Bot settings GUI - create once, register as listener
+        BotSettingGui botSettingGui = new BotSettingGui(this, fakePlayerManager);
+        inventoryCommand = new InventoryCommand(fakePlayerManager, this, botSettingGui);
         commandManager.register(inventoryCommand);
         // Settings GUI - create once, register as listener, share with command
         settingGui = new SettingGui(this);
@@ -277,6 +317,7 @@ public final class FakePlayerPlugin extends JavaPlugin {
         // This must happen AFTER all commands are created but BEFORE purgeOrphanedBodiesAndRestore.
         botPersistence.setMoveCommand(moveCommand);
         botPersistence.setMineCommand(mineCommand);
+        botPersistence.setPlaceCommand(placeCommand);
         botPersistence.setUseCommand(useCommand);
         botPersistence.setWaypointStore(waypointStore);
 
@@ -295,11 +336,14 @@ public final class FakePlayerPlugin extends JavaPlugin {
         getServer().getPluginManager().registerEvents(new ServerListListener(fakePlayerManager), this);
         getServer().getPluginManager().registerEvents(new FakePlayerKickListener(fakePlayerManager), this);
         getServer().getPluginManager().registerEvents(new me.bill.fakePlayerPlugin.listener.BotCommandBlocker(), this);
+
+        // Settings GUIs - registered immediately after command registration
+        getServer().getPluginManager().registerEvents(settingGui, this);
+        getServer().getPluginManager().registerEvents(botSettingGui, this);
+        getServer().getPluginManager().registerEvents(inventoryCommand, this);  // drag fix + right-click
         getServer().getPluginManager().registerEvents(new me.bill.fakePlayerPlugin.listener.BotSpawnProtectionListener(this), this);
         getServer().getPluginManager().registerEvents(new me.bill.fakePlayerPlugin.listener.BotXpPickupListener(this, fakePlayerManager), this);
-        getServer().getPluginManager().registerEvents(settingGui, this);
-        getServer().getPluginManager().registerEvents(inventoryCommand, this);
-        
+
         // ── Help GUI ──────────────────────────────────────────────────────────
         // Created after listener registration so all subsystems are ready.
         helpGui = new me.bill.fakePlayerPlugin.gui.HelpGui(this, commandManager);
@@ -316,6 +360,30 @@ public final class FakePlayerPlugin extends JavaPlugin {
         }
         if (Config.peakHoursEnabled() && Config.swapEnabled()) {
             peakHoursManager.start();
+        }
+
+        // ── AI Conversation System ────────────────────────────────────────────
+        // Initialize AI providers and conversation manager for bot direct messages
+        aiProviderRegistry = new me.bill.fakePlayerPlugin.ai.AIProviderRegistry(this);
+        botConversationManager = new me.bill.fakePlayerPlugin.ai.BotConversationManager(
+                this, aiProviderRegistry);
+
+        // Personality repository — loads .txt files from personalities/ folder
+        personalityRepository = new me.bill.fakePlayerPlugin.ai.PersonalityRepository(this);
+        personalityRepository.init();
+        Config.debugStartup("PersonalityRepository initialised — "
+                + personalityRepository.size() + " personality file(s) loaded.");
+
+        // Register message listener to intercept /msg commands to bots
+        if (Config.aiConversationsEnabled() && aiProviderRegistry.isAvailable()) {
+            getServer().getPluginManager().registerEvents(
+                    new me.bill.fakePlayerPlugin.listener.BotMessageListener(
+                            this, fakePlayerManager, botConversationManager), this);
+            getLogger().info("[AI] Bot conversations enabled - " 
+                    + aiProviderRegistry.getActiveProvider().getName());
+        } else if (Config.aiConversationsEnabled() && !aiProviderRegistry.isAvailable()) {
+            getLogger().warning("[AI] Bot conversations are enabled but no API key configured.");
+            getLogger().warning("[AI] Add an API key to plugins/FakePlayerPlugin/secrets.yml");
         }
 
         // ── Plugin messaging (Velocity / BungeeCord) ─────────────────────────
@@ -418,11 +486,19 @@ public final class FakePlayerPlugin extends JavaPlugin {
         String dbState = !Config.databaseEnabled()
                 ? "disabled"
                 : (dbOk ? dbLabel : dbLabel + " (failed)");
+        int dbSchemaVersion = databaseManager != null ? DatabaseManager.getCurrentSchemaVersion() : 0;
 
         String skinLabel = Config.skinMode();
 
         boolean effectiveSpawnBody    = Config.spawnBody();
-        boolean effectiveChunkLoading = Config.chunkLoadingEnabled();
+        boolean effectiveChunkLoading = Config.chunkLoadingEnabled() && Config.chunkLoadingRadius() != 0;
+        boolean effectiveTaskPersist  = Config.persistOnRestart() && databaseManager != null;
+
+        // AI conversation status for the banner
+        boolean aiConvEnabled = Config.aiConversationsEnabled() && aiProviderRegistry != null
+                && aiProviderRegistry.isAvailable();
+        String aiProviderName = aiConvEnabled
+                ? aiProviderRegistry.getActiveProvider().getName() : "none";
 
         // Compute banner metadata before printing
         long   startupMs    = System.currentTimeMillis() - enabledAt;
@@ -437,11 +513,16 @@ public final class FakePlayerPlugin extends JavaPlugin {
                 BotNameConfig.getNames().size(),
                 BotMessageConfig.getMessages().size(),
                 dbState,
+                dbSchemaVersion,
                 skinLabel,
                 effectiveSpawnBody,
                 Config.persistOnRestart(),
+                effectiveTaskPersist,
                 luckPermsInstalled,
+                worldGuardAvailable,
                 Config.fakeChatEnabled(),
+                aiConvEnabled,
+                aiProviderName,
                 Config.swapEnabled(),
                 Config.peakHoursEnabled(),
                 effectiveChunkLoading,
@@ -475,6 +556,8 @@ public final class FakePlayerPlugin extends JavaPlugin {
         if (chunkLoader     != null) chunkLoader.releaseAll();
         // Cancel all pending BotChatAI tasks
         if (botChatAI       != null) botChatAI.cancelAll();
+        // Clear all AI conversation histories
+        if (botConversationManager != null) botConversationManager.clearAll();
         // Shut down peak-hours FIRST - wakes all sleeping bots and clears the DB sleeping table.
         // They are added back into fakePlayerManager.activePlayers so persistence captures them below.
         if (peakHoursManager != null) peakHoursManager.shutdown();
@@ -518,7 +601,8 @@ public final class FakePlayerPlugin extends JavaPlugin {
         getServer().getMessenger().unregisterOutgoingPluginChannel(this, "BungeeCord");
 
         long uptimeMs = System.currentTimeMillis() - enabledAt;
-        FppLogger.printShutdownBanner(botsRemoved, dbFlushed, uptimeMs);
+        boolean tasksPersisted = Config.persistOnRestart() && databaseManager != null;
+        FppLogger.printShutdownBanner(botsRemoved, dbFlushed, tasksPersisted, botsRemoved, uptimeMs);
     }
 
     @SuppressWarnings("unused") // Public API - available for addons
@@ -549,6 +633,33 @@ public final class FakePlayerPlugin extends JavaPlugin {
     /** Returns the MoveCommand instance for bot cleanup during despawn. Never null after onEnable. */
     public me.bill.fakePlayerPlugin.command.MoveCommand getMoveCommand() { return moveCommand; }
 
+    /** Returns the MineCommand instance for bot cleanup during despawn. Never null after onEnable. */
+    public me.bill.fakePlayerPlugin.command.MineCommand getMineCommand() { return mineCommand; }
+
+    /** Returns the PlaceCommand instance for bot cleanup during despawn. Never null after onEnable. */
+    public me.bill.fakePlayerPlugin.command.PlaceCommand getPlaceCommand() { return placeCommand; }
+
+    /** Returns the UseCommand instance for bot cleanup during despawn. Never null after onEnable. */
+    public me.bill.fakePlayerPlugin.command.UseCommand getUseCommand() { return useCommand; }
+
+    /** Returns the shared global pathfinding service used by all navigation-capable systems. */
+    public PathfindingService getPathfindingService() { return pathfindingService; }
+
+    /** Returns the shared StorageStore (per-bot supply containers). Never null after onEnable. */
+    public me.bill.fakePlayerPlugin.command.StorageStore getStorageStore() { return storageStore; }
+
+    /** Returns the InventoryCommand instance so external bot inventory mutations can refresh open GUIs. */
+    public me.bill.fakePlayerPlugin.command.InventoryCommand getInventoryCommand() { return inventoryCommand; }
+
+    /** Returns the AI provider registry managing all AI API connections. Never null after onEnable. */
+    public me.bill.fakePlayerPlugin.ai.AIProviderRegistry getAIProviderRegistry() { return aiProviderRegistry; }
+
+    /** Returns the bot conversation manager handling AI direct messages. Never null after onEnable. */
+    public me.bill.fakePlayerPlugin.ai.BotConversationManager getBotConversationManager() { return botConversationManager; }
+
+    /** Returns the personality repository for bot AI personalities. Never null after onEnable. */
+    public me.bill.fakePlayerPlugin.ai.PersonalityRepository getPersonalityRepository() { return personalityRepository; }
+
 
     /** Returns the currently-stored update notification message, or null. */
     public Component getUpdateNotification() { return updateNotificationMessage; }
@@ -571,7 +682,7 @@ public final class FakePlayerPlugin extends JavaPlugin {
      */
     private void ensureDataDirectories() {
         java.io.File root = getDataFolder();
-        String[] dirs = { "skins", "data", "language" };
+        String[] dirs = { "skins", "data", "language", "personalities" };
         for (String dir : dirs) {
             java.io.File d = new java.io.File(root, dir);
             if (!d.exists()) {

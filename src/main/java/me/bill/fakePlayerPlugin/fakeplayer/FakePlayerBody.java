@@ -2,7 +2,6 @@ package me.bill.fakePlayerPlugin.fakeplayer;
 
 import me.bill.fakePlayerPlugin.config.Config;
 import me.bill.fakePlayerPlugin.util.FppLogger;
-import net.kyori.adventure.text.Component;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
@@ -76,17 +75,18 @@ public final class FakePlayerBody {
             player.setInvulnerable(false);
             player.setCollidable(true);
 
-            // Set display name for death messages and chat
-            // This ensures the display name (e.g. "bot-Steve-1") appears instead of
-            // the internal Minecraft name (e.g. "ubot_Steve_1") in death messages
+            // Set NMS-level item pickup flag from the per-bot setting.
+            // This is a belt-and-suspenders guard alongside EntityPickupItemEvent cancellation.
+            player.setCanPickupItems(fp.isPickUpItemsEnabled());
+
+            // Set display name for death messages and chat.
+            // Use plain colorize (not colorizeOrYellow) so the entity display name stays
+            // neutral — LP applies prefix/suffix in chat natively. Yellow is only added by
+            // BotBroadcast for join/leave messages via its own parseDisplayName helper.
             String displayName = fp.getRawDisplayName() != null ? fp.getRawDisplayName() : fp.getDisplayName();
             if (displayName != null && !displayName.isEmpty()) {
                 try {
-                    // Strip color codes for the display name (vanilla death messages don't support colors)
-                    String plainName = displayName.replaceAll("§[0-9a-fk-or]", "")
-                            .replaceAll("<[^>]+>", "")  // Remove MiniMessage tags
-                            .replaceAll("\\{#[0-9A-Fa-f]{6}[><]\\}", "");  // Remove LP gradient tags
-                    player.displayName(Component.text(plainName));
+                    player.displayName(me.bill.fakePlayerPlugin.util.TextUtil.colorize(displayName));
                 } catch (Exception e) {
                     FppLogger.debug("Failed to set display name for " + fp.getName() + ": " + e.getMessage());
                 }

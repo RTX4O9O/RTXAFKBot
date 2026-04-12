@@ -38,7 +38,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class DatabaseManager {
 
     // ── Schema version ────────────────────────────────────────────────────────
-    private static final int SCHEMA_VERSION = 8;
+    private static final int SCHEMA_VERSION = 14;
 
     /** Returns the latest DB schema version this build requires. */
     public static int getCurrentSchemaVersion() { return SCHEMA_VERSION; }
@@ -114,7 +114,20 @@ public class DatabaseManager {
             "  pos_pitch       FLOAT  NOT NULL DEFAULT 0," +
             "  updated_at      BIGINT NOT NULL," +
             "  luckperms_group VARCHAR(64)  DEFAULT NULL," +
-            "  server_id       VARCHAR(64)  NOT NULL DEFAULT 'default'" +
+            "  server_id       VARCHAR(64)  NOT NULL DEFAULT 'default'," +
+            "  frozen          BOOLEAN DEFAULT 0," +
+            "  chat_enabled    BOOLEAN DEFAULT 1," +
+            "  chat_tier       VARCHAR(16)  DEFAULT NULL," +
+            "  right_click_cmd VARCHAR(256) DEFAULT NULL," +
+            "  ai_personality  VARCHAR(64)  DEFAULT NULL," +
+            "  pickup_items    BOOLEAN DEFAULT 0," +
+            "  pickup_xp       BOOLEAN DEFAULT 1," +
+            "  head_ai_enabled BOOLEAN DEFAULT 1," +
+            "  nav_parkour     BOOLEAN DEFAULT 0," +
+            "  nav_break_blocks BOOLEAN DEFAULT 0," +
+            "  nav_place_blocks BOOLEAN DEFAULT 0," +
+            "  swim_ai_enabled  BOOLEAN DEFAULT 1," +
+            "  chunk_load_radius INT     DEFAULT -1" +
             ")";
 
     private static final String CREATE_ACTIVE_MYSQL =
@@ -132,7 +145,20 @@ public class DatabaseManager {
             "  pos_pitch       FLOAT  NOT NULL DEFAULT 0," +
             "  updated_at      BIGINT NOT NULL," +
             "  luckperms_group VARCHAR(64)  DEFAULT NULL," +
-            "  server_id       VARCHAR(64)  NOT NULL DEFAULT 'default'" +
+            "  server_id       VARCHAR(64)  NOT NULL DEFAULT 'default'," +
+            "  frozen          BOOLEAN DEFAULT 0," +
+            "  chat_enabled    BOOLEAN DEFAULT 1," +
+            "  chat_tier       VARCHAR(16)  DEFAULT NULL," +
+            "  right_click_cmd VARCHAR(256) DEFAULT NULL," +
+            "  ai_personality  VARCHAR(64)  DEFAULT NULL," +
+            "  pickup_items    BOOLEAN DEFAULT 0," +
+            "  pickup_xp       BOOLEAN DEFAULT 1," +
+            "  head_ai_enabled BOOLEAN DEFAULT 1," +
+            "  nav_parkour     BOOLEAN DEFAULT 0," +
+            "  nav_break_blocks BOOLEAN DEFAULT 0," +
+            "  nav_place_blocks BOOLEAN DEFAULT 0," +
+            "  swim_ai_enabled  BOOLEAN DEFAULT 1," +
+            "  chunk_load_radius INT     DEFAULT -1" +
             ")";
 
     // ── DDL - sleeping bots (peak-hours crash-safe persistence) ──────────────
@@ -181,6 +207,41 @@ public class DatabaseManager {
             "  bot_uuid   VARCHAR(36) NOT NULL," +
             "  created_at BIGINT      NOT NULL," +
             "  PRIMARY KEY (bot_name, server_id)" +
+            ")";
+
+    // ── DDL - bot tasks (mine/use/place/patrol restart persistence) ──────────
+    private static final String CREATE_TASKS_SQLITE =
+            "CREATE TABLE IF NOT EXISTS fpp_bot_tasks (" +
+            "  bot_uuid    VARCHAR(36)  NOT NULL," +
+            "  server_id   VARCHAR(64)  NOT NULL DEFAULT 'default'," +
+            "  task_type   VARCHAR(16)  NOT NULL," +
+            "  world_name  VARCHAR(64)  DEFAULT NULL," +
+            "  pos_x       DOUBLE       DEFAULT 0," +
+            "  pos_y       DOUBLE       DEFAULT 0," +
+            "  pos_z       DOUBLE       DEFAULT 0," +
+            "  pos_yaw     FLOAT        DEFAULT 0," +
+            "  pos_pitch   FLOAT        DEFAULT 0," +
+            "  once_flag   BOOLEAN      DEFAULT 0," +
+            "  extra_str   VARCHAR(256) DEFAULT NULL," +
+            "  extra_bool  BOOLEAN      DEFAULT 0," +
+            "  PRIMARY KEY (bot_uuid, server_id, task_type)" +
+            ")";
+
+    private static final String CREATE_TASKS_MYSQL =
+            "CREATE TABLE IF NOT EXISTS fpp_bot_tasks (" +
+            "  bot_uuid    VARCHAR(36)  NOT NULL," +
+            "  server_id   VARCHAR(64)  NOT NULL DEFAULT 'default'," +
+            "  task_type   VARCHAR(16)  NOT NULL," +
+            "  world_name  VARCHAR(64)  DEFAULT NULL," +
+            "  pos_x       DOUBLE       DEFAULT 0," +
+            "  pos_y       DOUBLE       DEFAULT 0," +
+            "  pos_z       DOUBLE       DEFAULT 0," +
+            "  pos_yaw     FLOAT        DEFAULT 0," +
+            "  pos_pitch   FLOAT        DEFAULT 0," +
+            "  once_flag   BOOLEAN      DEFAULT 0," +
+            "  extra_str   VARCHAR(256) DEFAULT NULL," +
+            "  extra_bool  BOOLEAN      DEFAULT 0," +
+            "  PRIMARY KEY (bot_uuid, server_id, task_type)" +
             ")";
 
     // ── DDL - schema version ──────────────────────────────────────────────────
@@ -237,7 +298,42 @@ public class DatabaseManager {
           "  bot_uuid   VARCHAR(36) NOT NULL," +
           "  created_at BIGINT      NOT NULL," +
           "  PRIMARY KEY (bot_name, server_id)" +
-          ")" }
+          ")" },
+        // v8 → v9: add bot-specific settings columns (frozen, chat_enabled, chat_tier, right_click_cmd)
+        { "ALTER TABLE fpp_active_bots ADD COLUMN frozen            BOOLEAN DEFAULT 0",
+          "ALTER TABLE fpp_active_bots ADD COLUMN chat_enabled      BOOLEAN DEFAULT 1",
+          "ALTER TABLE fpp_active_bots ADD COLUMN chat_tier         VARCHAR(16) DEFAULT NULL",
+          "ALTER TABLE fpp_active_bots ADD COLUMN right_click_cmd   VARCHAR(256) DEFAULT NULL" },
+        // v9 → v10: add per-bot AI personality column for persistent random personality assignment
+        { "ALTER TABLE fpp_active_bots ADD COLUMN ai_personality    VARCHAR(64) DEFAULT NULL" },
+        // v10 → v11: add per-bot pickup toggles
+        { "ALTER TABLE fpp_active_bots ADD COLUMN pickup_items      BOOLEAN DEFAULT 0",
+          "ALTER TABLE fpp_active_bots ADD COLUMN pickup_xp         BOOLEAN DEFAULT 1" },
+        // v11 → v12: add head-AI and per-bot navigation overrides
+        { "ALTER TABLE fpp_active_bots ADD COLUMN head_ai_enabled   BOOLEAN DEFAULT 1",
+          "ALTER TABLE fpp_active_bots ADD COLUMN nav_parkour       BOOLEAN DEFAULT 0",
+          "ALTER TABLE fpp_active_bots ADD COLUMN nav_break_blocks  BOOLEAN DEFAULT 0",
+          "ALTER TABLE fpp_active_bots ADD COLUMN nav_place_blocks  BOOLEAN DEFAULT 0" },
+        // v12 → v13: add fpp_bot_tasks for persistent mine/use/place/patrol task state.
+        // Using CREATE TABLE IF NOT EXISTS — safe whether or not createTables() already ran.
+        { "CREATE TABLE IF NOT EXISTS fpp_bot_tasks (" +
+          "  bot_uuid    VARCHAR(36)  NOT NULL," +
+          "  server_id   VARCHAR(64)  NOT NULL DEFAULT 'default'," +
+          "  task_type   VARCHAR(16)  NOT NULL," +
+          "  world_name  VARCHAR(64)  DEFAULT NULL," +
+          "  pos_x       DOUBLE       DEFAULT 0," +
+          "  pos_y       DOUBLE       DEFAULT 0," +
+          "  pos_z       DOUBLE       DEFAULT 0," +
+          "  pos_yaw     FLOAT        DEFAULT 0," +
+          "  pos_pitch   FLOAT        DEFAULT 0," +
+          "  once_flag   BOOLEAN      DEFAULT 0," +
+          "  extra_str   VARCHAR(256) DEFAULT NULL," +
+          "  extra_bool  BOOLEAN      DEFAULT 0," +
+          "  PRIMARY KEY (bot_uuid, server_id, task_type)" +
+          ")" },
+        // v13 → v14: add per-bot swim-AI toggle and chunk-load radius override.
+        { "ALTER TABLE fpp_active_bots ADD COLUMN swim_ai_enabled   BOOLEAN DEFAULT 1",
+          "ALTER TABLE fpp_active_bots ADD COLUMN chunk_load_radius  INT     DEFAULT -1" }
     };
 
     // ── State ─────────────────────────────────────────────────────────────────
@@ -326,6 +422,7 @@ public class DatabaseManager {
         exec(isMysql ? CREATE_ACTIVE_MYSQL   : CREATE_ACTIVE_SQLITE);
         exec(isMysql ? CREATE_SLEEPING_MYSQL : CREATE_SLEEPING_SQLITE);
         exec(isMysql ? CREATE_IDENTITIES_MYSQL : CREATE_IDENTITIES_SQLITE);
+        exec(isMysql ? CREATE_TASKS_MYSQL : CREATE_TASKS_SQLITE);
         exec(CREATE_META);
     }
 
@@ -502,7 +599,10 @@ public class DatabaseManager {
                     record.getSpawnedBy(), record.getSpawnedByUuid().toString(),
                     record.getWorldName(),
                     record.getSpawnX(), record.getSpawnY(), record.getSpawnZ(),
-                    record.getSpawnYaw(), record.getSpawnPitch(), null);
+                    record.getSpawnYaw(), record.getSpawnPitch(), null,
+                    false, true, null, null, null,
+                    Config.bodyPickUpItems(), Config.bodyPickUpXp(),
+                    true, Config.pathfindingParkour(), Config.pathfindingBreakBlocks(), Config.pathfindingPlaceBlocks());
         });
     }
 
@@ -612,22 +712,7 @@ public class DatabaseManager {
         try (PreparedStatement ps = connection.prepareStatement(sql)) {
             bindServer(ps, 1);
             try (ResultSet rs = ps.executeQuery()) {
-                while (rs.next()) {
-                    String lpGroup = null;
-                    try { lpGroup = rs.getString("luckperms_group"); } catch (SQLException ignored) {}
-                    String sid = null;
-                    try { sid = rs.getString("server_id"); } catch (SQLException ignored) {}
-                    if (sid == null || sid.isBlank()) sid = Config.serverId();
-                    list.add(new ActiveBotRow(
-                            rs.getString("bot_uuid"), rs.getString("bot_name"),
-                            rs.getString("bot_display"),
-                            rs.getString("spawned_by"), rs.getString("spawned_by_uuid"),
-                            rs.getString("world_name"),
-                            rs.getDouble("pos_x"), rs.getDouble("pos_y"), rs.getDouble("pos_z"),
-                            rs.getFloat("pos_yaw"), rs.getFloat("pos_pitch"),
-                            lpGroup, sid
-                    ));
-                }
+                while (rs.next()) list.add(mapActiveBotRow(rs));
             }
         } catch (SQLException e) { FppLogger.error("DB getActiveBots: " + e.getMessage()); }
         return list;
@@ -654,22 +739,7 @@ public class DatabaseManager {
         try (PreparedStatement ps = connection.prepareStatement(sql)) {
             ps.setString(1, Config.serverId());
             try (ResultSet rs = ps.executeQuery()) {
-                while (rs.next()) {
-                    String lpGroup = null;
-                    try { lpGroup = rs.getString("luckperms_group"); } catch (SQLException ignored) {}
-                    String sid = null;
-                    try { sid = rs.getString("server_id"); } catch (SQLException ignored) {}
-                    if (sid == null || sid.isBlank()) sid = Config.serverId();
-                    list.add(new ActiveBotRow(
-                            rs.getString("bot_uuid"), rs.getString("bot_name"),
-                            rs.getString("bot_display"),
-                            rs.getString("spawned_by"), rs.getString("spawned_by_uuid"),
-                            rs.getString("world_name"),
-                            rs.getDouble("pos_x"), rs.getDouble("pos_y"), rs.getDouble("pos_z"),
-                            rs.getFloat("pos_yaw"), rs.getFloat("pos_pitch"),
-                            lpGroup, sid
-                    ));
-                }
+                while (rs.next()) list.add(mapActiveBotRow(rs));
             }
         } catch (SQLException e) { FppLogger.error("DB getActiveBotsForThisServer: " + e.getMessage()); }
         return list;
@@ -697,24 +767,57 @@ public class DatabaseManager {
         try (PreparedStatement ps = connection.prepareStatement(sql)) {
             ps.setString(1, Config.serverId());
             try (ResultSet rs = ps.executeQuery()) {
-                while (rs.next()) {
-                    String lpGroup = null;
-                    try { lpGroup = rs.getString("luckperms_group"); } catch (SQLException ignored) {}
-                    String sid = "unknown";
-                    try { sid = rs.getString("server_id"); } catch (SQLException ignored) {}
-                    list.add(new ActiveBotRow(
-                            rs.getString("bot_uuid"), rs.getString("bot_name"),
-                            rs.getString("bot_display"),
-                            rs.getString("spawned_by"), rs.getString("spawned_by_uuid"),
-                            rs.getString("world_name"),
-                            rs.getDouble("pos_x"), rs.getDouble("pos_y"), rs.getDouble("pos_z"),
-                            rs.getFloat("pos_yaw"), rs.getFloat("pos_pitch"),
-                            lpGroup, sid
-                    ));
-                }
+                while (rs.next()) list.add(mapActiveBotRow(rs));
             }
         } catch (SQLException e) { FppLogger.error("DB getActiveBotsFromOtherServers: " + e.getMessage()); }
         return list;
+    }
+
+    /** Maps a ResultSet row from {@code fpp_active_bots} to an {@link ActiveBotRow}. */
+    private ActiveBotRow mapActiveBotRow(ResultSet rs) throws SQLException {
+        String lpGroup = null;
+        try { lpGroup = rs.getString("luckperms_group"); } catch (SQLException ignored) {}
+        String sid = null;
+        try { sid = rs.getString("server_id"); } catch (SQLException ignored) {}
+        if (sid == null || sid.isBlank()) sid = Config.serverId();
+        String aiPers = null;
+        try { aiPers = rs.getString("ai_personality"); } catch (SQLException ignored) {}
+        boolean pickUpItems = Config.bodyPickUpItems();
+        try { pickUpItems = rs.getBoolean("pickup_items"); } catch (SQLException ignored) {}
+        boolean pickUpXp = Config.bodyPickUpXp();
+        try { pickUpXp = rs.getBoolean("pickup_xp"); } catch (SQLException ignored) {}
+        boolean frozen = false;
+        try { frozen = rs.getBoolean("frozen"); } catch (SQLException ignored) {}
+        boolean chatEnabled = true;
+        try { chatEnabled = rs.getBoolean("chat_enabled"); } catch (SQLException ignored) {}
+        String chatTier = null;
+        try { chatTier = rs.getString("chat_tier"); } catch (SQLException ignored) {}
+        String rightClickCmd = null;
+        try { rightClickCmd = rs.getString("right_click_cmd"); } catch (SQLException ignored) {}
+        boolean headAiEnabled = true;
+        try { headAiEnabled = rs.getBoolean("head_ai_enabled"); } catch (SQLException ignored) {}
+        boolean navParkour = Config.pathfindingParkour();
+        try { navParkour = rs.getBoolean("nav_parkour"); } catch (SQLException ignored) {}
+        boolean navBreakBlocks = Config.pathfindingBreakBlocks();
+        try { navBreakBlocks = rs.getBoolean("nav_break_blocks"); } catch (SQLException ignored) {}
+        boolean navPlaceBlocks = Config.pathfindingPlaceBlocks();
+        try { navPlaceBlocks = rs.getBoolean("nav_place_blocks"); } catch (SQLException ignored) {}
+        boolean swimAiEnabled = Config.swimAiEnabled();
+        try { swimAiEnabled = rs.getBoolean("swim_ai_enabled"); } catch (SQLException ignored) {}
+        int chunkLoadRadius = -1;
+        try { chunkLoadRadius = rs.getInt("chunk_load_radius"); } catch (SQLException ignored) {}
+        return new ActiveBotRow(
+                rs.getString("bot_uuid"), rs.getString("bot_name"),
+                rs.getString("bot_display"),
+                rs.getString("spawned_by"), rs.getString("spawned_by_uuid"),
+                rs.getString("world_name"),
+                rs.getDouble("pos_x"), rs.getDouble("pos_y"), rs.getDouble("pos_z"),
+                rs.getFloat("pos_yaw"), rs.getFloat("pos_pitch"),
+                lpGroup, sid, aiPers, pickUpItems, pickUpXp,
+                frozen, chatEnabled, chatTier, rightClickCmd,
+                headAiEnabled, navParkour, navBreakBlocks, navPlaceBlocks,
+                swimAiEnabled, chunkLoadRadius
+        );
     }
 
     public List<BotRecord> getActiveSessions() {
@@ -907,20 +1010,32 @@ public class DatabaseManager {
     private void upsertActiveBotSync(String uuid, String name, String display,
                                      String spawnedBy, String spawnedByUuid, String world,
                                      double x, double y, double z,
-                                     float yaw, float pitch, String luckpermsGroup) {
+                                     float yaw, float pitch, String luckpermsGroup,
+                                     boolean frozen, boolean chatEnabled, String chatTier, String rightClickCmd,
+                                     String aiPersonality, boolean pickUpItems, boolean pickUpXp,
+                                     boolean headAiEnabled, boolean navParkour, boolean navBreakBlocks, boolean navPlaceBlocks) {
         long now = Instant.now().toEpochMilli();
         String serverId = Config.serverId();
         String sql = isMysql
                 ? "INSERT INTO fpp_active_bots(bot_uuid,bot_name,bot_display,spawned_by,spawned_by_uuid," +
-                  "world_name,pos_x,pos_y,pos_z,pos_yaw,pos_pitch,updated_at,luckperms_group,server_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?) " +
+                  "world_name,pos_x,pos_y,pos_z,pos_yaw,pos_pitch,updated_at,luckperms_group,server_id," +
+                  "frozen,chat_enabled,chat_tier,right_click_cmd,ai_personality,pickup_items,pickup_xp," +
+                  "head_ai_enabled,nav_parkour,nav_break_blocks,nav_place_blocks) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) " +
                   "ON DUPLICATE KEY UPDATE bot_name=VALUES(bot_name),bot_display=VALUES(bot_display)," +
                   "spawned_by=VALUES(spawned_by),spawned_by_uuid=VALUES(spawned_by_uuid)," +
                   "world_name=VALUES(world_name),pos_x=VALUES(pos_x),pos_y=VALUES(pos_y)," +
                   "pos_z=VALUES(pos_z),pos_yaw=VALUES(pos_yaw),pos_pitch=VALUES(pos_pitch)," +
                   "updated_at=VALUES(updated_at),luckperms_group=VALUES(luckperms_group)," +
-                  "server_id=VALUES(server_id)"
+                  "server_id=VALUES(server_id),frozen=VALUES(frozen),chat_enabled=VALUES(chat_enabled)," +
+                  "chat_tier=VALUES(chat_tier),right_click_cmd=VALUES(right_click_cmd)," +
+                  "ai_personality=VALUES(ai_personality)," +
+                  "pickup_items=VALUES(pickup_items),pickup_xp=VALUES(pickup_xp)," +
+                  "head_ai_enabled=VALUES(head_ai_enabled),nav_parkour=VALUES(nav_parkour)," +
+                  "nav_break_blocks=VALUES(nav_break_blocks),nav_place_blocks=VALUES(nav_place_blocks)"
                 : "INSERT OR REPLACE INTO fpp_active_bots(bot_uuid,bot_name,bot_display,spawned_by,spawned_by_uuid," +
-                  "world_name,pos_x,pos_y,pos_z,pos_yaw,pos_pitch,updated_at,luckperms_group,server_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+                  "world_name,pos_x,pos_y,pos_z,pos_yaw,pos_pitch,updated_at,luckperms_group,server_id," +
+                  "frozen,chat_enabled,chat_tier,right_click_cmd,ai_personality,pickup_items,pickup_xp," +
+                  "head_ai_enabled,nav_parkour,nav_break_blocks,nav_place_blocks) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
         try (PreparedStatement ps = connection.prepareStatement(sql)) {
             ps.setString(1, uuid);  ps.setString(2, name);  ps.setString(3, display);
             ps.setString(4, spawnedBy); ps.setString(5, spawnedByUuid);
@@ -929,6 +1044,20 @@ public class DatabaseManager {
             if (luckpermsGroup != null) ps.setString(13, luckpermsGroup);
             else ps.setNull(13, java.sql.Types.VARCHAR);
             ps.setString(14, serverId);
+            ps.setBoolean(15, frozen);
+            ps.setBoolean(16, chatEnabled);
+            if (chatTier != null) ps.setString(17, chatTier);
+            else ps.setNull(17, java.sql.Types.VARCHAR);
+            if (rightClickCmd != null) ps.setString(18, rightClickCmd);
+            else ps.setNull(18, java.sql.Types.VARCHAR);
+            if (aiPersonality != null) ps.setString(19, aiPersonality);
+            else ps.setNull(19, java.sql.Types.VARCHAR);
+            ps.setBoolean(20, pickUpItems);
+            ps.setBoolean(21, pickUpXp);
+            ps.setBoolean(22, headAiEnabled);
+            ps.setBoolean(23, navParkour);
+            ps.setBoolean(24, navBreakBlocks);
+            ps.setBoolean(25, navPlaceBlocks);
             ps.executeUpdate();
         } catch (SQLException e) { FppLogger.error("DB upsertActiveBot: " + e.getMessage()); }
     }
@@ -1287,9 +1416,298 @@ public class DatabaseManager {
         return 0;
     }
 
+    /**
+     * Persists a bot's AI personality name to {@code fpp_active_bots}.
+     * Enqueued on the background writer thread so it is safe to call on the main thread.
+     *
+     * @param uuid        the bot's UUID string
+     * @param personality the personality name (file name without {@code .txt}), or {@code null} to clear
+     */
+    public void updateBotAiPersonality(String uuid, String personality) {
+        if (!isAlive()) return;
+        final String p = personality;
+        enqueue(() -> {
+            if (!isAlive()) return;
+            String sql = "UPDATE fpp_active_bots SET ai_personality=? WHERE bot_uuid=?";
+            try (PreparedStatement ps = connection.prepareStatement(sql)) {
+                if (p != null) ps.setString(1, p);
+                else ps.setNull(1, java.sql.Types.VARCHAR);
+                ps.setString(2, uuid);
+                ps.executeUpdate();
+            } catch (SQLException e) { FppLogger.error("DB updateBotAiPersonality: " + e.getMessage()); }
+        });
+    }
+
+    /**
+     * Persists a bot's per-bot pickup toggles to {@code fpp_active_bots}.
+     * Enqueued on the background writer thread so it is safe to call on the main thread.
+     */
+    public void updateBotPickupSettings(String uuid, boolean pickUpItems, boolean pickUpXp) {
+        if (!isAlive()) return;
+        enqueue(() -> {
+            if (!isAlive()) return;
+            String sql = "UPDATE fpp_active_bots SET pickup_items=?, pickup_xp=? WHERE bot_uuid=?";
+            try (PreparedStatement ps = connection.prepareStatement(sql)) {
+                ps.setBoolean(1, pickUpItems);
+                ps.setBoolean(2, pickUpXp);
+                ps.setString(3, uuid);
+                ps.executeUpdate();
+            } catch (SQLException e) { FppLogger.error("DB updateBotPickupSettings: " + e.getMessage()); }
+        });
+    }
+
+    /**
+     * Persists a bot's frozen state to {@code fpp_active_bots}.
+     * Enqueued on the background writer thread.
+     */
+    public void updateBotFrozen(String uuid, boolean frozen) {
+        if (!isAlive()) return;
+        enqueue(() -> {
+            if (!isAlive()) return;
+            String sql = "UPDATE fpp_active_bots SET frozen=? WHERE bot_uuid=?";
+            try (PreparedStatement ps = connection.prepareStatement(sql)) {
+                ps.setBoolean(1, frozen);
+                ps.setString(2, uuid);
+                ps.executeUpdate();
+            } catch (SQLException e) { FppLogger.error("DB updateBotFrozen: " + e.getMessage()); }
+        });
+    }
+
+    /**
+     * Persists a bot's chat settings (enabled flag + tier) to {@code fpp_active_bots}.
+     * Enqueued on the background writer thread.
+     */
+    public void updateBotChatSettings(String uuid, boolean chatEnabled, String chatTier) {
+        if (!isAlive()) return;
+        final String tier = chatTier;
+        enqueue(() -> {
+            if (!isAlive()) return;
+            String sql = "UPDATE fpp_active_bots SET chat_enabled=?, chat_tier=? WHERE bot_uuid=?";
+            try (PreparedStatement ps = connection.prepareStatement(sql)) {
+                ps.setBoolean(1, chatEnabled);
+                if (tier != null) ps.setString(2, tier);
+                else ps.setNull(2, java.sql.Types.VARCHAR);
+                ps.setString(3, uuid);
+                ps.executeUpdate();
+            } catch (SQLException e) { FppLogger.error("DB updateBotChatSettings: " + e.getMessage()); }
+        });
+    }
+
+    /**
+     * Persists a bot's right-click command to {@code fpp_active_bots}.
+     * Enqueued on the background writer thread.
+     *
+     * @param cmd the command string (without leading '/'), or {@code null} to clear
+     */
+    public void updateBotRightClickCommand(String uuid, String cmd) {
+        if (!isAlive()) return;
+        final String c = cmd;
+        enqueue(() -> {
+            if (!isAlive()) return;
+            String sql = "UPDATE fpp_active_bots SET right_click_cmd=? WHERE bot_uuid=?";
+            try (PreparedStatement ps = connection.prepareStatement(sql)) {
+                if (c != null) ps.setString(1, c);
+                else ps.setNull(1, java.sql.Types.VARCHAR);
+                ps.setString(2, uuid);
+                ps.executeUpdate();
+            } catch (SQLException e) { FppLogger.error("DB updateBotRightClickCommand: " + e.getMessage()); }
+        });
+    }
+
+    /**
+     * Persists a bot's head-AI enabled flag to {@code fpp_active_bots}.
+     * Enqueued on the background writer thread.
+     */
+    public void updateBotHeadAiEnabled(String uuid, boolean enabled) {
+        if (!isAlive()) return;
+        enqueue(() -> {
+            if (!isAlive()) return;
+            String sql = "UPDATE fpp_active_bots SET head_ai_enabled=? WHERE bot_uuid=?";
+            try (PreparedStatement ps = connection.prepareStatement(sql)) {
+                ps.setBoolean(1, enabled);
+                ps.setString(2, uuid);
+                ps.executeUpdate();
+            } catch (SQLException e) { FppLogger.error("DB updateBotHeadAiEnabled: " + e.getMessage()); }
+        });
+    }
+
+    /**
+     * Persists a bot's per-bot navigation override flags to {@code fpp_active_bots}.
+     * Enqueued on the background writer thread.
+     */
+    public void updateBotNavSettings(String uuid, boolean navParkour, boolean navBreakBlocks, boolean navPlaceBlocks) {
+        if (!isAlive()) return;
+        enqueue(() -> {
+            if (!isAlive()) return;
+            String sql = "UPDATE fpp_active_bots SET nav_parkour=?, nav_break_blocks=?, nav_place_blocks=? WHERE bot_uuid=?";
+            try (PreparedStatement ps = connection.prepareStatement(sql)) {
+                ps.setBoolean(1, navParkour);
+                ps.setBoolean(2, navBreakBlocks);
+                ps.setBoolean(3, navPlaceBlocks);
+                ps.setString(4, uuid);
+                ps.executeUpdate();
+            } catch (SQLException e) { FppLogger.error("DB updateBotNavSettings: " + e.getMessage()); }
+        });
+    }
+
+    /**
+     * Persists <em>all</em> per-bot mutable settings in a single UPDATE.
+     * Use this when multiple fields change at once (e.g. restore from snapshot).
+     * Enqueued on the background writer thread.
+     */
+    public void updateBotAllSettings(String uuid,
+                                     boolean frozen, boolean chatEnabled, String chatTier,
+                                     String rightClickCmd, String aiPersonality,
+                                     boolean pickUpItems, boolean pickUpXp,
+                                     boolean headAiEnabled,
+                                     boolean navParkour, boolean navBreakBlocks, boolean navPlaceBlocks,
+                                     boolean swimAiEnabled, int chunkLoadRadius) {
+        if (!isAlive()) return;
+        final String tier = chatTier, rcc = rightClickCmd, pers = aiPersonality;
+        enqueue(() -> {
+            if (!isAlive()) return;
+            String sql = "UPDATE fpp_active_bots SET frozen=?,chat_enabled=?,chat_tier=?,right_click_cmd=?," +
+                         "ai_personality=?,pickup_items=?,pickup_xp=?,head_ai_enabled=?," +
+                         "nav_parkour=?,nav_break_blocks=?,nav_place_blocks=?," +
+                         "swim_ai_enabled=?,chunk_load_radius=? WHERE bot_uuid=?";
+            try (PreparedStatement ps = connection.prepareStatement(sql)) {
+                ps.setBoolean(1, frozen);
+                ps.setBoolean(2, chatEnabled);
+                if (tier != null) ps.setString(3, tier); else ps.setNull(3, java.sql.Types.VARCHAR);
+                if (rcc  != null) ps.setString(4, rcc);  else ps.setNull(4, java.sql.Types.VARCHAR);
+                if (pers != null) ps.setString(5, pers);  else ps.setNull(5, java.sql.Types.VARCHAR);
+                ps.setBoolean(6, pickUpItems);
+                ps.setBoolean(7, pickUpXp);
+                ps.setBoolean(8, headAiEnabled);
+                ps.setBoolean(9, navParkour);
+                ps.setBoolean(10, navBreakBlocks);
+                ps.setBoolean(11, navPlaceBlocks);
+                ps.setBoolean(12, swimAiEnabled);
+                ps.setInt(13, chunkLoadRadius);
+                ps.setString(14, uuid);
+                ps.executeUpdate();
+            } catch (SQLException e) { FppLogger.error("DB updateBotAllSettings: " + e.getMessage()); }
+        });
+    }
+
     // ── Accessors ─────────────────────────────────────────────────────────────
     public boolean isMysql() { return isMysql; }
     public Map<String, BotRecord> getActiveRecords() { return Collections.unmodifiableMap(activeRecords); }
+
+    // ── Bot task API (fpp_bot_tasks) ──────────────────────────────────────────
+
+    /**
+     * Saves a snapshot of all active bot tasks for this server to {@code fpp_bot_tasks}.
+     * Replaces all existing rows for this server in one write — call once on shutdown
+     * and on demand (e.g. from {@code BotPersistence.saveAsync}).
+     *
+     * <p>Each element in {@code rows} represents one running task type for one bot
+     * (e.g. MINE, USE, PLACE, PATROL).  Multiple rows can exist per bot UUID.</p>
+     */
+    public void saveBotTasks(List<BotTaskRow> rows) {
+        if (!isAlive()) return;
+        final List<BotTaskRow> snap = new ArrayList<>(rows);
+        final String sid = Config.serverId();
+        enqueue(() -> {
+            if (!isAlive()) return;
+            // 1. Clear existing task rows for this server
+            try (PreparedStatement ps = connection.prepareStatement(
+                    "DELETE FROM fpp_bot_tasks WHERE server_id=?")) {
+                ps.setString(1, sid);
+                ps.executeUpdate();
+            } catch (SQLException e) { FppLogger.error("DB saveBotTasks (clear): " + e.getMessage()); return; }
+            if (snap.isEmpty()) return;
+            // 2. Insert fresh rows
+            String sql = isMysql
+                    ? "INSERT INTO fpp_bot_tasks " +
+                      "(bot_uuid,server_id,task_type,world_name,pos_x,pos_y,pos_z,pos_yaw,pos_pitch,once_flag,extra_str,extra_bool) " +
+                      "VALUES (?,?,?,?,?,?,?,?,?,?,?,?) " +
+                      "ON DUPLICATE KEY UPDATE world_name=VALUES(world_name),pos_x=VALUES(pos_x)," +
+                      "pos_y=VALUES(pos_y),pos_z=VALUES(pos_z),pos_yaw=VALUES(pos_yaw)," +
+                      "pos_pitch=VALUES(pos_pitch),once_flag=VALUES(once_flag)," +
+                      "extra_str=VALUES(extra_str),extra_bool=VALUES(extra_bool)"
+                    : "INSERT OR REPLACE INTO fpp_bot_tasks " +
+                      "(bot_uuid,server_id,task_type,world_name,pos_x,pos_y,pos_z,pos_yaw,pos_pitch,once_flag,extra_str,extra_bool) " +
+                      "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)";
+            for (BotTaskRow row : snap) {
+                try (PreparedStatement ps = connection.prepareStatement(sql)) {
+                    ps.setString(1, row.botUuid());
+                    ps.setString(2, row.serverId());
+                    ps.setString(3, row.taskType());
+                    if (row.worldName() != null) ps.setString(4, row.worldName()); else ps.setNull(4, java.sql.Types.VARCHAR);
+                    ps.setDouble(5, row.posX());
+                    ps.setDouble(6, row.posY());
+                    ps.setDouble(7, row.posZ());
+                    ps.setFloat(8, row.posYaw());
+                    ps.setFloat(9, row.posPitch());
+                    ps.setBoolean(10, row.onceFlag());
+                    if (row.extraStr() != null) ps.setString(11, row.extraStr()); else ps.setNull(11, java.sql.Types.VARCHAR);
+                    ps.setBoolean(12, row.extraBool());
+                    ps.executeUpdate();
+                } catch (SQLException e) { FppLogger.error("DB saveBotTask(" + row.taskType() + "): " + e.getMessage()); }
+            }
+            Config.debug("DB saved " + snap.size() + " bot task row(s) for server='" + sid + "'.");
+        });
+    }
+
+    /**
+     * Returns all task rows from {@code fpp_bot_tasks} scoped to this server.
+     * Used during startup restore to resume active tasks.
+     * Runs synchronously — call from the main thread or a dedicated read thread.
+     */
+    public List<BotTaskRow> loadBotTasksForThisServer() {
+        List<BotTaskRow> list = new ArrayList<>();
+        if (!isAlive()) return list;
+        String sql = "SELECT * FROM fpp_bot_tasks WHERE server_id=?";
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setString(1, Config.serverId());
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) list.add(mapBotTaskRow(rs));
+            }
+        } catch (SQLException e) { FppLogger.error("DB loadBotTasksForThisServer: " + e.getMessage()); }
+        return list;
+    }
+
+    /**
+     * Clears all task rows for this server.
+     * Called after tasks have been loaded on startup so they don't re-restore
+     * on the next restart (same pattern as {@link #clearActiveBots()}).
+     */
+    public void clearBotTasks() {
+        final String sid = Config.serverId();
+        enqueue(() -> {
+            if (!isAlive()) return;
+            try (PreparedStatement ps = connection.prepareStatement(
+                    "DELETE FROM fpp_bot_tasks WHERE server_id=?")) {
+                ps.setString(1, sid);
+                int rows = ps.executeUpdate();
+                Config.debug("DB cleared " + rows + " bot task row(s) for server='" + sid + "'.");
+            } catch (SQLException e) { FppLogger.error("DB clearBotTasks: " + e.getMessage()); }
+        });
+    }
+
+    private BotTaskRow mapBotTaskRow(ResultSet rs) throws SQLException {
+        String worldName = null;
+        try { worldName = rs.getString("world_name"); } catch (SQLException ignored) {}
+        String extraStr = null;
+        try { extraStr = rs.getString("extra_str"); } catch (SQLException ignored) {}
+        boolean extraBool = false;
+        try { extraBool = rs.getBoolean("extra_bool"); } catch (SQLException ignored) {}
+        return new BotTaskRow(
+                rs.getString("bot_uuid"),
+                rs.getString("server_id"),
+                rs.getString("task_type"),
+                worldName,
+                rs.getDouble("pos_x"),
+                rs.getDouble("pos_y"),
+                rs.getDouble("pos_z"),
+                rs.getFloat("pos_yaw"),
+                rs.getFloat("pos_pitch"),
+                rs.getBoolean("once_flag"),
+                extraStr,
+                extraBool
+        );
+    }
 
     // ── Inner types ───────────────────────────────────────────────────────────
     private record PendingLocation(String world, double x, double y, double z, float yaw, float pitch) {}
@@ -1301,7 +1719,20 @@ public class DatabaseManager {
             String world, double x, double y, double z,
             float yaw, float pitch,
             String luckpermsGroup,
-            String serverId
+            String serverId,
+            String aiPersonality,  // nullable — null means no personality assigned yet
+            boolean pickUpItems,
+            boolean pickUpXp,
+            boolean frozen,
+            boolean chatEnabled,
+            String chatTier,       // nullable
+            String rightClickCmd,  // nullable
+            boolean headAiEnabled,
+            boolean navParkour,
+            boolean navBreakBlocks,
+            boolean navPlaceBlocks,
+            boolean swimAiEnabled,
+            int chunkLoadRadius    // -1 = use global config
     ) {}
 
     /**
@@ -1322,6 +1753,31 @@ public class DatabaseManager {
             String world,
             double x, double y, double z,
             float  yaw, float pitch
+    ) {}
+
+    /**
+     * Row from {@code fpp_bot_tasks} — one row per running task type per bot.
+     *
+     * <p>Task types: {@code MINE}, {@code USE}, {@code PLACE}, {@code PATROL}.</p>
+     *
+     * <ul>
+     *   <li>{@code worldName}/{@code posX/Y/Z}/{@code posYaw/Pitch} — target location
+     *       (null/zero for PATROL tasks which use extra fields instead)</li>
+     *   <li>{@code onceFlag} — true = run once then stop (MINE/USE/PLACE)</li>
+     *   <li>{@code extraStr} — patrol route name (PATROL) or reserved</li>
+     *   <li>{@code extraBool} — patrol random flag (PATROL) or reserved</li>
+     * </ul>
+     */
+    public record BotTaskRow(
+            String  botUuid,
+            String  serverId,
+            String  taskType,
+            String  worldName,
+            double  posX, double posY, double posZ,
+            float   posYaw, float posPitch,
+            boolean onceFlag,
+            String  extraStr,
+            boolean extraBool
     ) {}
 
     /**

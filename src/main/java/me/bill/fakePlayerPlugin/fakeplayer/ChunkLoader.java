@@ -59,13 +59,32 @@ public final class ChunkLoader {
             return;
         }
 
-        int radius = Math.max(0, Config.chunkLoadingRadius());
+        int globalRadius = Config.chunkLoadingRadius();
+        if (globalRadius == 0) {
+            // radius: 0 means "no chunk loading" — release any held tickets and skip
+            if (!states.isEmpty()) releaseAll();
+            return;
+        }
 
         Set<UUID> activeUuids = new HashSet<>();
 
         for (FakePlayer fp : manager.getActivePlayers()) {
             UUID botId = fp.getUuid();
             activeUuids.add(botId);
+
+            // ── Resolve effective radius for this bot ─────────────────────────
+            // Per-bot override: -1 = use global. 0 = disabled for this bot.
+            // Always capped at globalRadius so bots can never load more than
+            // the server-wide maximum configured by the admin.
+            int botR = fp.getChunkLoadRadius();
+            int radius = (botR < 0) ? globalRadius : Math.min(botR, globalRadius);
+
+            // Per-bot radius of 0 = chunk loading disabled for this bot
+            if (radius == 0) {
+                BotChunkState existing = states.remove(botId);
+                if (existing != null) releaseState(existing);
+                continue;
+            }
 
             // ── Resolve current chunk-centre ──────────────────────────────────
             Location pos = resolvePosition(fp);

@@ -32,6 +32,25 @@ public final class Perm {
 
     private Perm() {}
 
+    // ── Main command visibility ───────────────────────────────────────────────
+
+    /**
+     * Controls whether the {@code /fpp} command is visible and usable at all.
+     * Default: {@code true} (all players). Negate via LuckPerms to completely
+     * hide {@code /fpp} from a player or group:
+     * <pre>/lp group guest permission set fpp.command false</pre>
+     * When negated the command produces no output and disappears from tab-complete.
+     */
+    public static final String COMMAND = "fpp.command";
+
+    /**
+     * Controls whether the full plugin info panel is shown when typing bare {@code /fpp}.
+     * Default: {@code op}. Players without this permission see only the
+     * {@code /fpp help} hint instead of the full panel (version, authors, download links, etc.).
+     * Grant to staff who need version/status visibility without full admin access.
+     */
+    public static final String PLUGIN_INFO = "fpp.plugininfo";
+
     // ── Admin wildcard ────────────────────────────────────────────────────────
 
     /**
@@ -179,6 +198,12 @@ public final class Perm {
     /** Make a bot mine blocks in front of them via /fpp mine <bot>. */
     public static final String MINE          = "fpp.mine";
 
+    /** Register and use named bot storage targets via /fpp storage <bot> [storage_name]. */
+    public static final String STORAGE       = "fpp.storage";
+
+    /** Fill a selected cuboid area with blocks via /fpp place <bot> [--pos1|--pos2|--block <spec>|start|stop]. */
+    public static final String PLACE         = "fpp.place";
+
     /**
      * Make a bot right-click whatever it's looking at via /fpp use {@literal <bot>}.
      * Named {@code USE_CMD} (not {@code USE}) to avoid collision with the user-wildcard
@@ -188,6 +213,39 @@ public final class Perm {
 
     /** Create, remove, and list named waypoint patrol routes via /fpp waypoint (alias: /fpp wp). */
     public static final String WAYPOINT      = "fpp.waypoint";
+
+    /**
+     * Manage the badword filter and scan/fix active bot names via /fpp badword.
+     * Subcommands: check (list flagged bots), update (rename flagged bots), status (filter info).
+     */
+    public static final String BADWORD       = "fpp.badword";
+
+    /**
+     * Manage AI personalities for bots via /fpp personality.
+     * Includes listing, assigning, resetting, and reloading personality files.
+     * Default: op.
+     */
+    public static final String PERSONALITY = "fpp.personality";
+
+    /**
+     * Rename any active bot via /fpp rename &lt;oldname&gt; &lt;newname&gt;.
+     * Admin tier — can rename ALL bots regardless of who spawned them. Default: op.
+     */
+    public static final String RENAME        = "fpp.rename";
+
+    /**
+     * Rename only bots the sender personally spawned via /fpp rename.
+     * User opt-in — without this the sender must also have {@link #RENAME}.
+     * Default: false.
+     */
+    public static final String RENAME_OWN    = "fpp.rename.own";
+
+    /**
+     * Receive plugin update notifications on join.
+     * Automatically granted to OPs via {@link #OP}; grant explicitly to non-OP admins
+     * who should also be notified when a newer plugin version is available.
+     */
+    public static final String NOTIFY = "fpp.notify";
 
     // ── Admin bypass ─────────────────────────────────────────────────────────
 

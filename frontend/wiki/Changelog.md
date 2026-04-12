@@ -1,7 +1,73 @@
 # 📋 Changelog
 
 > **Full version history for Fake Player Plugin**  
-> Latest version: **v1.6.0** · Released: 2026-04-09 · Config version: **51**
+> Latest version: **v1.6.2** · Released: 2026-04-12 · Config version: **53**
+
+---
+
+## v1.6.2 *(2026-04-12)*
+
+### 🤖 AI Conversations
+- New AI DM system — bots respond to `/msg`, `/tell`, `/whisper` with AI-generated replies that match their personality
+- 7 provider support: **OpenAI · Anthropic · Groq · Google Gemini · Ollama · Copilot/Azure · Custom OpenAI-compatible**
+- API keys stored in `plugins/FakePlayerPlugin/secrets.yml` (never in `config.yml`) — template extracted from JAR on first run
+- Per-bot personality assignment via `/fpp personality <bot> set <name>`; personalities stored as `.txt` files in `personalities/` folder
+- Bundled sample personalities: `friendly`, `grumpy`, `noob`
+- `BotConversationManager` — per-player conversation history, rate limiting, typing delay simulation
+- `BotMessageListener` auto-registered when `ai-conversations.enabled` and a provider API key is present
+- `AIProviderRegistry` picks the first provider with a non-blank key; `isAvailable()` for runtime checks
+
+### 🆕 New Commands
+- `/fpp place <bot> [once|stop]` — continuous or one-shot block placing at the bot's look target; bot stays locked at position. Permission: `fpp.place`
+- `/fpp storage <bot> [name|--list|--remove <name>|--clear]` — register named supply containers; used by `/fpp mine` and `/fpp place` for automatic restocking. Permission: `fpp.storage`
+- `/fpp use <bot>` — bot right-clicks / activates the block it's looking at (chests, buttons, levers, crafting tables, etc.). Permission: `fpp.useitem`
+- `/fpp waypoint <name> [add|remove|list|clear]` — manage named patrol waypoint routes; bots walk them on a loop via `/fpp move <bot> --wp <route>`. Permission: `fpp.waypoint`
+- `/fpp personality [list|reload|<bot> set <name>|reset|show]` (alias `persona`) — assign AI personalities to bots; persisted to DB. Permission: `fpp.personality`
+- `/fpp badword add|remove|list|reload` — manage the runtime badword filter word list. Permission: `fpp.badword`
+- `/fpp rename <old> <new>` — rename any active bot with **full state preservation**: inventory (deep-cloned), XP, LP group, AI personality, right-click command, frozen state, tasks. Permission: `fpp.rename` (any) / `fpp.rename.own` (own only). `fpp.rename` is parent of `fpp.rename.own` in `plugin.yml`
+
+### ⛏️ Area Mining Mode
+- `/fpp mine <bot> --pos1` / `--pos2` — select a cuboid mining region using the bot's current position
+- `/fpp mine <bot> --start` — begin continuously mining the selected cuboid; navigates to each block using `PathfindingService`
+- `/fpp mine <bot> --status` — show current area-mine job progress
+- `/fpp mine <bot> --stop` — cancel the area-mine job
+- Auto-restocks from the nearest registered `StorageStore` container when inventory fills
+- Selections persisted to `data/mine-selections.yml` — survive restarts and auto-resume after reboot
+
+### ⚙️ Per-Bot Settings GUI (`BotSettingGui`)
+- Shift+right-click any bot entity to open a **6-row chest GUI** with 5 categories:
+  - ⚙ **General** — frozen toggle, look-at-player toggle, rename action
+  - 💬 **Chat** — chat enabled/disabled, activity tier, AI personality selector
+  - ⚔ **PvP** — PvP AI settings (coming soon)
+  - 📋 **Cmds** — set/clear stored right-click command
+  - ⚠ **Danger** — delete bot with confirmation
+- Controlled by `bot-interaction.shift-right-click-settings` config key
+
+### 💾 Task Persistence (DB Schema v13)
+- Active tasks (mine/use/place/patrol) now saved to `fpp_bot_tasks` DB table on shutdown
+- YAML fallback: `data/bot-tasks.yml` when database is disabled
+- `clearBotTasks()` called immediately after load to prevent double-restore on next restart
+- `BotPersistence` injection points: `setMineCommand`, `setPlaceCommand`, `setUseCommand`, `setWaypointStore`
+- Task columns: `bot_uuid`, `server_id`, `task_type` (MINE/USE/PLACE/PATROL), world, pos, once_flag, extra_str (patrol route), extra_bool (patrol random)
+
+### 🧭 Navigation & Interaction Engine
+- `PathfindingService` — centralised shared navigation service; all nav loops previously duplicated across `MoveCommand`, `MineCommand`, `PlaceCommand`, `UseCommand` now delegated here
+- `NavigationRequest` — `lockOnArrival` field for atomic nav→action lock handoff (eliminates one-tick gap between navigation arrival and action-lock acquisition)
+- `BotNavUtil` — static utilities: `findStandLocation` (16-candidate walkable-adjacent search), `faceToward`, `isAtActionLocation` (XZ ≤ 0.35 proximity), `useStorageBlock`
+- `StorageInteractionHelper` — shared lock→open-container→transfer→unlock lifecycle for deposit (mine→storage) and fetch (storage→place) operations; all error paths call `onFinally` so callers can clean up gating flags
+
+### 🎒 Per-Bot Item & XP Pickup Toggles
+- `body.pick-up-items` global default (`true`) and `body.pick-up-xp` global default (`true`)
+- Per-bot overrides exposed in `BotSettingGui` — toggling off **immediately drops current inventory / XP to ground** (no need to despawn)
+- `BotXpPickupListener` gates both `PlayerPickupExperienceEvent` and `PlayerExpChangeEvent` per-bot
+
+### 📋 Config v47 → v53
+- v47→v48: Added `pathfinding` section
+- v48→v49: Added `body.pick-up-xp`
+- v49→v50: Added `pvp-ai` section tweaks
+- v50→v51: Finalized XP cooldown and cmd storage keys
+- v51→v52: Added `bot-interaction`, `badword-filter` sections
+- v52→v53: Added `ai-conversations` section; config reorganized into **10 clearly numbered sections**: Spawning · Appearance · Body & Combat · AI & Navigation · Bot Chat · AI Conversations · Scheduling · Database & Network · Performance · Debug & Logging
 
 ---
 
@@ -28,7 +94,7 @@
 ### ⭐ `/fpp xp` *(new)*
 - Transfer the bot's entire XP pool to yourself; clears bot levels and progress
 - 30-second post-collection cooldown on bot XP pickup; `body.pick-up-xp` config flag gates orb pickup globally
-- Permission: `fpp.user.xp` (user-tier, included in `fpp.use`)
+- Permission: `fpp.xp` (user-tier, included in `fpp.use`)
 
 ### 💻 `/fpp cmd` *(new)*
 - `/fpp cmd <bot> <command>` - dispatch a command as the bot

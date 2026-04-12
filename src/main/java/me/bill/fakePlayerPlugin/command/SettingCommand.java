@@ -30,10 +30,9 @@ public class SettingCommand implements FppCommand {
     @Override public String getDescription() { return "Open the interactive in-game settings GUI."; }
     @Override public String getPermission()  { return Perm.SETTINGS; }
 
-    /** OPs always pass - consistent with all other admin commands. */
     @Override
     public boolean canUse(CommandSender sender) {
-        return Perm.hasOrOp(sender, Perm.SETTINGS);
+        return Perm.has(sender, Perm.SETTINGS);
     }
 
     @Override
@@ -42,7 +41,7 @@ public class SettingCommand implements FppCommand {
             sender.sendMessage(Lang.get("player-only"));
             return true;
         }
-        if (!Perm.hasOrOp(sender, Perm.SETTINGS)) {
+        if (!Perm.has(sender, Perm.SETTINGS)) {
             sender.sendMessage(Lang.get("no-permission"));
             return true;
         }
@@ -50,6 +49,3 @@ public class SettingCommand implements FppCommand {
         return true;
     }
 }
-
-
-

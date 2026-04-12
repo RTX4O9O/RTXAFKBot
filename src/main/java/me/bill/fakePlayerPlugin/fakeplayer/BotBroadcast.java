@@ -4,6 +4,9 @@ import me.bill.fakePlayerPlugin.config.Config;
 import me.bill.fakePlayerPlugin.lang.Lang;
 import me.bill.fakePlayerPlugin.util.TextUtil;
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.minimessage.MiniMessage;
+import net.kyori.adventure.text.minimessage.tag.Tag;
+import net.kyori.adventure.text.minimessage.tag.resolver.TagResolver;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 
@@ -34,42 +37,40 @@ public final class BotBroadcast {
     }
 
     /**
-     * Converts a raw display-name string (which may contain MiniMessage tags,
-     * LuckPerms gradient shorthand {@code {#RRGGBB>}text{#RRGGBB<}}, or legacy
-     * {@code §}-codes) into a {@link Component}.
-     * Delegates entirely to {@link TextUtil#colorize} which handles all three
-     * formats in the correct order.
+     * Converts a raw display-name string into a {@link Component}.
+     * Plain names with no colour markup default to yellow so bot names are never
+     * white in join/leave messages.  Names that already carry MiniMessage tags,
+     * legacy §/& codes, or LP gradient shorthand keep their own colour.
      */
     private static Component parseDisplayName(String raw) {
         if (raw == null || raw.isEmpty()) return Component.empty();
-        return TextUtil.colorize(raw);
+        return TextUtil.colorizeOrYellow(raw);
     }
 
     /**
      * Builds the broadcast Component by:
-     * 1. Getting the raw lang template (e.g. {@code "<yellow>{name} joined the game"}).
-     * 2. Splitting on the {@code {name}} placeholder.
-     * 3. Parsing each half, then inserting the pre-parsed display-name Component.
-     * This avoids embedding a raw display-name string directly into a MiniMessage
-     * template, which would corrupt gradient/colour tags or §-codes.
+     * 1. Getting the raw lang template (e.g. {@code "<yellow>{name} joined the game</yellow>"}).
+     * 2. Replacing {@code {name}} with a safe MiniMessage insertion tag {@code <fpp_name>}.
+     * 3. Parsing the ENTIRE template in one MiniMessage pass with a TagResolver that
+     *    inserts the pre-parsed display-name Component at {@code <fpp_name>}.
+     *
+     * <p>Parsing the full string in one pass means colour tags such as
+     * {@code <yellow>…</yellow>} span correctly across the name, so closing tags
+     * like {@code </yellow>} are never orphaned and never appear as literal text.
      */
     private static Component buildMessage(String langKey, String displayName,
                                           String... extraArgs) {
         String template = Lang.raw(langKey, extraArgs);
-        // Replace {name} sentinel with a unique placeholder we control
-        final String SENTINEL = "\u0000NAME\u0000";
-        String withSentinel = template.replace("{name}", SENTINEL);
+        Component nameComponent = parseDisplayName(displayName);
 
-        // Split on our sentinel
-        String[] parts = withSentinel.split(SENTINEL, -1);
-        Component result = Component.empty();
-        for (int i = 0; i < parts.length; i++) {
-            result = result.append(TextUtil.colorize(parts[i]));
-            if (i < parts.length - 1) {
-                result = result.append(parseDisplayName(displayName));
-            }
-        }
-        return result;
+        // Swap the {name} curly-brace placeholder for a custom MiniMessage tag
+        // <fpp_name> so the whole template is parsed as a single unit.
+        String withTag = template.replace("{name}", "<fpp_name>");
+        String converted = TextUtil.legacyToMiniMessage(withTag);
+
+        TagResolver nameResolver = TagResolver.resolver(
+                "fpp_name", Tag.inserting(nameComponent));
+        return MiniMessage.miniMessage().deserialize(converted, nameResolver);
     }
 
     // ── Public API ────────────────────────────────────────────────────────────

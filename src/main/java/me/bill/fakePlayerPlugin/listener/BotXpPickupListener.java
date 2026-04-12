@@ -46,7 +46,11 @@ public class BotXpPickupListener implements Listener {
     public void onBotXpOrbPickup(PlayerPickupExperienceEvent event) {
         if (!isFakeBotBody(event.getPlayer())) return;
 
-        if (!Config.bodyPickUpXp() || isOnXpCooldown(event.getPlayer())) {
+        FakePlayer fp = manager.getByUuid(event.getPlayer().getUniqueId());
+        if (fp == null) return;
+
+        // Block XP pickup when the global config gate is off OR the per-bot flag is off.
+        if (!Config.bodyPickUpXp() || !fp.isPickUpXpEnabled() || isOnXpCooldown(event.getPlayer())) {
             event.setCancelled(true);
         }
     }
@@ -61,7 +65,10 @@ public class BotXpPickupListener implements Listener {
     public void onBotXpChange(PlayerExpChangeEvent event) {
         if (!isFakeBotBody(event.getPlayer())) return;
 
-        if (!Config.bodyPickUpXp() || isOnXpCooldown(event.getPlayer())) {
+        FakePlayer fp = manager.getByUuid(event.getPlayer().getUniqueId());
+        if (fp == null) return;
+
+        if (!Config.bodyPickUpXp() || !fp.isPickUpXpEnabled() || isOnXpCooldown(event.getPlayer())) {
             event.setAmount(0);
         }
     }

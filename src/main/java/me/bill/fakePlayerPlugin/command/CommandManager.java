@@ -4,6 +4,7 @@ import me.bill.fakePlayerPlugin.FakePlayerPlugin;
 import me.bill.fakePlayerPlugin.config.Config;
 import me.bill.fakePlayerPlugin.lang.Lang;
 import me.bill.fakePlayerPlugin.util.TextUtil;
+import me.bill.fakePlayerPlugin.permission.Perm;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.event.ClickEvent;
 import net.kyori.adventure.text.event.HoverEvent;
@@ -77,7 +78,16 @@ public class CommandManager implements CommandExecutor, TabCompleter {
                              @NotNull String @NotNull [] args) {
 
         if (args.length == 0) {
-            sendPluginInfo(sender);
+            // Honour fpp.command negation even for the info screen.
+            if (!sender.hasPermission(Perm.COMMAND)) return true;
+
+            if (sender.hasPermission(Perm.PLUGIN_INFO)) {
+                // Full info panel for admins / staff with fpp.plugininfo
+                sendPluginInfo(sender);
+            } else {
+                // Regular users just get the /fpp help hint — no version/author/links exposed
+                sendHelpHint(sender);
+            }
             return true;
         }
 
@@ -142,7 +152,26 @@ public class CommandManager implements CommandExecutor, TabCompleter {
     // ── Plugin info screen ────────────────────────────────────────────────────
 
     /**
+     * Minimal hint shown to players who have {@code fpp.command} but NOT {@code fpp.plugininfo}.
+     * Just a clickable "/fpp help" nudge — no version, author, or download links.
+     */
+    private void sendHelpHint(CommandSender sender) {
+        Component divider = TextUtil.colorize(Lang.raw("divider"));
+        sender.sendMessage(divider);
+        sender.sendMessage(Component.empty()
+                .append(Component.text("  ").color(DARK_GRAY))
+                .append(Component.text("ᴛʏᴘᴇ ").color(GRAY))
+                .append(Component.text("/fpp help").color(ACCENT)
+                        .clickEvent(ClickEvent.runCommand("/fpp help"))
+                        .hoverEvent(HoverEvent.showText(
+                                Component.text("Click to open the help menu").color(GRAY))))
+                .append(Component.text(" ꜰᴏʀ ᴀ ʟɪꜱᴛ ᴏꜰ ᴄᴏᴍᴍᴀɴᴅꜱ.").color(GRAY)));
+        sender.sendMessage(divider);
+    }
+
+    /**
      * Shown when the player types bare {@code /fpp} - a compact, themed info panel.
+     * Requires {@code fpp.plugininfo} — otherwise {@link #sendHelpHint(CommandSender)} is shown.
      */
     private void sendPluginInfo(CommandSender sender) {
         String version = plugin.getPluginMeta().getVersion();

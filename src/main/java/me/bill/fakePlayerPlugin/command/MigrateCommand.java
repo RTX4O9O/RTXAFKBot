@@ -1,8 +1,11 @@
 package me.bill.fakePlayerPlugin.command;
 
 import me.bill.fakePlayerPlugin.FakePlayerPlugin;
+import me.bill.fakePlayerPlugin.ai.PersonalityRepository;
 import me.bill.fakePlayerPlugin.config.Config;
 import me.bill.fakePlayerPlugin.database.DatabaseManager;
+import me.bill.fakePlayerPlugin.fakeplayer.FakePlayer;
+import me.bill.fakePlayerPlugin.fakeplayer.FakePlayerManager;
 import me.bill.fakePlayerPlugin.lang.Lang;
 import me.bill.fakePlayerPlugin.permission.Perm;
 import me.bill.fakePlayerPlugin.util.BackupManager;
@@ -38,6 +41,7 @@ public class MigrateCommand implements FppCommand {
     private static final String GRAY    = "<gray>";
     private static final String GREEN   = "<green>";
     private static final String RED     = "<red>";
+    private static final String YELLOW  = "<yellow>";
 
     private final FakePlayerPlugin plugin;
 
@@ -71,6 +75,7 @@ public class MigrateCommand implements FppCommand {
             case "names"    -> doFileSync(sender, "bot-names.yml",    "bot-names.yml",    "Bot names (bot-names.yml)");
             case "messages" -> doFileSync(sender, "bot-messages.yml", "bot-messages.yml", "Bot messages (bot-messages.yml)");
             case "db"       -> doDb(sender, args);
+            case "apply"    -> doApply(sender);
             default         -> sendHelp(sender);
         }
         return true;
@@ -355,12 +360,118 @@ public class MigrateCommand implements FppCommand {
 
     // ── Tab complete ──────────────────────────────────────────────────────────
 
+    /**
+     * Full migration apply sequence:
+     * <ol>
+     *   <li>Reload config, lang, personalities, and badword filter (sync to latest JAR)</li>
+     *   <li>Auto-rename all active bots whose names fail the badword filter</li>
+     *   <li>Assign a random AI personality to every active bot that doesn't have one</li>
+     *   <li>Report results</li>
+     * </ol>
+     *
+     * <p>This is the one-command equivalent of running the following separately:
+     * {@code /fpp reload} → {@code /fpp badword update} → assign personalities → {@code /fpp reload}
+     */
+    private void doApply(CommandSender sender) {
+        msg(sender, COLOR + "ᴍɪɢʀᴀᴛᴇ ᴀᴘᴘʟʏ" + C_CLOSE + GRAY + " — starting full migration sequence…");
+
+        // ── Step 1: Reload config, lang, personalities, and badword filter ────
+        msg(sender, GRAY + "  [1/3] Reloading config, language, personalities and badword filter…");
+        try {
+            plugin.reloadConfig();
+            Config.reload();
+            me.bill.fakePlayerPlugin.lang.Lang.reload();
+            me.bill.fakePlayerPlugin.config.BotNameConfig.reload();
+            me.bill.fakePlayerPlugin.config.BotMessageConfig.reload();
+            me.bill.fakePlayerPlugin.util.BadwordFilter.reload(plugin);
+            PersonalityRepository repo = plugin.getPersonalityRepository();
+            if (repo != null) repo.reload();
+            int repoSize = (repo != null) ? repo.size() : 0;
+            msg(sender, GREEN + "  ✔ " + GRAY + "Config, lang, personalities and badword filter reloaded. ("
+                    + repoSize + " personalit"
+                    + (repoSize == 1 ? "y" : "ies") + " loaded)");
+        } catch (Exception e) {
+            msg(sender, RED + "  ✘ " + GRAY + "Reload failed: " + e.getMessage());
+            return;
+        }
+
+        // ── Step 2: Auto-rename badword bots ──────────────────────────────────
+        msg(sender, GRAY + "  [2/3] Scanning for bots with badword names…");
+        FakePlayerManager manager = plugin.getFakePlayerManager();
+        if (manager == null) {
+            msg(sender, RED + "  ✘ " + GRAY + "FakePlayerManager not available — skipping badword step.");
+        } else if (!Config.isBadwordFilterEnabled()) {
+            msg(sender, YELLOW + "  ⚠ " + GRAY + "Badword filter is disabled — skipping rename step.");
+        } else if (me.bill.fakePlayerPlugin.util.BadwordFilter.getBadwordCount() == 0) {
+            msg(sender, YELLOW + "  ⚠ " + GRAY + "No badword sources are active — skipping rename step.");
+        } else {
+            // Count flagged bots first
+            long flaggedCount = manager.getActivePlayers().stream()
+                    .filter(fp -> !me.bill.fakePlayerPlugin.util.BadwordFilter.isAllowed(fp.getName()))
+                    .count();
+            if (flaggedCount == 0) {
+                msg(sender, GREEN + "  ✔ " + GRAY + "All " + manager.getActivePlayers().size()
+                        + " active bot(s) have clean names.");
+            } else {
+                msg(sender, GRAY + "  Found " + flaggedCount + " bot(s) with flagged names — renaming…");
+                // Use BadwordCommand.doUpdate to perform the rename
+                BadwordCommand badwordCmd = null;
+                try {
+                    // Locate the registered BadwordCommand instance via CommandManager
+                    for (FppCommand cmd : plugin.getCommandManager().getCommands()) {
+                        if (cmd instanceof BadwordCommand bc) { badwordCmd = bc; break; }
+                    }
+                } catch (Exception ignored) {}
+                if (badwordCmd != null) {
+                    badwordCmd.doUpdate(sender);
+                } else {
+                    // Fallback: construct a temporary instance
+                    new BadwordCommand(plugin, manager).doUpdate(sender);
+                }
+            }
+        }
+
+        // ── Step 3: Assign random AI personalities to bots without one ────────
+        msg(sender, GRAY + "  [3/3] Assigning AI personalities to bots that don't have one…");
+        PersonalityRepository repo = plugin.getPersonalityRepository();
+        if (repo == null || repo.size() == 0) {
+            msg(sender, YELLOW + "  ⚠ " + GRAY
+                    + "No personalities found in plugins/FakePlayerPlugin/personalities/ — skipping.");
+        } else if (manager == null) {
+            msg(sender, RED + "  ✘ " + GRAY + "FakePlayerManager not available — skipping.");
+        } else {
+            int assigned = 0;
+            java.util.List<String> names = repo.getNames();
+            DatabaseManager db = plugin.getDatabaseManager();
+            for (FakePlayer fp : manager.getActivePlayers()) {
+                if (fp.getAiPersonality() == null) {
+                    String randomName = names.get(
+                            java.util.concurrent.ThreadLocalRandom.current().nextInt(names.size()));
+                    fp.setAiPersonality(randomName);
+                    if (db != null) db.updateBotAiPersonality(fp.getUuid().toString(), randomName);
+                    assigned++;
+                }
+            }
+            if (assigned > 0) {
+                msg(sender, GREEN + "  ✔ " + GRAY + "Assigned personalities to " + assigned
+                        + " bot(s). (" + (manager.getActivePlayers().size() - assigned)
+                        + " already had personalities.)");
+            } else {
+                msg(sender, GREEN + "  ✔ " + GRAY + "All " + manager.getActivePlayers().size()
+                        + " active bot(s) already have personalities — nothing to assign.");
+            }
+        }
+
+        msg(sender, COLOR + "ᴍɪɢʀᴀᴛᴇ ᴀᴘᴘʟʏ" + C_CLOSE + GREEN + " complete." + GRAY
+                + " Run " + COLOR + "/fpp reload" + C_CLOSE + GRAY + " to finalize.");
+    }
+
     @Override
     public List<String> tabComplete(CommandSender sender, String[] args) {
         if (!sender.hasPermission(Perm.MIGRATE)) return List.of();
         if (args.length == 1) return filter(
                 List.of("backup", "backups", "status", "config",
-                        "lang", "names", "messages", "db"), args[0]);
+                        "lang", "names", "messages", "db", "apply"), args[0]);
         if (args.length == 2 && args[0].equalsIgnoreCase("db"))
             return filter(List.of("schema", "merge", "export", "tomysql", "cleanup", "repair"), args[1]);
         if (args.length == 3 && args[0].equalsIgnoreCase("db") && args[1].equalsIgnoreCase("merge"))
@@ -372,19 +483,20 @@ public class MigrateCommand implements FppCommand {
 
     private void sendHelp(CommandSender sender) {
         msg(sender, COLOR + "ᴍɪɢʀᴀᴛɪᴏɴ & ʙᴀᴄᴋᴜᴘ ꜱʏꜱᴛᴇᴍ" + C_CLOSE);
+        row(sender, "/fpp migrate apply",            "Reload → fix badword names → assign personalities");
         row(sender, "/fpp migrate backup",           "Create a manual backup now");
-        row(sender, "/fpp migrate backups",           "List stored backups");
-        row(sender, "/fpp migrate status",            "Show migration & file sync status");
-        row(sender, "/fpp migrate config",            "Re-run config.yml migration chain");
-        row(sender, "/fpp migrate lang",              "Sync missing keys in language/en.yml");
-        row(sender, "/fpp migrate names",             "Sync missing keys in bot-names.yml");
-        row(sender, "/fpp migrate messages",          "Sync missing keys in bot-messages.yml");
-        row(sender, "/fpp migrate db schema",         "Show DB schema version and table stats");
-        row(sender, "/fpp migrate db merge [file]",   "Merge old fpp.db into current DB");
-        row(sender, "/fpp migrate db export",         "Export sessions to CSV");
-        row(sender, "/fpp migrate db tomysql",        "Migrate SQLite → MySQL");
-        row(sender, "/fpp migrate db cleanup",        "Remove stale fpp_active_bots rows");
-        row(sender, "/fpp migrate db repair",         "Close orphaned open sessions");
+        row(sender, "/fpp migrate backups",          "List stored backups");
+        row(sender, "/fpp migrate status",           "Show migration & file sync status");
+        row(sender, "/fpp migrate config",           "Re-run config.yml migration chain");
+        row(sender, "/fpp migrate lang",             "Sync missing keys in language/en.yml");
+        row(sender, "/fpp migrate names",            "Sync missing keys in bot-names.yml");
+        row(sender, "/fpp migrate messages",         "Sync missing keys in bot-messages.yml");
+        row(sender, "/fpp migrate db schema",        "Show DB schema version and table stats");
+        row(sender, "/fpp migrate db merge [file]",  "Merge old fpp.db into current DB");
+        row(sender, "/fpp migrate db export",        "Export sessions to CSV");
+        row(sender, "/fpp migrate db tomysql",       "Migrate SQLite → MySQL");
+        row(sender, "/fpp migrate db cleanup",       "Remove stale fpp_active_bots rows");
+        row(sender, "/fpp migrate db repair",        "Close orphaned open sessions");
     }
 
     private void row(CommandSender sender, String cmd, String desc) {

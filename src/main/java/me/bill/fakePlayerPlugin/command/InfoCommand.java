@@ -53,8 +53,8 @@ public class InfoCommand implements FppCommand {
     @Override public String getName()        { return "info"; }
     @Override public String getUsage()       { return "[bot|spawner] <name>"; }
     @Override public String getDescription() { return "Query bot session history from the database."; }
-    /** Checked manually - two tiers: fpp.info (admin) and fpp.user.info (limited). */
-    @Override public String getPermission()  { return null; }
+    /** Primary admin permission — canUse() also allows fpp.info.user (dual-tier). */
+    @Override public String getPermission()  { return Perm.INFO; }
 
     /** Dual-tier: visible to admins (fpp.info) AND user-tier (fpp.user.info). */
     @Override

@@ -1,8 +1,8 @@
 [CENTER][SIZE=7][B]ꜰᴀᴋᴇ ᴘʟᴀʏᴇʀ ᴘʟᴜɢɪɴ (FPP)[/B][/SIZE]
 
-[SIZE=5][I]Spawn realistic fake players on your Paper server — with tab list presence, server list count, join/leave messages, in-world bodies, guaranteed skins, chunk loading, bot swap/rotation, fake chat, LuckPerms integration, proxy network support, and full hot-reload.[/I][/SIZE]
+[SIZE=5][I]Spawn realistic fake players on your Paper server — with tab list presence, server list count, join/leave messages, in-world bodies, guaranteed skins, chunk loading, bot swap/rotation, fake chat, AI conversations, area mining, block placing, pathfinding, per-bot settings GUI, LuckPerms integration, proxy network support, and full hot-reload.[/I][/SIZE]
 
-[SIZE=4][B]Version:[/B] 1.6.0  [B]Minecraft:[/B] 1.21.x  [B]Platform:[/B] Paper  [B]Java:[/B] 21+[/SIZE]
+[SIZE=4][B]Version:[/B] 1.6.2  [B]Minecraft:[/B] 1.21.x  [B]Platform:[/B] Paper  [B]Java:[/B] 21+[/SIZE]
 
 [URL='https://modrinth.com/plugin/fake-player-plugin-(fpp)'][B][COLOR=#00AF5C]⬇ Download on Modrinth[/COLOR][/B][/URL]  [URL='https://www.spigotmc.org/resources/fake-player-plugin-fpp.133572/'][B][COLOR=#FF6B35]⬇ SpigotMC[/COLOR][/B][/URL]  [URL='https://hangar.papermc.io/Pepe-tf/FakePlayerPlugin'][B][COLOR=#00BFD8]⬇ PaperMC Hangar[/COLOR][/B][/URL]  [URL='https://builtbybit.com/resources/fake-player-plugin.98704/'][B][COLOR=#A855F7]⬇ BuiltByBit[/COLOR][/B][/URL]
 [URL='https://discord.gg/QSN7f67nkJ'][B][COLOR=#5865F2]💬 Join Discord[/COLOR][/B][/URL]  [URL='https://fakeplayerplugin.xyz'][B][COLOR=#7B8EF0]📖 Wiki[/COLOR][/B][/URL]  [URL='https://ko-fi.com/fakeplayerplugin'][B][COLOR=#FF5E5B]☕ Support on Ko-fi[/COLOR][/B][/URL]
@@ -28,9 +28,15 @@ FPP adds fake players to your server that look and behave like real ones:
 [*][B]Freeze[/B] any bot in place with [FONT=monospace]/fpp freeze[/FONT]
 [*][B]Open bot inventory[/B] — 54-slot GUI with equipment slots; right-click any bot entity to open
 [*][B]Pathfind to players[/B] — A* grid navigation with WALK, ASCEND, DESCEND, PARKOUR, BREAK, PLACE move types
-[*][B]Mine blocks[/B] — continuous or one-shot block breaking with progressive mining progress
-[*][B]Store right-click commands[/B] — assign a command to any bot; right-clicking it runs the command
+[*][B]Mine blocks[/B] — continuous or one-shot block breaking; area selection with pos1/pos2 cuboid mode
+[*][B]Place blocks[/B] — continuous block placing with per-bot supply container support
+[*][B]Right-click automation[/B] — assign a command to any bot; right-clicking it runs the command
 [*][B]Transfer XP[/B] — drain a bot's entire XP pool to yourself with [FONT=monospace]/fpp xp[/FONT]
+[*][B]Named waypoint routes[/B] — save patrol routes; bots walk them on a loop with [FONT=monospace]/fpp move --wp[/FONT]
+[*][B]Rename bots[/B] — rename any active bot with full state preservation (inventory, XP, LP group, tasks)
+[*][B]Per-bot settings GUI[/B] — shift+right-click any bot to open a 6-row settings chest (General · Chat · PvP · Cmds · Danger)
+[*][B]AI conversations[/B] — bots respond to [FONT=monospace]/msg[/FONT] with AI-generated replies; 7 providers (OpenAI, Groq, Anthropic, Gemini, Ollama, Copilot, Custom); per-bot personalities via [FONT=monospace]personalities/[/FONT] folder
+[*][B]Badword filter[/B] — case-insensitive with leet-speak normalization, auto-rename bad names, remote word list
 [*][B]LuckPerms[/B] — per-bot group assignment, weighted tab-list ordering, prefix/suffix in chat and nametags
 [*][B]Proxy/network support[/B] — Velocity & BungeeCord cross-server chat, alerts, and shared database
 [*][B]Config sync[/B] — push/pull configuration files across your proxy network
@@ -46,9 +52,9 @@ FPP adds fake players to your server that look and behave like real ones:
 [TR][TD][B]Requirement[/B][/TD][TD][B]Version[/B][/TD][/TR]
 [TR][TD][URL='https://papermc.io/downloads/paper']Paper[/URL][/TD][TD]1.21.x[/TD][/TR]
 [TR][TD]Java[/TD][TD]21+[/TD][/TR]
-[TR][TD][URL='https://modrinth.com/plugin/packetevents']PacketEvents[/URL][/TD][TD]2.x[/TD][/TR]
 [TR][TD][URL='https://luckperms.net']LuckPerms[/URL][/TD][TD]Optional — auto-detected[/TD][/TR]
 [TR][TD][URL='https://www.spigotmc.org/resources/placeholderapi.6245/']PlaceholderAPI[/URL][/TD][TD]Optional — auto-detected (29+ placeholders)[/TD][/TR]
+[TR][TD][URL='https://dev.bukkit.org/projects/worldguard']WorldGuard[/URL][/TD][TD]Optional — auto-detected (no-PvP region protection)[/TD][/TR]
 [/TABLE]
 
 [B]Note:[/B] Supports all Paper 1.21.x versions (1.21.0 through 1.21.11). Check the server console after startup for any version-specific notes.
@@ -61,7 +67,6 @@ FPP adds fake players to your server that look and behave like real ones:
 
 [LIST=1]
 [*]Download the latest [FONT=monospace]fpp-*.jar[/FONT] from [URL='https://modrinth.com/plugin/fake-player-plugin-(fpp)/versions']Modrinth[/URL] and place it in your [FONT=monospace]plugins/[/FONT] folder.
-[*]Download [URL='https://modrinth.com/plugin/packetevents']PacketEvents[/URL] and place it in [FONT=monospace]plugins/[/FONT] too.
 [*]Restart your server — config files are created automatically.
 [*]Edit [FONT=monospace]plugins/FakePlayerPlugin/config.yml[/FONT] to your liking.
 [*]Run [FONT=monospace]/fpp reload[/FONT] to apply changes at any time.
@@ -85,9 +90,19 @@ All commands are under [FONT=monospace]/fpp[/FONT] (aliases: [FONT=monospace]/fa
 [TR][TD][FONT=monospace]/fpp freeze <name|all> [on|off][/FONT][/TD][TD]Freeze or unfreeze bots — frozen bots are immovable; shown with ❄ in list/stats[/TD][/TR]
 [TR][TD][FONT=monospace]/fpp inventory <bot>[/FONT][/TD][TD]Open the bot's full 54-slot inventory GUI (alias: /fpp inv)[/TD][/TR]
 [TR][TD][FONT=monospace]/fpp move <bot> <player>[/FONT][/TD][TD]Navigate a bot to an online player using A* pathfinding[/TD][/TR]
+[TR][TD][FONT=monospace]/fpp move <bot> --wp <route>[/FONT][/TD][TD]Patrol a named waypoint route on a loop[/TD][/TR]
+[TR][TD][FONT=monospace]/fpp move <bot> --stop[/FONT][/TD][TD]Stop the bot's current navigation[/TD][/TR]
+[TR][TD][FONT=monospace]/fpp mine <bot> [once|stop][/FONT][/TD][TD]Continuous or one-shot block mining[/TD][/TR]
+[TR][TD][FONT=monospace]/fpp mine <bot> --pos1|--pos2|--start|--stop[/FONT][/TD][TD]Area-selection cuboid mining mode[/TD][/TR]
+[TR][TD][FONT=monospace]/fpp place <bot> [once|stop][/FONT][/TD][TD]Continuous or one-shot block placing[/TD][/TR]
+[TR][TD][FONT=monospace]/fpp storage <bot> [name|--list|--remove|--clear][/FONT][/TD][TD]Register supply containers for mine/place restocking[/TD][/TR]
+[TR][TD][FONT=monospace]/fpp use <bot>[/FONT][/TD][TD]Bot right-clicks / activates the block it's looking at[/TD][/TR]
+[TR][TD][FONT=monospace]/fpp waypoint <name> [add|remove|list|clear][/FONT][/TD][TD]Manage named patrol route waypoints[/TD][/TR]
 [TR][TD][FONT=monospace]/fpp xp <bot>[/FONT][/TD][TD]Transfer all of a bot's XP to yourself[/TD][/TR]
 [TR][TD][FONT=monospace]/fpp cmd <bot> <command>[/FONT][/TD][TD]Execute a command on a bot; --add/--clear/--show manage its stored right-click command[/TD][/TR]
-[TR][TD][FONT=monospace]/fpp mine <bot> [once|stop][/FONT][/TD][TD]Start/stop continuous block mining for a bot[/TD][/TR]
+[TR][TD][FONT=monospace]/fpp rename <old> <new>[/FONT][/TD][TD]Rename a bot preserving all state (inventory, XP, LP group, tasks)[/TD][/TR]
+[TR][TD][FONT=monospace]/fpp personality <bot> set|reset|show[/FONT][/TD][TD]Assign or clear AI personality per bot[/TD][/TR]
+[TR][TD][FONT=monospace]/fpp badword add|remove|list|reload[/FONT][/TD][TD]Manage the runtime badword filter list[/TD][/TR]
 [TR][TD][FONT=monospace]/fpp chat [on|off|status][/FONT][/TD][TD]Toggle the fake chat system[/TD][/TR]
 [TR][TD][FONT=monospace]/fpp swap [on|off|status|now <bot>|list|info <bot>][/FONT][/TD][TD]Toggle / manage the bot swap/rotation system[/TD][/TR]
 [TR][TD][FONT=monospace]/fpp peaks [on|off|status|next|force|list|wake <name>|sleep <name>][/FONT][/TD][TD]Time-based bot pool scheduler[/TD][/TR]
@@ -139,6 +154,14 @@ All commands are under [FONT=monospace]/fpp[/FONT] (aliases: [FONT=monospace]/fa
 [TR][TD][FONT=monospace]fpp.move[/FONT][/TD][TD]Navigate bots with A* pathfinding[/TD][/TR]
 [TR][TD][FONT=monospace]fpp.cmd[/FONT][/TD][TD]Execute or store commands on bots[/TD][/TR]
 [TR][TD][FONT=monospace]fpp.mine[/FONT][/TD][TD]Enable/stop bot block mining[/TD][/TR]
+[TR][TD][FONT=monospace]fpp.place[/FONT][/TD][TD]Enable/stop bot block placing[/TD][/TR]
+[TR][TD][FONT=monospace]fpp.storage[/FONT][/TD][TD]Register supply containers for bots[/TD][/TR]
+[TR][TD][FONT=monospace]fpp.useitem[/FONT][/TD][TD]Bot right-click / use-item automation[/TD][/TR]
+[TR][TD][FONT=monospace]fpp.waypoint[/FONT][/TD][TD]Manage named patrol route waypoints[/TD][/TR]
+[TR][TD][FONT=monospace]fpp.rename[/FONT][/TD][TD]Rename any bot (with full state preservation)[/TD][/TR]
+[TR][TD][FONT=monospace]fpp.rename.own[/FONT][/TD][TD]Rename only bots the sender personally spawned[/TD][/TR]
+[TR][TD][FONT=monospace]fpp.personality[/FONT][/TD][TD]Assign AI personalities to bots[/TD][/TR]
+[TR][TD][FONT=monospace]fpp.badword[/FONT][/TD][TD]Manage the runtime badword filter list[/TD][/TR]
 [TR][TD][FONT=monospace]fpp.migrate[/FONT][/TD][TD]Backup, migrate, and export database[/TD][/TR]
 [TR][TD][FONT=monospace]fpp.alert[/FONT][/TD][TD]Broadcast network-wide admin alerts[/TD][/TR]
 [TR][TD][FONT=monospace]fpp.sync[/FONT][/TD][TD]Push/pull config across proxy network[/TD][/TR]
@@ -184,8 +207,8 @@ Located at [FONT=monospace]plugins/FakePlayerPlugin/config.yml[/FONT]. Run [FONT
 [TR][TD][FONT=monospace]bot-name[/FONT][/TD][TD]Admin/user display name format (admin-format, user-format)[/TD][/TR]
 [TR][TD][FONT=monospace]luckperms[/FONT][/TD][TD]default-group — LP group assigned to every new bot at spawn[/TD][/TR]
 [TR][TD][FONT=monospace]skin[/FONT][/TD][TD]Skin mode (auto/custom/off), guaranteed skin, fallback chain and pool[/TD][/TR]
-[TR][TD][FONT=monospace]body[/FONT][/TD][TD]Physical entity (enabled), pushable, damageable — all live-reloadable[/TD][/TR]
-[TR][TD][FONT=monospace]persistence[/FONT][/TD][TD]Whether bots rejoin on server restart[/TD][/TR]
+[TR][TD][FONT=monospace]body[/FONT][/TD][TD]Physical entity (enabled), pushable, damageable, pick-up-items, pick-up-xp, drop-items-on-despawn[/TD][/TR]
+[TR][TD][FONT=monospace]persistence[/FONT][/TD][TD]Whether bots rejoin on server restart; task state (mine/place/patrol) also persisted[/TD][/TR]
 [TR][TD][FONT=monospace]join-delay / leave-delay[/FONT][/TD][TD]Random delay range (ticks) for natural join/leave timing[/TD][/TR]
 [TR][TD][FONT=monospace]messages[/FONT][/TD][TD]Toggle join, leave, kill broadcast messages; admin compatibility notifications[/TD][/TR]
 [TR][TD][FONT=monospace]combat[/FONT][/TD][TD]Bot HP and hurt sound[/TD][/TR]
@@ -194,6 +217,11 @@ Located at [FONT=monospace]plugins/FakePlayerPlugin/config.yml[/FONT]. Run [FONT
 [TR][TD][FONT=monospace]head-ai[/FONT][/TD][TD]Enable/disable, look range, turn speed[/TD][/TR]
 [TR][TD][FONT=monospace]swim-ai[/FONT][/TD][TD]Automatic swimming in water/lava (enabled, default true)[/TD][/TR]
 [TR][TD][FONT=monospace]collision[/FONT][/TD][TD]Push physics — walk strength, hit strength, bot separation[/TD][/TR]
+[TR][TD][FONT=monospace]pathfinding[/FONT][/TD][TD]A* options — parkour, break-blocks, place-blocks, arrival distances, node limits[/TD][/TR]
+[TR][TD][FONT=monospace]fake-chat[/FONT][/TD][TD]Enable, chance, interval, typing delays, burst messages, bot-to-bot chat, mention replies, event reactions[/TD][/TR]
+[TR][TD][FONT=monospace]ai-conversations[/FONT][/TD][TD]AI DM system — provider config, personality, typing delay, conversation history[/TD][/TR]
+[TR][TD][FONT=monospace]badword-filter[/FONT][/TD][TD]Name profanity filter — leet-speak normalization, remote word list, auto-rename[/TD][/TR]
+[TR][TD][FONT=monospace]bot-interaction[/FONT][/TD][TD]Right-click / shift-right-click settings GUI toggles[/TD][/TR]
 [TR][TD][FONT=monospace]swap[/FONT][/TD][TD]Auto rotation — session length, absence duration, min-online floor, retry-on-fail, farewell/greeting chat[/TD][/TR]
 [TR][TD][FONT=monospace]peak-hours[/FONT][/TD][TD]Time-based bot pool scheduler — schedule, day-overrides, stagger-seconds, min-online[/TD][/TR]
 [TR][TD][FONT=monospace]performance[/FONT][/TD][TD]Position sync distance culling (position-sync-distance)[/TD][/TR]
@@ -411,6 +439,74 @@ Bot chat uses the server's real chat pipeline, so formatting is handled by your 
 [HR][/HR]
 
 [SIZE=6][B]📖 Changelog[/B][/SIZE]
+
+[SIZE=5][B]v1.6.2[/B][/SIZE] [I](2026-04-12)[/I]
+
+[B]🤖 AI Conversations[/B]
+[LIST]
+[*]New AI DM system — bots respond to [FONT=monospace]/msg[/FONT], [FONT=monospace]/tell[/FONT], [FONT=monospace]/whisper[/FONT] with AI-generated replies
+[*]7 provider support: OpenAI · Anthropic · Groq · Google Gemini · Ollama · Copilot/Azure · Custom OpenAI-compatible
+[*]API keys stored in [FONT=monospace]plugins/FakePlayerPlugin/secrets.yml[/FONT] (never in config.yml)
+[*]Per-bot personality assignment via [FONT=monospace]/fpp personality[/FONT]; personalities stored as [FONT=monospace].txt[/FONT] files in [FONT=monospace]personalities/[/FONT] folder
+[*]Bundled sample personalities: [FONT=monospace]friendly[/FONT] · [FONT=monospace]grumpy[/FONT] · [FONT=monospace]noob[/FONT]
+[*][FONT=monospace]BotConversationManager[/FONT] — per-player conversation history, rate limiting, typing delay simulation
+[/LIST]
+
+[B]🆕 New Commands[/B]
+[LIST]
+[*][FONT=monospace]/fpp place <bot> [once|stop][/FONT] — continuous or one-shot block placing with supply-container restocking. Permission: [FONT=monospace]fpp.place[/FONT]
+[*][FONT=monospace]/fpp storage <bot> [name|--list|--remove|--clear][/FONT] — register supply containers for mine/place jobs. Permission: [FONT=monospace]fpp.storage[/FONT]
+[*][FONT=monospace]/fpp use <bot>[/FONT] — bot right-clicks / activates the block it's looking at. Permission: [FONT=monospace]fpp.useitem[/FONT]
+[*][FONT=monospace]/fpp waypoint <name> [add|remove|list|clear][/FONT] — manage named patrol route waypoints. Permission: [FONT=monospace]fpp.waypoint[/FONT]
+[*][FONT=monospace]/fpp personality [list|reload|<bot> set <name>|reset|show][/FONT] — assign AI personalities. Permission: [FONT=monospace]fpp.personality[/FONT]
+[*][FONT=monospace]/fpp badword add|remove|list|reload[/FONT] — manage runtime badword filter list. Permission: [FONT=monospace]fpp.badword[/FONT]
+[*][FONT=monospace]/fpp rename <old> <new>[/FONT] — rename bot with full state preservation (inventory, XP, LP group, AI personality, tasks). Permissions: [FONT=monospace]fpp.rename[/FONT] (any) / [FONT=monospace]fpp.rename.own[/FONT] (own only)
+[*][FONT=monospace]/fpp mine --pos1/--pos2/--start/--stop[/FONT] — area-selection cuboid mining mode
+[/LIST]
+
+[B]⚙️ Per-Bot Settings GUI[/B]
+[LIST]
+[*]Shift+right-click any bot to open [B]BotSettingGui[/B] — 6-row chest with 5 categories: ⚙ General · 💬 Chat · ⚔ PvP · 📋 Cmds · ⚠ Danger
+[*]Toggle freeze, head-AI, chat tier, AI personality selector, stored command, rename action, delete bot
+[*]Controlled by [FONT=monospace]bot-interaction.shift-right-click-settings[/FONT] config key
+[/LIST]
+
+[B]⛏️ Area Mining Mode[/B]
+[LIST]
+[*][FONT=monospace]/fpp mine <bot> --pos1[/FONT] / [FONT=monospace]--pos2[/FONT] — select a cuboid mining region
+[*][FONT=monospace]/fpp mine <bot> --start[/FONT] — begin mining the selected area continuously
+[*]Auto-restocks from nearest registered [FONT=monospace]StorageStore[/FONT] container when inventory fills
+[*]Selections persisted to [FONT=monospace]data/mine-selections.yml[/FONT] — survive restarts and auto-resume
+[/LIST]
+
+[B]💾 Task Persistence (DB Schema v13)[/B]
+[LIST]
+[*]Active tasks (mine/use/place/patrol) saved to [FONT=monospace]fpp_bot_tasks[/FONT] DB table and [FONT=monospace]data/bot-tasks.yml[/FONT] on shutdown
+[*]Bots automatically resume their job after server restart
+[/LIST]
+
+[B]🧭 Navigation & Interaction Engine[/B]
+[LIST]
+[*][FONT=monospace]PathfindingService[/FONT] — centralised navigation service eliminating duplicate nav code across commands
+[*][FONT=monospace]NavigationRequest[/FONT] with [FONT=monospace]lockOnArrival[/FONT] for atomic nav→action lock handoff
+[*][FONT=monospace]BotNavUtil[/FONT] — static helpers: [FONT=monospace]findStandLocation[/FONT], [FONT=monospace]faceToward[/FONT], [FONT=monospace]isAtActionLocation[/FONT], [FONT=monospace]useStorageBlock[/FONT]
+[*][FONT=monospace]StorageInteractionHelper[/FONT] — shared lock→open-container→transfer→unlock lifecycle
+[/LIST]
+
+[B]🎒 Per-Bot Item & XP Pickup Toggles[/B]
+[LIST]
+[*][FONT=monospace]body.pick-up-items[/FONT] and [FONT=monospace]body.pick-up-xp[/FONT] global defaults (both [FONT=monospace]true[/FONT])
+[*]Per-bot overrides in [B]BotSettingGui[/B] — toggling off immediately drops current inventory / XP to ground
+[*][FONT=monospace]BotXpPickupListener[/FONT] gates both pickup events per-bot
+[/LIST]
+
+[B]📋 Config v47 → v53[/B]
+[LIST]
+[*]Added [FONT=monospace]bot-interaction[/FONT], [FONT=monospace]ai-conversations[/FONT], [FONT=monospace]badword-filter[/FONT] sections
+[*]Added [FONT=monospace]body.drop-items-on-despawn[/FONT] key
+[*]Config reorganized into [B]10 clearly numbered sections[/B] with better flow and organization
+[*][FONT=monospace]pathfinding[/FONT] moved into section 4 (AI & Navigation)
+[/LIST]
 
 [SIZE=5][B]v1.6.0[/B][/SIZE] [I](2026-04-09)[/I]
 
@@ -841,6 +937,6 @@ Thank you for using Fake Player Plugin. Without you, it wouldn't be where it is 
 
 [HR][/HR]
 
-[CENTER][I]Built for Paper 1.21.x · Java 21 · FPP v1.5.17[/I]
+[CENTER][I]Built for Paper 1.21.x · Java 21 · FPP v1.6.2[/I]
 
 [URL='https://modrinth.com/plugin/fake-player-plugin-(fpp)']Modrinth[/URL]  [URL='https://www.spigotmc.org/resources/fake-player-plugin-fpp.133572/']SpigotMC[/URL]  [URL='https://hangar.papermc.io/Pepe-tf/FakePlayerPlugin']PaperMC[/URL]  [URL='https://builtbybit.com/resources/fake-player-plugin.98704/']BuiltByBit[/URL]  [URL='https://fakeplayerplugin.xyz']Wiki[/URL][/CENTER]

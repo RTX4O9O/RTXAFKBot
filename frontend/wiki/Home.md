@@ -1,7 +1,7 @@
 # 🎮 Fake Player Plugin - Wiki
 
 > **The Ultimate Bot Spoofing Plugin for Paper 1.21+**  
-> **Version:** 1.6.0 · **Platform:** Paper 1.21+ · **Author:** Bill_Hub
+> **Version:** 1.6.2 · **Platform:** Paper 1.21+ · **Author:** Bill_Hub
 
 ---
 
@@ -14,14 +14,19 @@
 - 🎭 **Indistinguishable from real players** - Complete tab list integration
 - 🏃 **Physical presence** - NMS ServerPlayer entities with realistic hitboxes  
 - 🎨 **Custom skins** - Use any Minecraft skin or upload your own
-- 💬 **Fake chat** - Bots send messages with typing delays, burst replies, and event reactions
+- 💬 **Fake chat** - Bots send messages with typing delays, burst replies, bot-to-bot conversations, and event reactions
+- 🤖 **AI conversations** - Bots respond to `/msg` with AI-generated replies (7 providers, per-bot personalities)
 - 🔄 **Dynamic swapping** - Replace offline players seamlessly with the swap system
 - ⏰ **Peak hours scheduler** - Scale your bot pool by time-of-day windows
 - 📦 **Bot inventory GUI** - Inspect and modify any bot's full inventory in-game
-- 🧭 **A* pathfinding** - Navigate bots to players with `/fpp move`
-- ⛏️ **Block mining** - Bots continuously mine blocks with `/fpp mine`
+- ⚙️ **Per-bot settings GUI** - Shift+right-click any bot to open the 6-category settings chest
+- 🧭 **A* pathfinding** - Navigate bots to players, waypoint routes, or mine/place destinations
+- ⛏️ **Area mining** - Select a cuboid region and mine it continuously with `/fpp mine`
+- 🏗️ **Block placing** - Bots place blocks at their look target with supply-container restocking
+- 🔑 **Waypoint patrol** - Save named routes and send bots on looping patrols
+- 🔤 **Rename bots** - Rename any active bot preserving all state (inventory, XP, LP group, tasks)
 - 💻 **Stored commands** - Assign right-click commands to bots with `/fpp cmd`
-- ⚙️ **Highly configurable** - In-game settings GUI with live toggles
+- 🚫 **Badword filter** - Leet-speak normalization, auto-rename, remote word list
 - 🔐 **Two-tier permission system** - `fpp.op` for admins, `fpp.use` for users
 - 📊 **PlaceholderAPI** - 29+ placeholders for scoreboards, tab headers, and more
 - 🎯 **LuckPerms integration** - Prefix/suffix, group assignment, weighted ordering
@@ -78,7 +83,7 @@
 | [📊 Placeholders (PAPI)](Placeholders.md) | PlaceholderAPI integration |
 | [💾 Database](Database.md) | Analytics and session tracking |
 | [🌐 Proxy Support](Proxy-Support.md) | Velocity & BungeeCord multi-server networks |
-| [🔄 Config Sync](Config-Sync.md) | **NEW:** Synchronize configs across network |
+| [🔄 Config Sync](./Config-Sync.md) | Synchronize configs across the proxy network |
 | [🔧 Migration](Migration.md) | Updating and data migration |
 
 ---
@@ -116,47 +121,87 @@
 - **Whitelist Support** - Protect VIP players
 
 ### ⚙️ **Configuration**
-- **44 Config Versions** - Automatic migration system
-- **Hot Reload** - Change settings without restart
-- **Backup System** - Automatic config backups
-- **Validation** - Prevents invalid configurations
+- **53 Config Versions** - Automatic migration system with backup before every change
+- **Hot Reload** - Change settings without restart via `/fpp reload`
+- **Backup System** - Automatic timestamped backups before any migration
+- **In-Game Settings GUI** - Toggle booleans and tune numbers without touching files
 
 ---
 
-## 🆕 What's New in v1.5.15
+## 🆕 What's New in v1.6.2
 
-### 📝 **Config Clarity Improvements**
-- All timing-related values in `config.yml` now clearly state their unit (ticks or seconds) with human-readable conversion examples - no more guessing whether `respawn-delay: 15` means seconds or ticks
-- `join-delay` / `leave-delay` header updated with quick-reference: `0 = instant · 20 = 1 s · 40 = 2 s · 100 = 5 s`
-- `swap.session` / `swap.absence` inline comments show real-world equivalents (e.g. `60 = 1 min`, `300 = 5 min`)
+### 🤖 **AI Conversations**
+- Bots now respond to `/msg`, `/tell`, `/whisper` with AI-generated replies matching their personality
+- 7 provider support: OpenAI · Anthropic · Groq · Google Gemini · Ollama · Copilot/Azure · Custom
+- Per-bot personalities via `.txt` files in `plugins/FakePlayerPlugin/personalities/`
+- Bundled sample personalities: `friendly`, `grumpy`, `noob`
+- Full `/fpp personality` command for assigning and managing personalities
 
-### 🔧 **Build Pipeline Fixes**
-- ProGuard obfuscation pipeline fixed - `plugin.yml` and language files no longer corrupted on Windows builds
-- `StackMapTable` attributes preserved in obfuscated jar - no more `VerifyError` on startup
-- MySQL / SQLite shaded classes handled correctly during ProGuard preverification
+### ⚙️ **Per-Bot Settings GUI**
+- Shift+right-click any bot to open a 6-row settings chest — no command needed
+- Categories: General · Chat · PvP · Cmds · Danger
+- Toggle freeze, head-AI, chat tier, AI personality, stored commands, rename, and bot deletion
+
+### 🛠️ **New Commands**
+- `/fpp place` — continuous or one-shot block placing with supply-container restocking
+- `/fpp storage` — register named supply containers for mine/place jobs
+- `/fpp use` — bot activates the block it's looking at
+- `/fpp waypoint` — manage named patrol routes; bots walk them via `/fpp move --wp`
+- `/fpp rename` — rename any bot with full state preservation
+- `/fpp personality` — assign AI personalities to bots
+- `/fpp badword` — manage the runtime badword filter list
+- `/fpp mine --pos1/--pos2/--start` — area-selection cuboid mining mode
+
+### ⛏️ **Area Mining System**
+- Select a cuboid region with `/fpp mine <bot> --pos1` and `--pos2`
+- Start continuous mining with `/fpp mine <bot> --start`
+- Auto-restocks from registered supply containers when inventory fills
+- Selections persist across restarts in `data/mine-selections.yml`
+
+### 💾 **Task Persistence**
+- Mine/use/place/patrol tasks now survive server restarts via `fpp_bot_tasks` DB table
+- Bots automatically resume their job after rebooting
+
+### 🧭 **Navigation & Interaction Engine**
+- `PathfindingService` — centralised shared navigation service
+- `NavigationRequest` with atomic nav→action lock handoff
+- `BotNavUtil` — shared navigation utilities
+- `StorageInteractionHelper` — shared container interaction lifecycle
+
+### 🎒 **Per-Bot Item & XP Pickup**
+- Toggle pickup per-bot in the settings GUI
+- Toggling off immediately drops current inventory / XP to ground
+- `BotXpPickupListener` gates both pickup events
+
+### 📋 **Config Reorganization**
+- Config reorganized into **10 clearly numbered sections** with better flow
+- Added `bot-interaction`, `ai-conversations`, `badword-filter` sections
+- `pathfinding` integrated into section 4 (AI & Navigation)
+
+**See [📋 Changelog](Changelog.md) for the full release notes.**
 
 ---
 
 ## 🔐 Permission System
 
-FPP uses a hierarchical permission system:
+FPP uses a two-tier permission system:
 
 ```
-fpp.*                    # Full access (admin)
-├── fpp.admin.*         # Admin commands
-├── fpp.user.*          # User commands  
-└── fpp.bypass.*        # Bypass restrictions
+fpp.op            # Admin wildcard — all commands (default: op)
+├── fpp.spawn         fpp.delete       fpp.list
+├── fpp.freeze        fpp.chat         fpp.swap
+├── fpp.rank          fpp.reload       fpp.stats
+├── fpp.inventory     fpp.move         fpp.mine
+├── fpp.place         fpp.storage      fpp.useitem
+├── fpp.waypoint      fpp.rename       fpp.personality
+├── fpp.badword       fpp.settings     fpp.peaks
+└── ... (all admin commands)
+
+fpp.use           # User wildcard — basic commands (default: true / all players)
+├── fpp.spawn.user    (limited by fpp.spawn.limit.<N>)
+├── fpp.tph           fpp.xp           fpp.info.user
+└── fpp.spawn.limit.1 (included — 1 personal bot by default)
 ```
-
-**User Permissions:**
-- `fpp.user.spawn` - Spawn personal bots
-- `fpp.user.delete` - Delete own bots
-- `fpp.user.list` - List all bots
-
-**Admin Permissions:**  
-- `fpp.admin.spawn` - Spawn admin bots
-- `fpp.admin.delete` - Delete any bot
-- `fpp.admin.reload` - Reload configuration
 
 **See [🔐 Permissions](Permissions.md) for the complete list.**
 
@@ -240,7 +285,7 @@ We welcome contributions! Check our GitHub for:
 
 **For commercial licensing or usage permissions, contact Bill_Hub on Discord.**
 
-> **License:** See [LICENSE](../LICENSE) for full terms and conditions.
+> **License:** See [LICENSE](../../LICENSE) for full terms and conditions.
 
 ---
 

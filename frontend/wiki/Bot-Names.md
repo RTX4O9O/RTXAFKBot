@@ -58,7 +58,7 @@ Invalid names are silently skipped when loading the file.
 
 ## User-Tier Bot Names
 
-When a regular player (with `fpp.user.spawn` but not `fpp.spawn`) spawns a bot, the name is **always** auto-generated - they cannot use the `--name` flag.
+When a regular player (with `fpp.spawn.user` but not `fpp.spawn`) spawns a bot, the name is **always** auto-generated - they cannot use the `--name` flag.
 
 The auto-name format is:
 

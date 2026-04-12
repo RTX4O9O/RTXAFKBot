@@ -6,6 +6,7 @@ import me.bill.fakePlayerPlugin.fakeplayer.BotPathfinder;
 import me.bill.fakePlayerPlugin.fakeplayer.FakePlayer;
 import me.bill.fakePlayerPlugin.fakeplayer.FakePlayerManager;
 import me.bill.fakePlayerPlugin.fakeplayer.NmsPlayerSpawner;
+import me.bill.fakePlayerPlugin.fakeplayer.PathfindingService;
 import me.bill.fakePlayerPlugin.lang.Lang;
 import me.bill.fakePlayerPlugin.permission.Perm;
 import net.minecraft.core.Direction;
@@ -24,7 +25,6 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.craftbukkit.entity.CraftPlayer;
 import org.bukkit.entity.Player;
 import org.bukkit.scheduler.BukkitRunnable;
-import org.bukkit.scheduler.BukkitTask;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -37,8 +37,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * Normal physics, knockback, and pushable are all active during this phase.
  *
  * <h3>Phase 2 - Right-click loop</h3>
- * Once the bot arrives (XZ ≤ {@value #ARRIVAL_DIST}) it is snapped to the exact
- * spot, its position is locked via {@code FakePlayerManager.lockForMining()},
+ * Once the bot arrives (XZ ≤ {@code pathfinding.arrival-distance}) it is snapped to the exact
+ * spot, its position is locked via {@code FakePlayerManager.lockForAction()},
  * head-AI is suppressed, and the right-click loop begins.
  *
  * <p>On each tick the bot's look-direction is raycast (4.5 survival / 5 creative).
@@ -62,21 +62,13 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public final class UseCommand implements FppCommand {
 
-    // ── Tuning constants (mirrors MoveCommand / MineCommand) ─────────────────
-    private static final double ARRIVAL_DIST    = 1.2;
-    private static final double SPRINT_DIST     = 6.0;
-    private static final double WP_ARRIVE_XZ    = 0.65;
-    private static final int    RECALC_INTERVAL = 60;
-    private static final int    STUCK_TICKS     = 8;
-    private static final double STUCK_THRESHOLD = 0.04;
 
     // ── Fields ────────────────────────────────────────────────────────────────
 
     private final FakePlayerPlugin  plugin;
     private final FakePlayerManager manager;
+    private final PathfindingService pathfinding;
 
-    /** Phase-1 navigation tasks (walking to the use spot). */
-    private final Map<UUID, BukkitTask> navTasks  = new ConcurrentHashMap<>();
     /** Phase-2 right-click task IDs. */
     private final Map<UUID, Integer>    useTasks  = new ConcurrentHashMap<>();
     /** Active use lock locations per bot (populated at lock-and-use start). */
@@ -84,9 +76,10 @@ public final class UseCommand implements FppCommand {
     /** Whether the active use task is once-only per bot. */
     private final Map<UUID, Boolean>    activeUseOnceFlags  = new ConcurrentHashMap<>();
 
-    public UseCommand(FakePlayerPlugin plugin, FakePlayerManager manager) {
+    public UseCommand(FakePlayerPlugin plugin, FakePlayerManager manager, PathfindingService pathfinding) {
         this.plugin  = plugin;
         this.manager = manager;
+        this.pathfinding = pathfinding;
     }
 
     // ── FppCommand ────────────────────────────────────────────────────────────
@@ -144,8 +137,8 @@ public final class UseCommand implements FppCommand {
         // Cancel any existing nav/use for this bot
         cancelAll(fp.getUuid());
 
-        double xzDist = xzDist(bot.getLocation(), dest);
-        if (xzDist <= ARRIVAL_DIST) {
+        double xzDist = PathfindingService.xzDist(bot.getLocation(), dest);
+        if (xzDist <= Config.pathfindingArrivalDistance()) {
             // Already close enough - lock and start right-clicking immediately
             lockAndStartUsing(fp, once, dest);
             sender.sendMessage(once
@@ -187,134 +180,17 @@ public final class UseCommand implements FppCommand {
 
     // ── Phase 1: navigation ───────────────────────────────────────────────────
 
-    @SuppressWarnings("unchecked")
     private void startNavigation(FakePlayer fp, boolean once, Location dest) {
-        final UUID uuid = fp.getUuid();
-
-        final List<BotPathfinder.Move>[] pathRef = new List[]{null};
-        final int[]    wpIdx    = {0};
-        final int[]    recalcIn = {0};
-        final int[]    stuckFor = {0};
-        final double[] prevX    = {fp.getPlayer().getLocation().getX()};
-        final double[] prevZ    = {fp.getPlayer().getLocation().getZ()};
-
-        BukkitTask task = new BukkitRunnable() {
-            @Override
-            public void run() {
-                Player bot = Bukkit.getPlayer(uuid);
-                if (bot == null || !bot.isOnline()) { cleanup(null); return; }
-
-                Location botLoc = bot.getLocation();
-                double dist = xzDist(botLoc, dest);
-
-                // ── Arrived ───────────────────────────────────────────────────
-                if (dist <= ARRIVAL_DIST) {
-                    cleanup(bot);
-                    lockAndStartUsing(fp, once, dest);
-                    return;
-                }
-
-                // ── Path recalculation ────────────────────────────────────────
-                boolean exhausted = (pathRef[0] == null || wpIdx[0] >= pathRef[0].size());
-                boolean heartbeat = (--recalcIn[0] <= 0);
-
-                if (exhausted || heartbeat) {
-                    recalcIn[0] = RECALC_INTERVAL;
-                    BotPathfinder.PathOptions opts = new BotPathfinder.PathOptions(
-                            Config.pathfindingParkour(),
-                            Config.pathfindingBreakBlocks(),
-                            Config.pathfindingPlaceBlocks());
-                    List<BotPathfinder.Move> newPath = BotPathfinder.findPathMoves(
-                            botLoc.getWorld(),
-                            botLoc.getBlockX(), botLoc.getBlockY(), botLoc.getBlockZ(),
-                            dest.getBlockX(),   dest.getBlockY(),   dest.getBlockZ(),
-                            opts);
-                    pathRef[0]  = newPath;
-                    wpIdx[0]    = (newPath != null && newPath.size() > 1) ? 1 : 0;
-                    stuckFor[0] = 0;
-                }
-
-                // ── Fallback: direct walk ─────────────────────────────────────
-                List<BotPathfinder.Move> path = pathRef[0];
-                if (path == null || path.isEmpty() || wpIdx[0] >= path.size()) {
-                    walkToward(bot, dest, dist);
-                    return;
-                }
-
-                BotPathfinder.Move wp = path.get(wpIdx[0]);
-                double wpCX = wp.x() + 0.5, wpCZ = wp.z() + 0.5;
-
-                // ── Waypoint advance ──────────────────────────────────────────
-                double wpXZDist = xzDistRaw(botLoc.getX(), botLoc.getZ(), wpCX, wpCZ);
-                boolean wpYClose = Math.abs(botLoc.getY() - wp.y()) < 1.2;
-                if (wpXZDist < WP_ARRIVE_XZ && wpYClose) {
-                    wpIdx[0]++;
-                    if (wpIdx[0] >= path.size()) { recalcIn[0] = 0; return; }
-                    wp       = path.get(wpIdx[0]);
-                    wpCX     = wp.x() + 0.5;
-                    wpCZ     = wp.z() + 0.5;
-                    wpXZDist = xzDistRaw(botLoc.getX(), botLoc.getZ(), wpCX, wpCZ);
-                }
-
-                // ── Face waypoint ─────────────────────────────────────────────
-                double dx = wpCX - botLoc.getX(), dz = wpCZ - botLoc.getZ();
-                float yaw = (float) Math.toDegrees(Math.atan2(-dx, dz));
-                bot.setRotation(yaw, 0f);
-                NmsPlayerSpawner.setHeadYaw(bot, yaw);
-
-                // ── Walk / sprint ─────────────────────────────────────────────
-                bot.setSprinting(dist > SPRINT_DIST || wp.type() == BotPathfinder.MoveType.PARKOUR);
-                NmsPlayerSpawner.setMovementForward(bot, 1.0f);
-
-                // ── Jump ──────────────────────────────────────────────────────
-                if (!bot.isInWater() && !bot.isInLava()) {
-                    if (wp.y() > botLoc.getBlockY()) {
-                        manager.requestNavJump(uuid);
-                    } else if (wp.type() == BotPathfinder.MoveType.PARKOUR
-                            && wpXZDist >= 1.0 && wpXZDist <= 3.5) {
-                        manager.requestNavJump(uuid);
-                    }
-                }
-
-                // ── Stuck detection ───────────────────────────────────────────
-                double moved = xzDistRaw(botLoc.getX(), botLoc.getZ(), prevX[0], prevZ[0]);
-                if (moved < STUCK_THRESHOLD) {
-                    if (++stuckFor[0] >= STUCK_TICKS) {
-                        if (!bot.isInWater() && !bot.isInLava()) manager.requestNavJump(uuid);
-                        recalcIn[0] = 0;
-                        stuckFor[0] = 0;
-                    }
-                } else {
-                    stuckFor[0] = 0;
-                }
-                prevX[0] = botLoc.getX();
-                prevZ[0] = botLoc.getZ();
-            }
-
-            private void cleanup(Player bot) {
-                manager.clearNavJump(uuid);
-                if (bot != null) {
-                    NmsPlayerSpawner.setMovementForward(bot, 0f);
-                    NmsPlayerSpawner.setJumping(bot, false);
-                    bot.setSprinting(false);
-                }
-                cancel();
-                navTasks.remove(uuid);
-            }
-
-            private void walkToward(Player bot, Location dest, double dist) {
-                Location bl = bot.getLocation();
-                float yaw = (float) Math.toDegrees(
-                        Math.atan2(-(dest.getX() - bl.getX()), dest.getZ() - bl.getZ()));
-                bot.setRotation(yaw, 0f);
-                NmsPlayerSpawner.setHeadYaw(bot, yaw);
-                bot.setSprinting(dist > SPRINT_DIST);
-                NmsPlayerSpawner.setMovementForward(bot, 1.0f);
-            }
-
-        }.runTaskTimer(plugin, 0L, 1L);
-
-        navTasks.put(uuid, task);
+        pathfinding.navigate(fp, new PathfindingService.NavigationRequest(
+                PathfindingService.Owner.USE,
+                () -> dest,
+                Config.pathfindingArrivalDistance(),
+                0.0,
+                Integer.MAX_VALUE,
+                () -> lockAndStartUsing(fp, once, dest),
+                null,
+                null
+        ));
     }
 
     // ── Phase 2: lock + right-click loop ─────────────────────────────────────
@@ -333,7 +209,7 @@ public final class UseCommand implements FppCommand {
         bot.teleport(lockLoc);
 
         // Lock position + suppress head-AI in the manager's tick loop
-        manager.lockForMining(uuid, lockLoc);
+        manager.lockForAction(uuid, lockLoc);
 
         // Record active use state for persistence
         activeUseLocations.put(uuid, lockLoc.clone());
@@ -426,9 +302,7 @@ public final class UseCommand implements FppCommand {
      * position lock and any held item.
      */
     private void cancelAll(UUID botUuid) {
-        BukkitTask t = navTasks.remove(botUuid);
-        if (t != null && !t.isCancelled()) t.cancel();
-        manager.clearNavJump(botUuid);
+        pathfinding.cancel(botUuid);
 
         stopUsing(botUuid);
 
@@ -448,7 +322,7 @@ public final class UseCommand implements FppCommand {
         Integer taskId = useTasks.remove(botUuid);
         if (taskId != null) Bukkit.getScheduler().cancelTask(taskId);
 
-        manager.unlockMining(botUuid);   // reuses the same mining lock mechanism
+        manager.unlockAction(botUuid);   // reuses the same general action lock mechanism
 
         // Clear persistence tracking
         activeUseLocations.remove(botUuid);
@@ -464,12 +338,12 @@ public final class UseCommand implements FppCommand {
 
     /** Stops all bots (navigation + right-clicking). */
     public void stopAll() {
-        new HashSet<>(navTasks.keySet()).forEach(this::cancelAll);
+        pathfinding.cancelAll(PathfindingService.Owner.USE);
         new HashSet<>(useTasks.keySet()).forEach(this::cancelAll);
     }
 
     /** Returns {@code true} if the bot is currently navigating to the use spot. */
-    public boolean isNavigating(UUID botUuid) { return navTasks.containsKey(botUuid); }
+    public boolean isNavigating(UUID botUuid) { return pathfinding.isNavigating(botUuid); }
 
     /** Returns {@code true} if the bot is actively right-clicking. */
     public boolean isUsing(UUID botUuid)      { return useTasks.containsKey(botUuid); }
@@ -502,10 +376,7 @@ public final class UseCommand implements FppCommand {
         Player bot = fp.getPlayer();
         if (bot == null || !bot.isOnline()) return;
         cancelAll(fp.getUuid());
-        double dx = bot.getLocation().getX() - loc.getX();
-        double dz = bot.getLocation().getZ() - loc.getZ();
-        double xzDist = Math.sqrt(dx * dx + dz * dz);
-        if (xzDist <= ARRIVAL_DIST) {
+        if (PathfindingService.xzDist(bot.getLocation(), loc) <= Config.pathfindingArrivalDistance()) {
             lockAndStartUsing(fp, once, loc);
         } else {
             startNavigation(fp, once, loc);
@@ -566,15 +437,5 @@ public final class UseCommand implements FppCommand {
         return (HitResult) blockHit;
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
-
-    private static double xzDist(Location a, Location b) {
-        return xzDistRaw(a.getX(), a.getZ(), b.getX(), b.getZ());
-    }
-
-    private static double xzDistRaw(double ax, double az, double bx, double bz) {
-        double dx = ax - bx, dz = az - bz;
-        return Math.sqrt(dx * dx + dz * dz);
-    }
 }
 

@@ -307,6 +307,17 @@ public final class Config {
         return cfg.getBoolean("body.pick-up-xp", true);
     }
 
+    /**
+     * Whether bots drop their inventory contents and XP to the ground when despawned
+     * via {@code /fpp despawn} or the in-game settings GUI delete button.
+     * {@code false} (default) = items and XP vanish silently on despawn.
+     * {@code true} = all inventory items and XP orbs are dropped at the bot's location.
+     * Config path: {@code body.drop-items-on-despawn}.
+     */
+    public static boolean dropItemsOnDespawn() {
+        return cfg.getBoolean("body.drop-items-on-despawn", false);
+    }
+
     // ── Persistence  (persistence.*) ─────────────────────────────────────────
 
     /** Save bots on shutdown and restore them on next startup. */
@@ -478,14 +489,21 @@ public final class Config {
     /** Whether bots keep chunks loaded around them. */
     public static boolean chunkLoadingEnabled() { return cfg.getBoolean("chunk-loading.enabled", true); }
 
-    /** Chunk radius kept loaded around each bot (mirrors server view-distance if set to 0). */
+    /**
+     * Resolved chunk radius to keep loaded around each bot.
+     * <ul>
+     *   <li>{@code "auto"} (or any non-numeric string) → server simulation-distance</li>
+     *   <li>{@code 0} → chunk loading disabled — bots add no tickets at all</li>
+     *   <li>{@code N ≥ 1} → fixed radius of N chunks</li>
+     * </ul>
+     */
     public static int chunkLoadingRadius() {
-        int r = cfg.getInt("chunk-loading.radius", 6);
-        if (r <= 0) {
-            // Use the server's actual simulation-distance as a sensible default
-            r = Bukkit.getSimulationDistance();
+        Object raw = cfg.get("chunk-loading.radius");
+        if (raw instanceof Number n) {
+            return Math.max(0, n.intValue()); // 0 = disabled, positive = fixed radius
         }
-        return Math.max(1, r);
+        // "auto" string (or null / unexpected type) → match server simulation-distance
+        return Bukkit.getSimulationDistance();
     }
 
     /**
@@ -527,7 +545,7 @@ public final class Config {
      */
     public static boolean swimAiEnabled() { return cfg.getBoolean("swim-ai.enabled", true); }
 
-    // ── Pathfinding  (pathfinding.*) - used by /fpp move ─────────────────────
+    // ── Pathfinding  (pathfinding.*) - shared global navigation ──────────────
 
     /** Allow bots to perform sprint-jumps across 1–2 block gaps during navigation. */
     public static boolean pathfindingParkour() {
@@ -550,6 +568,71 @@ public final class Config {
      */
     public static String pathfindingPlaceMaterial() {
         return cfg.getString("pathfinding.place-material", "DIRT");
+    }
+
+    /** Horizontal distance at which a navigation request is considered arrived. */
+    public static double pathfindingArrivalDistance() {
+        return cfg.getDouble("pathfinding.arrival-distance", 1.2);
+    }
+
+    /** Horizontal distance at which a patrol waypoint is considered reached. */
+    public static double pathfindingPatrolArrivalDistance() {
+        return cfg.getDouble("pathfinding.patrol-arrival-distance", 1.5);
+    }
+
+    /** Horizontal waypoint snap radius used while stepping through an active path. */
+    public static double pathfindingWaypointArrivalDistance() {
+        return cfg.getDouble("pathfinding.waypoint-arrival-distance", 0.65);
+    }
+
+    /** Distance above which bots sprint during navigation. */
+    public static double pathfindingSprintDistance() {
+        return cfg.getDouble("pathfinding.sprint-distance", 6.0);
+    }
+
+    /** Target-movement distance that forces a path recalculation for moving goals. */
+    public static double pathfindingFollowRecalcDistance() {
+        return cfg.getDouble("pathfinding.follow-recalc-distance", 3.5);
+    }
+
+    /** Ticks between heartbeat path recalculations. */
+    public static int pathfindingRecalcInterval() {
+        return Math.max(1, cfg.getInt("pathfinding.recalc-interval", 60));
+    }
+
+    /** Consecutive low-movement ticks before the navigator treats a bot as stuck. */
+    public static int pathfindingStuckTicks() {
+        return Math.max(1, cfg.getInt("pathfinding.stuck-ticks", 8));
+    }
+
+    /** Minimum horizontal movement required per tick before the bot is considered stuck. */
+    public static double pathfindingStuckThreshold() {
+        return Math.max(0.001, cfg.getDouble("pathfinding.stuck-threshold", 0.04));
+    }
+
+    /** Ticks spent breaking a blocking block while following a BREAK path move. */
+    public static int pathfindingBreakTicks() {
+        return Math.max(1, cfg.getInt("pathfinding.break-ticks", 15));
+    }
+
+    /** Ticks spent placing a bridge block while following a PLACE path move. */
+    public static int pathfindingPlaceTicks() {
+        return Math.max(1, cfg.getInt("pathfinding.place-ticks", 5));
+    }
+
+    /** Maximum straight-line range in blocks for attempting A* pathfinding. */
+    public static int pathfindingMaxRange() {
+        return Math.max(8, cfg.getInt("pathfinding.max-range", 64));
+    }
+
+    /** Maximum A* nodes for plain walking/jumping searches. */
+    public static int pathfindingMaxNodes() {
+        return Math.max(100, cfg.getInt("pathfinding.max-nodes", 2000));
+    }
+
+    /** Maximum A* nodes when advanced movement options are enabled. */
+    public static int pathfindingMaxNodesExtended() {
+        return Math.max(pathfindingMaxNodes(), cfg.getInt("pathfinding.max-nodes-extended", 4000));
     }
 
     // ── PVP AI  (pvp-ai.*) ────────────────────────────────────────────────────
@@ -794,6 +877,147 @@ public final class Config {
         return cfg.getInt("fake-chat.event-triggers.on-player-leave.delay.max", 4);
     }
 
+    // ── Player chat reactions (fake-chat.event-triggers.on-player-chat.*) ──────
+
+    /** Master switch — bots may spontaneously react when a real player sends a chat message. */
+    public static boolean fakeChatOnPlayerChatEnabled() {
+        return cfg.getBoolean("fake-chat.event-triggers.on-player-chat.enabled", false);
+    }
+    /** When true, use the AI provider to generate contextual replies instead of the static pool. */
+    public static boolean fakeChatOnPlayerChatUseAi() {
+        return cfg.getBoolean("fake-chat.event-triggers.on-player-chat.use-ai", true);
+    }
+    /** Per-bot cooldown (seconds) between AI-powered player-chat reactions. */
+    public static int fakeChatOnPlayerChatAiCooldown() {
+        return cfg.getInt("fake-chat.event-triggers.on-player-chat.ai-cooldown", 30);
+    }
+    /** Probability (0–1) a bot reacts to a player's chat message. */
+    public static double fakeChatOnPlayerChatChance() {
+        return cfg.getDouble("fake-chat.event-triggers.on-player-chat.chance", 0.25);
+    }
+    /** Maximum number of bots that can react to a single player message. */
+    public static int fakeChatOnPlayerChatMaxBots() {
+        return cfg.getInt("fake-chat.event-triggers.on-player-chat.max-bots", 1);
+    }
+    /** When true, skip messages shorter than 3 characters. */
+    public static boolean fakeChatOnPlayerChatIgnoreShort() {
+        return cfg.getBoolean("fake-chat.event-triggers.on-player-chat.ignore-short", true);
+    }
+    /** When true, skip messages that start with '/' (commands). */
+    public static boolean fakeChatOnPlayerChatIgnoreCommands() {
+        return cfg.getBoolean("fake-chat.event-triggers.on-player-chat.ignore-commands", true);
+    }
+    /** Probability (0–1) the reaction directly mentions the player's name. */
+    public static double fakeChatOnPlayerChatMentionChance() {
+        return cfg.getDouble("fake-chat.event-triggers.on-player-chat.mention-player", 0.50);
+    }
+    /** Min seconds before a player-chat reaction fires. */
+    public static int fakeChatOnPlayerChatDelayMin() {
+        return cfg.getInt("fake-chat.event-triggers.on-player-chat.delay.min", 2);
+    }
+    /** Max seconds before a player-chat reaction fires. */
+    public static int fakeChatOnPlayerChatDelayMax() {
+        return cfg.getInt("fake-chat.event-triggers.on-player-chat.delay.max", 8);
+    }
+
+    // ── Bot-to-bot conversations (fake-chat.bot-to-bot.*) ────────────────────
+
+    /** Master switch — bots can react to each other's messages forming conversations. */
+    public static boolean fakeChatBotToBotEnabled() {
+        return cfg.getBoolean("fake-chat.bot-to-bot.enabled", true);
+    }
+    /** Probability (0–1) another bot replies to a chatting bot (depth-0 trigger). */
+    public static double fakeChatBotToBotReplyChance() {
+        return cfg.getDouble("fake-chat.bot-to-bot.reply-chance", 0.35);
+    }
+    /** Probability (0–1) the conversation continues after each reply (depth 1+). */
+    public static double fakeChatBotToBotChainChance() {
+        return cfg.getDouble("fake-chat.bot-to-bot.chain-chance", 0.40);
+    }
+    /** Maximum number of exchanges in a single bot-to-bot conversation. */
+    public static int fakeChatBotToBotMaxChain() {
+        return cfg.getInt("fake-chat.bot-to-bot.max-chain", 3);
+    }
+    /** Min seconds before a bot-to-bot reply fires. */
+    public static int fakeChatBotToBotDelayMin() {
+        return cfg.getInt("fake-chat.bot-to-bot.delay.min", 4);
+    }
+    /** Max seconds before a bot-to-bot reply fires. */
+    public static int fakeChatBotToBotDelayMax() {
+        return cfg.getInt("fake-chat.bot-to-bot.delay.max", 14);
+    }
+    /** Server-wide cooldown (seconds) between separate bot-to-bot conversation starts. */
+    public static int fakeChatBotToBotCooldown() {
+        return cfg.getInt("fake-chat.bot-to-bot.cooldown", 8);
+    }
+
+    // ── Event trigger: advancement ─────────────────────────────────────────────
+    public static boolean fakeChatOnAdvancementEnabled() {
+        return cfg.getBoolean("fake-chat.event-triggers.on-advancement.enabled", true);
+    }
+    public static double fakeChatOnAdvancementChance() {
+        return cfg.getDouble("fake-chat.event-triggers.on-advancement.chance", 0.45);
+    }
+    public static int fakeChatOnAdvancementDelayMin() {
+        return cfg.getInt("fake-chat.event-triggers.on-advancement.delay.min", 1);
+    }
+    public static int fakeChatOnAdvancementDelayMax() {
+        return cfg.getInt("fake-chat.event-triggers.on-advancement.delay.max", 5);
+    }
+
+    // ── Event trigger: first join ──────────────────────────────────────────────
+    public static boolean fakeChatOnFirstJoinEnabled() {
+        return cfg.getBoolean("fake-chat.event-triggers.on-first-join.enabled", true);
+    }
+    public static double fakeChatOnFirstJoinChance() {
+        return cfg.getDouble("fake-chat.event-triggers.on-first-join.chance", 0.70);
+    }
+
+    // ── Event trigger: player-kills-player ────────────────────────────────────
+    public static boolean fakeChatOnKillEnabled() {
+        return cfg.getBoolean("fake-chat.event-triggers.on-kill.enabled", true);
+    }
+    public static double fakeChatOnKillChance() {
+        return cfg.getDouble("fake-chat.event-triggers.on-kill.chance", 0.35);
+    }
+    public static int fakeChatOnKillDelayMin() {
+        return cfg.getInt("fake-chat.event-triggers.on-kill.delay.min", 1);
+    }
+    public static int fakeChatOnKillDelayMax() {
+        return cfg.getInt("fake-chat.event-triggers.on-kill.delay.max", 4);
+    }
+
+    // ── Event trigger: high XP level ──────────────────────────────────────────
+    public static boolean fakeChatOnHighLevelEnabled() {
+        return cfg.getBoolean("fake-chat.event-triggers.on-high-level.enabled", true);
+    }
+    public static int fakeChatOnHighLevelMinLevel() {
+        return cfg.getInt("fake-chat.event-triggers.on-high-level.min-level", 30);
+    }
+    public static double fakeChatOnHighLevelChance() {
+        return cfg.getDouble("fake-chat.event-triggers.on-high-level.chance", 0.35);
+    }
+    public static int fakeChatOnHighLevelDelayMin() {
+        return cfg.getInt("fake-chat.event-triggers.on-high-level.delay.min", 1);
+    }
+    public static int fakeChatOnHighLevelDelayMax() {
+        return cfg.getInt("fake-chat.event-triggers.on-high-level.delay.max", 5);
+    }
+
+    // ── New message-pool shorthands ────────────────────────────────────────────
+    /** Bot-to-bot reply messages used in bot conversations. */
+    public static List<String> chatBotToBotReplyMessages()     { return BotMessageConfig.getBotToBotReplyMessages(); }
+    /** Advancement-reaction messages. */
+    public static List<String> chatAdvancementReactionMessages(){ return BotMessageConfig.getAdvancementReactionMessages(); }
+    /** First-join welcome messages. */
+    public static List<String> chatFirstJoinReactionMessages() { return BotMessageConfig.getFirstJoinReactionMessages(); }
+    /** Player-kills-player reaction messages. */
+    public static List<String> chatKillReactionMessages()      { return BotMessageConfig.getKillReactionMessages(); }
+    /** High-level milestone reaction messages. */
+    public static List<String> chatHighLevelReactionMessages() { return BotMessageConfig.getHighLevelReactionMessages(); }
+    /** Player-chat reaction messages (bots react to any real player message). */
+    public static List<String> chatPlayerChatReactionMessages() { return BotMessageConfig.getPlayerChatReactionMessages(); }
+
     // ── Keyword reactions ─────────────────────────────────────────────────────
 
     /** Master switch for keyword-triggered reactions. */
@@ -916,6 +1140,209 @@ public final class Config {
     public static double positionSyncDistance() {
         return cfg.getDouble("performance.position-sync-distance", 128.0);
     }
+
+
+    // ── Badword Filter (badword-filter.*) ──────────────────────────────────────
+
+    /**
+     * Whether badword filtering is enabled for bot names.
+     * Maps to {@code badword-filter.enabled}.
+     */
+    public static boolean isBadwordFilterEnabled() {
+        return cfg.getBoolean("badword-filter.enabled", true);
+    }
+
+    /**
+     * List of forbidden words that cannot appear in bot names (case-insensitive matching).
+     * This list is additive on top of the remote global baseline when that source
+     * is enabled.
+     * Maps to {@code badword-filter.words}.
+     */
+    public static List<String> getBadwords() {
+        Object raw = cfg.get("badword-filter.words");
+        if (raw instanceof List<?> list) {
+            return list.stream()
+                    .filter(o -> o instanceof String)
+                    .map(o -> (String) o)
+                    .filter(s -> !s.isBlank())
+                    .toList();
+        }
+        return List.of();
+    }
+
+    /**
+     * Whether the remote global badword baseline is enabled.
+     * When {@code true}, FPP fetches the configured remote profanity list and merges it
+     * with user additions from config.yml and bad-words.yml.
+     * Maps to {@code badword-filter.use-global-list}.
+     */
+    public static boolean isBadwordGlobalListEnabled() {
+        return cfg.getBoolean("badword-filter.use-global-list", true);
+    }
+
+    /**
+     * URL of the remote global badword list.
+     * Maps to {@code badword-filter.global-list-url}.
+     */
+    public static String badwordGlobalListUrl() {
+        return cfg.getString("badword-filter.global-list-url",
+                "https://www.cs.cmu.edu/~biglou/resources/bad-words.txt");
+    }
+
+    /**
+     * Timeout in milliseconds used when fetching the remote global badword list.
+     * Maps to {@code badword-filter.global-list-timeout-ms}.
+     */
+    public static int badwordGlobalListTimeoutMs() {
+        return Math.max(1000, cfg.getInt("badword-filter.global-list-timeout-ms", 5000));
+    }
+
+    /**
+     * List of bot names that are explicitly allowed even if they contain a badword.
+     * Maps to {@code badword-filter.whitelist}.
+     */
+    public static List<String> getBadwordWhitelist() {
+        Object raw = cfg.get("badword-filter.whitelist");
+        if (raw instanceof List<?> list) {
+            return list.stream()
+                    .filter(o -> o instanceof String)
+                    .map(o -> (String) o)
+                    .filter(s -> !s.isBlank())
+                    .toList();
+        }
+        return List.of();
+    }
+
+    /**
+     * Whether the badword auto-rename feature is enabled.
+     * When {@code true} a bad name is sanitised by replacing it with a random clean
+     * name from {@code bot-names.yml} and the sender is notified, instead of
+     * hard-blocking the action.
+     * Maps to {@code badword-filter.auto-rename}.
+     */
+    public static boolean isBadwordAutoRenameEnabled() {
+        return cfg.getBoolean("badword-filter.auto-rename", true);
+    }
+
+    /**
+     * Whether the auto-detection enhancement is enabled.
+     * When {@code true}, additional normalization and regex passes are applied on top
+     * of the base leet-speak substitution, catching more evasion attempts.
+     * Maps to {@code badword-filter.auto-detection.enabled}.
+     */
+    public static boolean isBadwordAutoDetectionEnabled() {
+        return cfg.getBoolean("badword-filter.auto-detection.enabled", true);
+    }
+
+    /**
+     * The auto-detection mode: {@code "off"}, {@code "normal"}, or {@code "strict"}.
+     * Strict mode enables the most aggressive regex checks, including alternating
+     * single-character filler detection.
+     * Maps to {@code badword-filter.auto-detection.mode}.
+     */
+    public static String getBadwordAutoDetectionMode() {
+        return cfg.getString("badword-filter.auto-detection.mode", "normal").toLowerCase();
+    }
+
+    // ── Bot Interaction ───────────────────────────────────────────────────────
+
+    /**
+     * Whether right-click interaction with bots is enabled.
+     * When {@code false}, all right-click events on bots are ignored.
+     * Maps to {@code bot-interaction.right-click-enabled}.
+     */
+    public static boolean isBotRightClickEnabled() {
+        return cfg.getBoolean("bot-interaction.right-click-enabled", true);
+    }
+
+    /**
+     * Whether shift+right-click opens the bot settings GUI.
+     * Maps to {@code bot-interaction.shift-right-click-settings}.
+     */
+    public static boolean isBotShiftRightClickSettingsEnabled() {
+        return cfg.getBoolean("bot-interaction.shift-right-click-settings", true);
+    }
+
+    // ── AI Conversations  (ai-conversations.*) ────────────────────────────────
+
+    /**
+     * Master toggle for AI-powered bot conversations via /msg commands.
+     * Maps to {@code ai-conversations.enabled}.
+     */
+    public static boolean aiConversationsEnabled() {
+        return cfg.getBoolean("ai-conversations.enabled", true);
+    }
+
+    /**
+     * Default personality prompt used for all bots unless overridden per-bot.
+     * Supports {@code {bot_name}} placeholder.
+     * Maps to {@code ai-conversations.default-personality}.
+     */
+    public static String aiConversationsDefaultPersonality() {
+        return cfg.getString("ai-conversations.default-personality",
+                "You are {bot_name}, a real Minecraft player chatting on a survival server. " +
+                "STRICT RULES: Reply in 2-6 words max. Lowercase only, no full stops. " +
+                "Make 1-2 typos per message. Never use full sentences. " +
+                "Only talk about real vanilla Minecraft things. Match the energy: 'hi' gets 'hey' not a paragraph.");
+    }
+
+    /**
+     * Whether the bot simulates a typing delay before replying.
+     * Maps to {@code ai-conversations.typing-delay.enabled}.
+     */
+    public static boolean aiTypingDelayEnabled() {
+        return cfg.getBoolean("ai-conversations.typing-delay.enabled", true);
+    }
+
+    /**
+     * Base delay in seconds before any reply (before per-char is added).
+     * Maps to {@code ai-conversations.typing-delay.base}.
+     */
+    public static double aiTypingDelayBase() {
+        return cfg.getDouble("ai-conversations.typing-delay.base", 1.0);
+    }
+
+    /**
+     * Extra delay in seconds per character in the response.
+     * Maps to {@code ai-conversations.typing-delay.per-char}.
+     */
+    public static double aiTypingDelayPerChar() {
+        return cfg.getDouble("ai-conversations.typing-delay.per-char", 0.07);
+    }
+
+    /**
+     * Maximum total typing delay in seconds (cap).
+     * Maps to {@code ai-conversations.typing-delay.max}.
+     */
+    public static double aiTypingDelayMax() {
+        return cfg.getDouble("ai-conversations.typing-delay.max", 5.0);
+    }
+
+    /**
+     * Maximum conversation history (message pairs) to remember per bot-player pair.
+     * Maps to {@code ai-conversations.max-history}.
+     */
+    public static int aiConversationsMaxHistory() {
+        return cfg.getInt("ai-conversations.max-history", 10);
+    }
+
+    /**
+     * Cooldown in seconds before a bot can respond again to the same player.
+     * Maps to {@code ai-conversations.cooldown}.
+     */
+    public static int aiConversationsCooldown() {
+        return cfg.getInt("ai-conversations.cooldown", 3);
+    }
+
+    /**
+     * Whether to log all AI requests and responses to console.
+     * Maps to {@code ai-conversations.debug}.
+     */
+    public static boolean aiConversationsDebug() {
+        return cfg.getBoolean("ai-conversations.debug", false) || isDebug();
+    }
+
+    // ── Debug helpers ─────────────────────────────────────────────────────────
 
     /** Log a message to console only when the legacy global debug mode is on. */
     public static void debug(String message) { FppLogger.debug(message); }

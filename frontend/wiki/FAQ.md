@@ -8,7 +8,7 @@
 ## 🎯 Quick Navigation
 
 - [🚨 **Emergency Fixes**](#-emergency-fixes) - Critical issues needing immediate attention
-- [⚙️ **Installation Problems**](#️-installation-problems) - Setup and startup issues  
+- [⚙️ **Installation Problems**](#installation-problems) - Setup and startup issues  
 - [🎮 **Command Issues**](#-command-issues) - Permission and usage problems
 - [🎭 **Bot Behavior**](#-bot-behavior) - Physical bodies, movement, AI issues
 - [🎨 **Skin Problems**](#-skin-problems) - Skin loading and display issues
@@ -32,13 +32,15 @@
    mv plugins/fpp-*.jar plugins/fpp-disabled.jar
    ```
 2. **Start server to confirm it works**
-3. **Check requirements:** Paper 1.21+, Java 21+, PacketEvents installed
+3. **Check requirements:** Paper 1.21+, Java 21+, correct FPP jar, optional integrations installed only if you want them (PlaceholderAPI / LuckPerms / WorldGuard)
 4. **Reinstall step by step**
 
 **Common Causes:**
 - ❌ Wrong server software (Spigot instead of Paper)
 - ❌ Old Java version (need JDK 21+)
-- ❌ Missing PacketEvents dependency
+- ❌ Wrong server software (must be Paper-compatible)
+- ❌ Old Java version (need JDK 21+)
+- ❌ Corrupted or partial plugin install
 - ❌ Corrupted JAR file
 
 ---
@@ -94,29 +96,22 @@
 
 ---
 
-## ⚙️ **Installation Problems**
+## Installation Problems
 
-### ❌ **PacketEvents Not Found**
+### ❌ **Plugin Installed But Startup Still Fails**
 
-**Error:** `[FPP] ✗ PacketEvents not found - tab list integration disabled`
+FPP no longer requires PacketEvents.
 
-**Solution:**
-1. **Download PacketEvents:**
-   - Go to [PacketEvents Releases](https://github.com/retrooper/packetevents/releases)
-   - Download `packetevents-spigot-2.11.2.jar` (or latest)
+**Check these instead:**
+1. You are running **Paper 1.21+**
+2. You are using **Java 21+**
+3. There is only **one** FPP jar in `plugins/`
+4. Optional integrations are not outdated enough to crash their own APIs
 
-2. **Install correctly:**
-   ```
-   plugins/
-   ├── packetevents-spigot-2.11.2.jar  ← Must be here
-   └── fpp-1.4.28.jar
-   ```
-
-3. **Restart server completely**
-
-**Verification:**
+**Recommended verification:**
 ```bash
-/plugins | grep -i packet  # Should show PacketEvents
+/version
+/plugins
 ```
 
 ---
@@ -178,7 +173,7 @@
 
 **Diagnosis:**
 ```bash
-/lp user <username> permission check fpp.user.spawn
+/lp user <username> permission check fpp.spawn.user
 /lp user <username> info
 ```
 
@@ -186,21 +181,22 @@
 
 **Regular Players:**
 ```bash
-/lp user <username> permission set fpp.user.*
-/lp user <username> permission set fpp.bot.5
+/lp user <username> permission set fpp.use true
+/lp user <username> permission set fpp.spawn.user true
+/lp user <username> permission set fpp.spawn.limit.5 true
 ```
 
 **VIP Members:**
 ```bash
-/lp user <username> permission set fpp.user.*
-/lp user <username> permission set fpp.bot.10
-/lp user <username> permission set fpp.bypass.cooldown
+/lp user <username> permission set fpp.use true
+/lp user <username> permission set fpp.spawn.user true
+/lp user <username> permission set fpp.spawn.limit.10 true
+/lp user <username> permission set fpp.bypass.cooldown true
 ```
 
 **Staff Members:**
 ```bash
-/lp user <username> permission set fpp.admin.*
-/lp user <username> permission set fpp.bypass.*
+/lp user <username> permission set fpp.op true
 ```
 
 ---
@@ -621,8 +617,8 @@ skin:
 **Configure Chunk Loading (config.yml):**
 ```yaml
 chunk-loading:
-  enabled: true              # Keep bot chunks loaded
-  radius: 2                  # Chunks around bot to keep loaded
+  enabled: true
+  radius: "auto"         # "auto" = server simulation-distance, 0 = disabled, N = fixed
 ```
 
 **Monitor Chunk Loading:**
@@ -667,9 +663,8 @@ chunk-loading:
 
 **Apply Configuration Changes:**
 ```bash
-/fpp reload config          # Reload configuration
-# OR
-/restart                    # Full server restart
+/fpp reload
+# OR restart the server if you changed DB backend or are troubleshooting startup-only integrations
 ```
 
 **Configuration Validation:**
@@ -680,7 +675,8 @@ chunk-loading:
 **Hot-Reload Limitations:**
 Some settings require full restart:
 - Database configuration
-- PacketEvents integration
+- Database backend changes
+- Some startup-only integration detection scenarios
 - Major system changes
 
 ---

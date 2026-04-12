@@ -1,6 +1,6 @@
 # ꜰᴀᴋᴇ ᴘʟᴀʏᴇʀ ᴘʟᴜɢɪɴ (FPP)
 
-> Spawn realistic fake players on your Paper server — with tab list presence, server list count, join/leave messages, in-world bodies, guaranteed skins, chunk loading, bot swap/rotation, fake chat, LuckPerms integration, proxy network support, and full hot-reload.
+> Spawn realistic fake players on your Paper server — with tab list presence, server list count, join/leave messages, in-world bodies, guaranteed skins, chunk loading, bot swap/rotation, fake chat, AI conversations, area mining, block placing, pathfinding, per-bot settings GUI, LuckPerms integration, proxy network support, and full hot-reload.
 
 [![Version](https://img.shields.io/modrinth/v/fake-player-plugin-%28fpp%29?style=flat-square&label=version&color=0079FF&logo=modrinth)](https://modrinth.com/plugin/fake-player-plugin-(fpp))
 ![MC](https://img.shields.io/badge/Minecraft-1.21.x-0079FF?style=flat-square)
@@ -29,9 +29,15 @@ FPP adds fake players to your server that look and behave like real ones:
 - **Freeze** any bot in place with `/fpp freeze`
 - **Open bot inventory** — 54-slot GUI with equipment slots; right-click any bot entity to open
 - **Pathfind to players** — A* grid navigation with WALK, ASCEND, DESCEND, PARKOUR, BREAK, PLACE move types
-- **Mine blocks** — continuous or one-shot block breaking with progressive mining progress
-- **Store right-click commands** — assign a command to any bot; right-clicking it runs the command
+- **Mine blocks** — continuous or one-shot block breaking; area selection with pos1/pos2 cuboid mode
+- **Place blocks** — continuous block placing with per-bot supply container support
+- **Right-click automation** — assign a command to any bot; right-clicking it runs the command
 - **Transfer XP** — drain a bot's entire XP pool to yourself with `/fpp xp`
+- **Named waypoint routes** — save patrol routes; bots walk them on a loop with `/fpp move --wp`
+- **Rename bots** — rename any active bot with full state preservation (inventory, XP, LP group, tasks)
+- **Per-bot settings GUI** — shift+right-click any bot to open a 6-row settings chest (General · Chat · PvP · Cmds · Danger)
+- **AI conversations** — bots respond to `/msg` with AI-generated replies; 7 providers (OpenAI, Groq, Anthropic, Gemini, Ollama, Copilot, Custom); per-bot personalities via `personalities/` folder
+- **Badword filter** — case-insensitive with leet-speak normalization, auto-rename bad names, remote word list
 - **LuckPerms** — per-bot group assignment, weighted tab-list ordering, prefix/suffix in chat and nametags
 - **Proxy/network support** — Velocity & BungeeCord cross-server chat, alerts, and shared database
 - **Config sync** — push/pull configuration files across your proxy network
@@ -46,9 +52,9 @@ FPP adds fake players to your server that look and behave like real ones:
 |-------------|---------|
 | [Paper](https://papermc.io/downloads/paper) | 1.21.x |
 | Java | 21+ |
-| [PacketEvents](https://modrinth.com/plugin/packetevents) | 2.x |
 | [LuckPerms](https://luckperms.net) | Optional — auto-detected |
 | [PlaceholderAPI](https://www.spigotmc.org/resources/placeholderapi.6245/) | Optional — auto-detected (29+ placeholders) |
+| [WorldGuard](https://dev.bukkit.org/projects/worldguard) | Optional — auto-detected (no-PvP region protection) |
 
 > **PlaceholderAPI Integration:** FPP provides 29+ placeholders including per-world bot counts, player-relative stats, network state, and system status. See [PLACEHOLDERAPI.md](PLACEHOLDERAPI.md) for the complete reference.
 
@@ -61,10 +67,9 @@ FPP adds fake players to your server that look and behave like real ones:
 ## Installation
 
 1. Download the latest `fpp-*.jar` from [![Modrinth](https://img.shields.io/modrinth/v/fake-player-plugin-%28fpp%29?style=flat-square&label=Modrinth&color=00AF5C&logo=modrinth)](https://modrinth.com/plugin/fake-player-plugin-(fpp)/versions) and place it in your `plugins/` folder.
-2. Download [PacketEvents](https://modrinth.com/plugin/packetevents) and place it in `plugins/` too.
-3. Restart your server — config files are created automatically.
-4. Edit `plugins/FakePlayerPlugin/config.yml` to your liking.
-5. Run `/fpp reload` to apply changes at any time.
+2. Restart your server — config files are created automatically.
+3. Edit `plugins/FakePlayerPlugin/config.yml` to your liking.
+4. Run `/fpp reload` to apply changes at any time.
 
 > **Updating?** FPP automatically migrates your config on first start and creates a timestamped backup before changing anything.
 
@@ -81,12 +86,23 @@ All commands are under `/fpp` (aliases: `/fakeplayer`, `/fp`).
 | `/fpp spawn [amount] [--name <name>]` | Spawn fake player(s) at your location |
 | `/fpp despawn <name\|all\|random [n]>` | Remove a bot by name, remove all, or remove a random set |
 | `/fpp list` | List all active bots with uptime and location |
-| `/fpp freeze <name\|all> [on\|off]` | Freeze or unfreeze bots — frozen bots are immovable; shown with an ice icon in list/stats |
+| `/fpp freeze <name\|all> [on\|off]` | Freeze or unfreeze bots — frozen bots are immovable |
 | `/fpp inventory <bot>` | Open the bot's full 54-slot inventory GUI (alias: `/fpp inv`) |
 | `/fpp move <bot> <player>` | Navigate a bot to an online player using A* pathfinding |
+| `/fpp move <bot> --wp <route>` | Patrol a named waypoint route on a loop |
+| `/fpp move <bot> --stop` | Stop the bot's current navigation |
+| `/fpp mine <bot> [once\|stop]` | Continuous or one-shot block mining |
+| `/fpp mine <bot> --pos1\|--pos2\|--start\|--status\|--stop` | Area-selection cuboid mining mode |
+| `/fpp place <bot> [once\|stop]` | Continuous or one-shot block placing |
+| `/fpp storage <bot> [name\|--list\|--remove\|--clear]` | Register supply containers for mine/place restocking |
+| `/fpp use <bot>` | Bot right-clicks / activates the block it's looking at |
+| `/fpp waypoint <name> [add\|remove\|list\|clear]` | Manage named patrol route waypoints |
 | `/fpp xp <bot>` | Transfer all of a bot's XP to yourself |
-| `/fpp cmd <bot> <command>` | Execute a command on a bot (or use `--add`/`--clear`/`--show` to manage its stored right-click command) |
-| `/fpp mine <bot> [once\|stop]` | Start/stop continuous block mining for a bot |
+| `/fpp cmd <bot> <command>` | Execute a command on a bot (or `--add`/`--clear`/`--show` for stored right-click command) |
+| `/fpp rename <old> <new>` | Rename a bot preserving all state (inventory, XP, LP group, tasks) |
+| `/fpp personality <bot> set\|reset\|show` | Assign or clear AI personality per bot |
+| `/fpp personality list\|reload` | List available personality files or reload them |
+| `/fpp badword add\|remove\|list\|reload` | Manage the runtime badword list |
 | `/fpp chat [on\|off\|status]` | Toggle the fake chat system |
 | `/fpp swap [on\|off\|status\|now <bot>\|list\|info <bot>]` | Toggle / manage the bot swap/rotation system |
 | `/fpp peaks [on\|off\|status\|next\|force\|list\|wake <name>\|sleep <name>]` | Time-based bot pool scheduler |
@@ -136,6 +152,14 @@ All commands are under `/fpp` (aliases: `/fakeplayer`, `/fp`).
 | `fpp.move` | Navigate bots with A* pathfinding |
 | `fpp.cmd` | Execute or store commands on bots |
 | `fpp.mine` | Enable/stop bot block mining |
+| `fpp.place` | Enable/stop bot block placing |
+| `fpp.storage` | Register supply containers for bots |
+| `fpp.useitem` | Bot right-click / use-item automation |
+| `fpp.waypoint` | Manage named patrol route waypoints |
+| `fpp.rename` | Rename any bot (with full state preservation) |
+| `fpp.rename.own` | Rename only bots the sender personally spawned |
+| `fpp.personality` | Assign AI personalities to bots |
+| `fpp.badword` | Manage the runtime badword filter list |
 | `fpp.migrate` | Data migration and backup utilities |
 | `fpp.alert` | Broadcast network-wide admin alerts |
 | `fpp.sync` | Push/pull config across proxy network |
@@ -179,8 +203,10 @@ Located at `plugins/FakePlayerPlugin/config.yml`. Run `/fpp reload` after any ch
 | `bot-name` | Display name format for admin/user bots (`admin-format`, `user-format`) |
 | `luckperms` | `default-group` — LP group assigned to every new bot at spawn |
 | `skin` | Skin mode (`auto` / `custom` / `off`), `guaranteed-skin` toggle, pool, `skins/` folder |
-| `body` | Physical entity (`enabled`), `pushable`, `damageable` |
-| `persistence` | Whether bots rejoin on server restart |
+| `badword-filter` | Name profanity filter — leet-speak normalization, remote word list, auto-rename |
+| `bot-interaction` | Right-click / shift-right-click settings GUI toggles |
+| `body` | Physical entity (`enabled`), `pushable`, `damageable`, `pick-up-items`, `pick-up-xp`, `drop-items-on-despawn` |
+| `persistence` | Whether bots rejoin on server restart; task state (mine/place/patrol) also persisted |
 | `join-delay` / `leave-delay` | Random delay range (ticks) for natural join/leave timing |
 | `messages` | Toggle join, leave, and kill broadcast messages; admin compatibility notifications |
 | `combat` | Bot HP and hurt sound |
@@ -189,17 +215,46 @@ Located at `plugins/FakePlayerPlugin/config.yml`. Run `/fpp reload` after any ch
 | `head-ai` | Enable/disable, look range, turn speed |
 | `swim-ai` | Automatic swimming in water/lava (`enabled`, default `true`) |
 | `collision` | Push physics — walk strength, hit strength, bot separation |
+| `pathfinding` | A* options — parkour, break-blocks, place-blocks, place-material, arrival distances, node limits |
+| `fake-chat` | Enable, chance, interval, typing delays, burst messages, bot-to-bot chat, mention replies, event reactions |
+| `ai-conversations` | AI DM system — provider config, personality, typing delay, conversation history |
 | `swap` | Auto rotation — session length, absence duration, min-online floor, retry-on-fail, farewell/greeting chat |
 | `peak-hours` | Time-based bot pool scheduler — schedule, day-overrides, stagger-seconds, min-online |
 | `performance` | Position sync distance culling (`position-sync-distance`) |
-| `fake-chat` | Enable, message chance, interval, typing delays, burst messages, mention replies, event reactions, keyword reactions |
 | `tab-list` | Show/hide bots in the player tab list |
 | `config-sync` | Cross-server config push/pull mode (`DISABLED` / `MANUAL` / `AUTO_PULL` / `AUTO_PUSH`) |
 | `database` | `mode` (`LOCAL` / `NETWORK`), `server-id`, SQLite (default) or MySQL |
 
 ---
 
-## Skin System
+## AI Conversations
+
+Bots can respond to `/msg`, `/tell`, and `/whisper` commands with AI-generated replies matching their personality.
+
+**Setup:**
+1. Edit `plugins/FakePlayerPlugin/secrets.yml` and add your API key
+2. Set `ai-conversations.enabled: true` in `config.yml`
+3. Bots will automatically respond — no restart needed
+
+**Supported Providers** (picked in priority order — first key that works wins):
+
+| Provider | Key in secrets.yml |
+|----------|-------------------|
+| OpenAI | `openai-api-key` |
+| Anthropic | `anthropic-api-key` |
+| Groq | `groq-api-key` |
+| Google Gemini | `google-gemini-api-key` |
+| Ollama | `ollama-base-url` (local, no key needed) |
+| Copilot / Azure | `copilot-api-key` |
+| Custom OpenAI-compatible | `custom-openai-base-url` |
+
+**Personalities:** Drop `.txt` files into `plugins/FakePlayerPlugin/personalities/` to create custom personality prompts. Assign per-bot with `/fpp personality <bot> set <name>`.
+
+Bundled personalities: `friendly`, `grumpy`, `noob`.
+
+---
+
+
 
 Three modes — set with `skin.mode`:
 
@@ -362,6 +417,62 @@ Bot chat uses the server's real chat pipeline (`Player.chat()`), so formatting i
 ---
 
 ## Changelog
+
+### v1.6.2 *(2026-04-12)*
+
+**AI Conversations**
+- New AI DM system — bots respond to `/msg`, `/tell`, `/whisper` with AI-generated replies
+- 7 provider support: OpenAI, Anthropic, Groq, Google Gemini, Ollama, Copilot/Azure, Custom OpenAI-compatible
+- API keys stored in `plugins/FakePlayerPlugin/secrets.yml` (never in `config.yml`)
+- Per-bot personality assignment via `/fpp personality <bot> set <name>`; personalities stored as `.txt` files in `personalities/` folder
+- Bundled sample personalities: `friendly`, `grumpy`, `noob`
+- `BotConversationManager` — per-player conversation history, rate limiting, typing delay simulation
+
+**New Commands**
+- `/fpp place <bot> [once|stop]` — continuous or one-shot block placing with supply-container restocking. Permission: `fpp.place`
+- `/fpp storage <bot> [name|--list|--remove|--clear]` — register supply containers for mine/place jobs. Permission: `fpp.storage`
+- `/fpp use <bot>` — bot right-clicks / activates the block it's looking at. Permission: `fpp.useitem`
+- `/fpp waypoint <name> [add|remove|list|clear]` — manage named patrol routes; bots walk them via `/fpp move --wp`. Permission: `fpp.waypoint`
+- `/fpp personality [list|reload|<bot> set <name>|reset|show]` — assign AI personalities to bots. Permission: `fpp.personality`
+- `/fpp badword add|remove|list|reload` — manage the runtime badword filter list. Permission: `fpp.badword`
+- `/fpp rename <old> <new>` — rename any bot with full state preservation (inventory, XP, LP group, tasks). Permission: `fpp.rename` (any bot), `fpp.rename.own` (own bots only)
+- `/fpp mine --pos1/--pos2/--start/--stop` — area-selection cuboid mining mode
+
+**Per-Bot Settings GUI**
+- Shift+right-click any bot to open a 6-row settings chest — no command needed
+- Categories: ⚙ General · 💬 Chat · ⚔ PvP · 📋 Cmds · ⚠ Danger
+- Toggle freeze, head-AI, chat tier, AI personality, stored commands, and bot deletion
+- Controlled by `bot-interaction.shift-right-click-settings` config key
+
+**Area Mining Mode**
+- `/fpp mine <bot> --pos1` / `--pos2` — select a cuboid mining region
+- `/fpp mine <bot> --start` — begin mining the selected area continuously
+- Auto-restocks from nearest registered `StorageStore` container when inventory fills
+- Selections persisted to `data/mine-selections.yml` — survive restarts and auto-resume
+
+**Task Persistence (DB Schema v13)**
+- Active tasks (mine/use/place/patrol) now saved to `fpp_bot_tasks` DB table on shutdown
+- YAML fallback: `data/bot-tasks.yml` when database is disabled
+- Bots automatically resume their job after server restart
+
+**Navigation & Interaction Engine**
+- `PathfindingService` — centralised shared navigation service
+- `NavigationRequest` with `lockOnArrival` for atomic nav→action lock handoff
+- `BotNavUtil` — static utilities: `findStandLocation`, `faceToward`, `isAtActionLocation`, `useStorageBlock`
+- `StorageInteractionHelper` — shared lock→open-container→transfer→unlock lifecycle
+
+**Per-Bot Item & XP Pickup Toggles**
+- `body.pick-up-items` and `body.pick-up-xp` global defaults
+- Per-bot overrides in `BotSettingGui` — toggling off immediately drops current inventory / XP to ground
+- `BotXpPickupListener` gates both pickup events per-bot
+
+**Config v47 → v53**
+- Added `bot-interaction`, `ai-conversations`, `badword-filter` sections
+- Added `body.drop-items-on-despawn` key
+- Config reorganized into **10 clearly numbered sections** with better flow and organization
+- `pathfinding` moved into section 4 (AI & Navigation)
+
+---
 
 ### v1.6.0 *(2026-04-09)*
 
@@ -658,4 +769,4 @@ Thank you for using Fake Player Plugin. Without you, it wouldn't be where it is 
 
 ---
 
-*Built for Paper 1.21.x · Java 21 · FPP v1.6.0 · [Modrinth](https://modrinth.com/plugin/fake-player-plugin-(fpp)) · [SpigotMC](https://www.spigotmc.org/resources/fake-player-plugin-fpp.133572/) · [PaperMC](https://hangar.papermc.io/Pepe-tf/FakePlayerPlugin) · [BuiltByBit](https://builtbybit.com/resources/fake-player-plugin.98704/) · [Wiki](https://fakeplayerplugin.xyz)*
+*Built for Paper 1.21.x · Java 21 · FPP v1.6.2 · [Modrinth](https://modrinth.com/plugin/fake-player-plugin-(fpp)) · [SpigotMC](https://www.spigotmc.org/resources/fake-player-plugin-fpp.133572/) · [PaperMC](https://hangar.papermc.io/Pepe-tf/FakePlayerPlugin) · [BuiltByBit](https://builtbybit.com/resources/fake-player-plugin.98704/) · [Wiki](https://fakeplayerplugin.xyz)*

@@ -1,0 +1,28 @@
+# ─────────────────────────────────────────────────────────────────────────────
+#  FakePlayerPlugin  ·  bad-words.yml
+#  Main local YAML file for the badword filter.
+#
+#  Words added here are merged with:
+#    · the remote global list from badword-filter.global-list-url when enabled
+#    · the inline list in config.yml
+#
+#  Use this file for server-specific additions and custom regexes.
+#  The default remote global source is:
+#    https://www.cs.cmu.edu/~biglou/resources/bad-words.txt
+#
+#  Matching rules:
+#    · Case-insensitive partial match  ("word" also blocks "mywordbot")
+#    · Leet-speak aware               ("a55h0le", "a_s_s_h_o_l_e" all caught)
+#    · Auto-detection mode adds:      regex checks for repeats / separators / splits
+#    · Optional custom regexes:       add them under the top-level "patterns:" list
+#
+#  Run /fpp reload to apply changes without restarting the server.
+# ─────────────────────────────────────────────────────────────────────────────
+
+words: []
+
+# Add any server-specific regexes here. Examples:
+# patterns:
+#   - "(?:word1|word2)[_-]?bot"
+#   - "w+[a-z0-9_]*o+[a-z0-9_]*r+[a-z0-9_]*d+"
+patterns: []

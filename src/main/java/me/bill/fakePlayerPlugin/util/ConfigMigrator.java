@@ -42,7 +42,7 @@ public final class ConfigMigrator {
      * The config-version value written by this build.
      * <b>Increment this whenever config.yml structure changes.</b>
      */
-    public static final int CURRENT_VERSION = 51;
+    public static final int CURRENT_VERSION = 55;
 
     /**
      * Mirrors the {@code debug} flag read directly from the raw YAML during migration.
@@ -142,6 +142,10 @@ public final class ConfigMigrator {
         if (stored < 49) anyChange |= v48to49(cfg);
         if (stored < 50) anyChange |= v49to50(cfg);
         if (stored < 51) anyChange |= v50to51(cfg);
+        if (stored < 52) anyChange |= v51to52(cfg);
+        if (stored < 53) anyChange |= v52to53(cfg);
+        if (stored < 54) anyChange |= v53to54(cfg);
+        if (stored < 55) anyChange |= v54to55(cfg);
 
         // ── Fill any remaining missing keys from jar defaults ──────────────────
         fillDefaults(plugin, cfg);
@@ -1281,6 +1285,123 @@ public final class ConfigMigrator {
     private static boolean v50to51(YamlConfiguration cfg) {
         cfg.set("death.suppress-drops", false);
         log("v50→v51", "reset death.suppress-drops → false (bots now drop items on death like real players)");
+        return true;
+    }
+
+    /**
+     * v51 → v52: add {@code fake-chat.event-triggers.on-player-chat} section.
+     *
+     * <p>New feature: bots can spontaneously react when a real player sends any
+     * chat message (not just a bot-name mention). Disabled by default so existing
+     * servers are not surprised by extra bot activity.
+     */
+    private static boolean v51to52(YamlConfiguration cfg) {
+        boolean changed = false;
+        String base = "fake-chat.event-triggers.on-player-chat.";
+        if (!cfg.isSet(base + "enabled")) {
+            cfg.set(base + "enabled", false);
+            changed = true;
+        }
+        if (!cfg.isSet(base + "use-ai")) {
+            cfg.set(base + "use-ai", true);
+            changed = true;
+        }
+        if (!cfg.isSet(base + "ai-cooldown")) {
+            cfg.set(base + "ai-cooldown", 30);
+            changed = true;
+        }
+        if (!cfg.isSet(base + "chance")) {
+            cfg.set(base + "chance", 0.25);
+            changed = true;
+        }
+        if (!cfg.isSet(base + "max-bots")) {
+            cfg.set(base + "max-bots", 1);
+            changed = true;
+        }
+        if (!cfg.isSet(base + "ignore-short")) {
+            cfg.set(base + "ignore-short", true);
+            changed = true;
+        }
+        if (!cfg.isSet(base + "ignore-commands")) {
+            cfg.set(base + "ignore-commands", true);
+            changed = true;
+        }
+        if (!cfg.isSet(base + "mention-player")) {
+            cfg.set(base + "mention-player", 0.50);
+            changed = true;
+        }
+        if (!cfg.isSet(base + "delay.min")) {
+            cfg.set(base + "delay.min", 2);
+            changed = true;
+        }
+        if (!cfg.isSet(base + "delay.max")) {
+            cfg.set(base + "delay.max", 8);
+            changed = true;
+        }
+        if (changed) {
+            log("v51→v52", "added fake-chat.event-triggers.on-player-chat section (AI-powered player chat reactions — disabled by default)");
+        }
+        return changed;
+    }
+
+
+    /**
+     * v52 → v53: chunk-loading.radius semantics changed.
+     * Old: {@code 0} = use server simulation-distance (auto).
+     * New: {@code 0} = disable chunk loading; {@code "auto"} = server simulation-distance.
+     * Any existing {@code radius: 0} is migrated to {@code radius: "auto"} so that
+     * existing servers keep the same behaviour (chunks loaded at simulation-distance).
+     */
+    private static boolean v52to53(YamlConfiguration cfg) {
+        Object raw = cfg.get("chunk-loading.radius");
+        // Migrate integer 0 → "auto"
+        if (raw instanceof Number n && n.intValue() == 0) {
+            cfg.set("chunk-loading.radius", "auto");
+            log("v52→v53", "chunk-loading.radius 0 → \"auto\" (0 now means no chunk loading; \"auto\" = server simulation-distance)");
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * v53 → v54: Added {@code body.drop-items-on-despawn} option.
+     * Defaults to {@code false} — no behaviour change for existing installs.
+     */
+    private static boolean v53to54(YamlConfiguration cfg) {
+        if (cfg.isSet("body.drop-items-on-despawn")) return false;
+        cfg.set("body.drop-items-on-despawn", false);
+        log("v53→v54", "added body.drop-items-on-despawn (default false)");
+        return true;
+    }
+
+    /**
+     * v54 → v55: Add shared global pathfinding tuning keys used by the plugin-wide
+     * navigation service.
+     */
+    private static boolean v54to55(YamlConfiguration cfg) {
+        boolean changed = false;
+        changed |= setIfMissing(cfg, "pathfinding.arrival-distance", 1.2);
+        changed |= setIfMissing(cfg, "pathfinding.patrol-arrival-distance", 1.5);
+        changed |= setIfMissing(cfg, "pathfinding.waypoint-arrival-distance", 0.65);
+        changed |= setIfMissing(cfg, "pathfinding.sprint-distance", 6.0);
+        changed |= setIfMissing(cfg, "pathfinding.follow-recalc-distance", 3.5);
+        changed |= setIfMissing(cfg, "pathfinding.recalc-interval", 60);
+        changed |= setIfMissing(cfg, "pathfinding.stuck-ticks", 8);
+        changed |= setIfMissing(cfg, "pathfinding.stuck-threshold", 0.04);
+        changed |= setIfMissing(cfg, "pathfinding.break-ticks", 15);
+        changed |= setIfMissing(cfg, "pathfinding.place-ticks", 5);
+        changed |= setIfMissing(cfg, "pathfinding.max-range", 64);
+        changed |= setIfMissing(cfg, "pathfinding.max-nodes", 2000);
+        changed |= setIfMissing(cfg, "pathfinding.max-nodes-extended", 4000);
+        if (changed) {
+            log("v54→v55", "added shared global pathfinding tuning keys");
+        }
+        return changed;
+    }
+
+    private static boolean setIfMissing(YamlConfiguration cfg, String path, Object value) {
+        if (cfg.isSet(path)) return false;
+        cfg.set(path, value);
         return true;
     }
 
