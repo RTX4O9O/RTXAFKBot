@@ -1,7 +1,11 @@
 # 🎮 Fake Player Plugin - Wiki
 
 > **The Ultimate Bot Spoofing Plugin for Paper 1.21+**  
-> **Version:** 1.6.2 · **Platform:** Paper 1.21+ · **Author:** Bill_Hub
+> **Version:** 1.6.2 · **Platform:** Paper 1.21+ · **Author:** Bill_Hub · **License:** [MIT (Open Source)](https://github.com/Pepe-tf/fake-player-plugin)
+
+---
+
+> 🎉 **FakePlayerPlugin is now Open Source!** Browse the code, report issues, and contribute on [GitHub](https://github.com/Pepe-tf/fake-player-plugin).
 
 ---
 
@@ -41,8 +45,8 @@
 - **RAM:** 2GB+ recommended for optimal performance
 - **Plugins:** PlaceholderAPI (optional), LuckPerms (optional)
 
-### ⚡ Installation
-1. Download FPP from [Modrinth](https://modrinth.com/plugin/fake-player-plugin-(fpp))
+### ⚙️ Installation
+1. Download FPP from [Modrinth](https://modrinth.com/plugin/fake-player-plugin-(fpp)) or build from [source on GitHub](https://github.com/Pepe-tf/fake-player-plugin)
 2. Drop the JAR into your `plugins/` folder
 3. Restart your server
 4. Configure permissions and settings
@@ -266,8 +270,8 @@ FPP provides **29+ placeholders** for use with other plugins:
 - **Discord:** Get notified of new versions
 
 ### 🤝 **Contributing**
-We welcome contributions! Check our GitHub for:
-- Bug reports and feature requests
+FPP is open source under the MIT License! Check our [GitHub repository](https://github.com/Pepe-tf/fake-player-plugin) for:
+- Bug reports and feature requests via [GitHub Issues](https://github.com/Pepe-tf/fake-player-plugin/issues)
 - Code contributions and pull requests  
 - Documentation improvements
 - Community support
@@ -276,16 +280,14 @@ We welcome contributions! Check our GitHub for:
 
 ## ⚖️ Legal & Licensing
 
-**Fake Player Plugin** is proprietary software developed by **Bill_Hub**.
+**Fake Player Plugin** is **open-source software** released under the **MIT License**, developed by **Bill_Hub**.
 
 - ✅ **Free to use** on your server
-- ❌ **No redistribution** without permission  
-- ❌ **No modification** of the plugin
-- ❌ **No commercial resale** 
+- ✅ **Open source** — view, fork, and contribute on [GitHub](https://github.com/Pepe-tf/fake-player-plugin)
+- ✅ **Modify and redistribute** with attribution (MIT License)
+- ✅ **Commercial use** permitted under MIT terms
 
-**For commercial licensing or usage permissions, contact Bill_Hub on Discord.**
-
-> **License:** See [LICENSE](../../LICENSE) for full terms and conditions.
+> **License:** [MIT License](https://github.com/Pepe-tf/fake-player-plugin/blob/main/LICENSE) · [Full Copyright Notice](/legal/copyright)
 
 ---
 

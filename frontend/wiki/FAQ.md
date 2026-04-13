@@ -970,10 +970,11 @@ rm plugins/fpp-*.jar
 - Screen sharing for complex issues  
 - Community troubleshooting
 
-**Discord:** [Report Bugs](https://discord.gg/QSN7f67nkJ)
+**GitHub Issues:** [Report Bugs](https://github.com/Pepe-tf/fake-player-plugin/issues)
 - Bug reports with logs
 - Feature requests
 - Technical discussions
+- Source code: https://github.com/Pepe-tf/fake-player-plugin
 
 ### 📋 **When Reporting Issues**
 

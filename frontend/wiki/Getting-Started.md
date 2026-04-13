@@ -373,6 +373,8 @@ ai-conversations:
 ## 🆘 Need Help?
 
 - **Discord:** [Join Community](https://discord.gg/QSN7f67nkJ)
+- **GitHub Issues:** [Report a bug or request a feature](https://github.com/Pepe-tf/fake-player-plugin/issues)
+- **Source Code:** [https://github.com/Pepe-tf/fake-player-plugin](https://github.com/Pepe-tf/fake-player-plugin)
 - **Wiki Home:** [Home](Home.md)
 - **Changelog:** [Changelog](Changelog.md)
 

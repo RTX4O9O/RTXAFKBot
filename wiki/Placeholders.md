@@ -2,6 +2,8 @@
 
 ---
 
+> 🎉 **FakePlayerPlugin is now Open Source** — [https://github.com/Pepe-tf/fake-player-plugin](https://github.com/Pepe-tf/fake-player-plugin)
+
 # Placeholders (PlaceholderAPI)
 
 FPP provides **24+ PlaceholderAPI placeholders** organized into five categories.  

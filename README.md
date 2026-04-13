@@ -6,9 +6,15 @@
 ![MC](https://img.shields.io/badge/Minecraft-1.21.x-0079FF?style=flat-square)
 ![Platform](https://img.shields.io/badge/platform-Paper-0079FF?style=flat-square)
 ![Java](https://img.shields.io/badge/Java-21-0079FF?style=flat-square)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green?style=flat-square)](https://github.com/Pepe-tf/fake-player-plugin/blob/main/LICENSE)
+[![GitHub](https://img.shields.io/badge/GitHub-Open%20Source-181717?style=flat-square&logo=github)](https://github.com/Pepe-tf/fake-player-plugin)
 [![Modrinth](https://img.shields.io/badge/Modrinth-FPP-00AF5C?style=flat-square&logo=modrinth)](https://modrinth.com/plugin/fake-player-plugin-(fpp))
 [![Discord](https://img.shields.io/badge/Discord-Join%20Server-5865F2?style=flat-square&logo=discord&logoColor=white)](https://discord.gg/QSN7f67nkJ)
 [![Wiki](https://img.shields.io/badge/Wiki-fakeplayerplugin.xyz-7B8EF0?style=flat-square)](https://fakeplayerplugin.xyz)
+
+---
+
+> 🎉 **FakePlayerPlugin is now Open Source!** The full source code is available on [GitHub](https://github.com/Pepe-tf/fake-player-plugin) under the **MIT License**. Contributions, bug reports, and pull requests are welcome!
 
 ---
 
@@ -765,8 +771,8 @@ Thank you for using Fake Player Plugin. Without you, it wouldn't be where it is 
 - [Wiki](https://fakeplayerplugin.xyz) — documentation
 - [Ko-fi](https://ko-fi.com/fakeplayerplugin) — support the project
 - [Discord](https://discord.gg/QSN7f67nkJ) — support & feedback
-- [GitHub](https://github.com/Pepe-tf/Fake-Player-Plugin-Public-) — source & issues
+- [GitHub](https://github.com/Pepe-tf/fake-player-plugin) — **open-source repository · source, issues & pull requests**
 
 ---
 
-*Built for Paper 1.21.x · Java 21 · FPP v1.6.2 · [Modrinth](https://modrinth.com/plugin/fake-player-plugin-(fpp)) · [SpigotMC](https://www.spigotmc.org/resources/fake-player-plugin-fpp.133572/) · [PaperMC](https://hangar.papermc.io/Pepe-tf/FakePlayerPlugin) · [BuiltByBit](https://builtbybit.com/resources/fake-player-plugin.98704/) · [Wiki](https://fakeplayerplugin.xyz)*
+*Built for Paper 1.21.x · Java 21 · FPP v1.6.2 · [Modrinth](https://modrinth.com/plugin/fake-player-plugin-(fpp)) · [SpigotMC](https://www.spigotmc.org/resources/fake-player-plugin-fpp.133572/) · [PaperMC](https://hangar.papermc.io/Pepe-tf/FakePlayerPlugin) · [BuiltByBit](https://builtbybit.com/resources/fake-player-plugin.98704/) · [Wiki](https://fakeplayerplugin.xyz) · [GitHub](https://github.com/Pepe-tf/fake-player-plugin)*

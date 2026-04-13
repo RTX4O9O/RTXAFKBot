@@ -2,6 +2,8 @@
 
 FakePlayerPlugin fully supports **multi-server proxy networks** using **Velocity** or **BungeeCord**.
 
+> 🎉 **FakePlayerPlugin is now Open Source** — [https://github.com/Pepe-tf/fake-player-plugin](https://github.com/Pepe-tf/fake-player-plugin)
+
 ---
 
 ## 🌐 Features

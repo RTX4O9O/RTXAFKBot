@@ -1,5 +1,7 @@
 # Config Synchronization - Complete Guide
 
+> 🎉 **FakePlayerPlugin is now Open Source** — [https://github.com/Pepe-tf/fake-player-plugin](https://github.com/Pepe-tf/fake-player-plugin)
+
 ## 🔄 Overview
 
 **Config Sync** allows you to share configuration files across all servers in a proxy network. Instead of manually editing `config.yml` on every backend server, you can push changes from one server and pull them on all others.

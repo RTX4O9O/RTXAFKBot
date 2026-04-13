@@ -1,8 +1,8 @@
 # Privacy Policy
 
 **Effective Date:** April 3, 2026
-**Last Updated:** April 3, 2026
-**Version:** 2.0
+**Last Updated:** April 13, 2026
+**Version:** 2.1
 
 ---
 
@@ -52,13 +52,14 @@ For the purposes of this Privacy Policy, the following terms have the meanings s
 
 ## 2. Who We Are
 
-Fake Player Plugin ("FPP") is developed and maintained by **Bill_Hub** (also known as El_Pepes). The Plugin is a proprietary, server-side software tool for Minecraft servers running the Paper platform.
+Fake Player Plugin ("FPP") is developed and maintained by **Bill_Hub** (also known as El_Pepes). The Plugin is **open-source software** released under the MIT License, available at [https://github.com/Pepe-tf/fake-player-plugin](https://github.com/Pepe-tf/fake-player-plugin).
 
 **Contact:**
 
 | Channel | Link |
 |---------|------|
 | Discord Server | https://discord.gg/QSN7f67nkJ |
+| GitHub | https://github.com/Pepe-tf/fake-player-plugin |
 | Plugin Page | https://modrinth.com/plugin/fake-player-plugin-(fpp) |
 
 ---
@@ -338,6 +339,7 @@ Your continued use of the Plugin after the effective date constitutes acceptance
 
 | Version | Date | Summary of Changes |
 |---------|------|--------------------|
+| 2.1 | April 13, 2026 | Updated to reflect open-source status; added GitHub repository link |
 | 2.0 | April 3, 2026 | Full rewrite: definitions, GDPR legal basis table, CCPA section, data retention table, third-party service details, cookies section, international transfers |
 | 1.0 | April 3, 2026 | Initial privacy policy |
 
@@ -348,6 +350,7 @@ Your continued use of the Plugin after the effective date constitutes acceptance
 | Channel | Details | Response Time |
 |---------|---------|--------------|
 | **Discord Server** | https://discord.gg/QSN7f67nkJ | Typically within 7 business days |
+| **GitHub Issues** | https://github.com/Pepe-tf/fake-player-plugin/issues | Bug reports and privacy inquiries |
 | **Plugin Page** | https://modrinth.com/plugin/fake-player-plugin-(fpp) | Reviews and messages |
 
 We aim to provide a substantive response to all privacy inquiries within **30 days** in accordance with applicable data protection law.
@@ -356,7 +359,8 @@ We aim to provide a substantive response to all privacy inquiries within **30 da
 
 *This Privacy Policy is effective as of April 3, 2026 and applies to Fake Player Plugin v1.5.8 and all subsequent versions.*
 
-*Fake Player Plugin - Developed by Bill_Hub (El_Pepes). Not affiliated with Mojang AB, Microsoft Corporation, or any Minecraft platform provider.*
+*Fake Player Plugin - Developed by Bill_Hub (El_Pepes). Released under the MIT License — https://github.com/Pepe-tf/fake-player-plugin*
+*Not affiliated with Mojang AB, Microsoft Corporation, or any Minecraft platform provider.*
 
 ## Introduction
 

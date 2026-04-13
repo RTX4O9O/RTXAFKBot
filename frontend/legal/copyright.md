@@ -1,12 +1,12 @@
 # Copyright & License Notice
 
 **Effective Date:** April 3, 2026
-**Last Updated:** April 3, 2026
-**Version:** 1.0
+**Last Updated:** April 13, 2026
+**Version:** 2.0
 
 ---
 
-> **Note:** Fake Player Plugin is currently **proprietary software**. All rights are reserved. The developer intends to release the source code under the MIT License in a future version. See the [Future Licensing](#future-licensing-roadmap) section for details.
+> 🎉 **Fake Player Plugin is now Open Source!** The source code is publicly available on [GitHub](https://github.com/Pepe-tf/fake-player-plugin) under the **MIT License**. Contributions, bug reports, and pull requests are welcome.
 
 ---
 
@@ -14,7 +14,6 @@
 
 ```
 Copyright © 2024-2026 Bill_Hub (El_Pepes)
-All Rights Reserved.
 
 Fake Player Plugin ("FPP")
 Developed and maintained by Bill_Hub (also known as El_Pepes)
@@ -22,8 +21,7 @@ Developed and maintained by Bill_Hub (also known as El_Pepes)
 
 This copyright notice applies to:
 
-- The Fake Player Plugin compiled binary (`fpp-*.jar`)
-- All internal source code, logic, and algorithms
+- The Fake Player Plugin source code and compiled binary (`fpp-*.jar`)
 - All configuration file templates and default resources
 - All documentation, wiki pages, and associated written content
 - The official FPP website and its assets
@@ -33,62 +31,29 @@ This copyright notice applies to:
 
 ## Current License Status
 
-### ⚠️ Proprietary - All Rights Reserved
+### ✅ Open Source — MIT License
 
-Fake Player Plugin is currently distributed as **proprietary, closed-source software**. The source code is **not publicly available**.
+Fake Player Plugin is distributed as **open-source software** under the **MIT License**. The full source code is publicly available at:
 
-Under this current proprietary status:
+**[https://github.com/Pepe-tf/fake-player-plugin](https://github.com/Pepe-tf/fake-player-plugin)**
 
 | Permission | Status |
 |------------|--------|
 | Use the compiled Plugin binary on your own server | ✅ Permitted |
 | Configure and operate the Plugin | ✅ Permitted |
-| Distribute the Plugin binary (unmodified, with attribution) | ⚠️ Ask first |
-| Access or view the source code | ❌ Not permitted |
-| Modify the Plugin's internal code | ❌ Not permitted |
-| Decompile, reverse-engineer, or disassemble the binary | ❌ Not permitted |
-| Create derivative works or forks | ❌ Not permitted |
-| Redistribute modified versions | ❌ Not permitted |
-| Sell, sublicense, or commercially redistribute | ❌ Not permitted |
+| View and study the source code | ✅ Permitted |
+| Modify the Plugin's code | ✅ Permitted |
+| Distribute the Plugin (with attribution) | ✅ Permitted (with copyright notice) |
+| Create derivative works or forks | ✅ Permitted (with copyright notice) |
+| Use in commercial projects | ✅ Permitted |
+| Sublicense | ✅ Permitted |
 | Remove or alter copyright notices | ❌ Not permitted |
 
-Full terms of use are outlined in the [Terms of Service](/legal/terms-of-service).
+Full terms are in the MIT License text below.
 
 ---
 
-## Future Licensing Roadmap
-
-### 🔓 Planned: Open Source Release under MIT License
-
-The Developer intends to **open source Fake Player Plugin** and release it under the **MIT License** in a future version. This is a firm intention, though the exact timeline depends on code readiness, documentation quality, and project maturity.
-
-### What This Means
-
-When the open-source transition occurs:
-
-- The full source code will be published in a public repository
-- The license will be updated to the **MIT License** (see below)
-- Community contributions (bug fixes, features, pull requests) will be welcomed
-- The compiled binary will remain freely available from all current distribution platforms
-- Existing users will not need to take any action - the Plugin will continue to work as-is
-
-### Why Not Open Source Yet?
-
-The project is being prepared for open-source release. This involves:
-
-- **Code cleanup:** Refactoring internal systems for public readability and maintainability
-- **Documentation:** Ensuring all public APIs and extension points are documented
-- **Security audit:** Reviewing NMS internals and obfuscation before exposing source
-- **Build system:** Preparing the Maven build configuration for community use
-- **Contribution guidelines:** Drafting a `CONTRIBUTING.md` and code style guide
-
-We appreciate your patience. The open-source release will be announced in our Discord server.
-
----
-
-## The MIT License (Future)
-
-When the open-source transition is complete, the following license will apply:
+## The MIT License
 
 ```
 MIT License
@@ -114,15 +79,11 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-> **This license text is provided for transparency and planning purposes only.**
-> It does not take effect until the Developer formally publishes the source code
-> under this license. Until then, the proprietary terms above apply exclusively.
-
 ---
 
 ## Third-Party Licenses
 
-Fake Player Plugin bundles or depends on the following third-party components. Their licenses are unaffected by FPP's current proprietary status.
+Fake Player Plugin bundles or depends on the following third-party components.
 
 ### PacketEvents
 - **Author:** retrooper and contributors
@@ -174,7 +135,7 @@ Fake Player Plugin bundles or depends on the following third-party components. T
 
 ## Trademark Notice
 
-**"Fake Player Plugin"**, **"FPP"**, and the FPP logo are proprietary identifiers of the Developer. They are not registered trademarks, but their use is protected under common law trademark principles.
+**"Fake Player Plugin"**, **"FPP"**, and the FPP logo are identifiers of the Developer. They are not registered trademarks, but their use is protected under common law trademark principles.
 
 You may:
 - ✅ Refer to the Plugin by its name in reviews, tutorials, and documentation
@@ -184,50 +145,39 @@ You may:
 You may not:
 - ❌ Use the name or logo to imply endorsement or official affiliation
 - ❌ Use the name or logo as part of a competing product's branding
-- ❌ Create unofficial distributions using the "Fake Player Plugin" name
+- ❌ Create unofficial distributions using the "Fake Player Plugin" name without attribution
 
 ---
 
-## Attribution Requirements
+## Attribution
 
-Until the MIT License transition, if you reference, review, or showcase Fake Player Plugin in public content (YouTube videos, blog posts, server advertisements, etc.), we ask that you:
+When using or redistributing this software, please credit the project:
 
-1. **Credit the Plugin** - Reference "Fake Player Plugin by Bill_Hub"
-2. **Link to official sources** - Modrinth, SpigotMC, Hangar, or BuiltByBit
-3. **Do not misrepresent** - Accurately represent features and limitations
+> "Fake Player Plugin by Bill_Hub — https://github.com/Pepe-tf/fake-player-plugin"
 
 ---
 
 ## DMCA / Copyright Infringement
 
-If you believe that content on the official FPP website or in the Plugin's resources infringes your copyright, please contact us via Discord with:
-
-1. A description of the copyrighted work you claim has been infringed
-2. The specific location of the allegedly infringing material
-3. Your contact information
-4. A statement of good faith belief that the use is not authorized
-5. A statement, under penalty of perjury, that the information is accurate
-
-We will investigate all legitimate DMCA notices and take appropriate action.
+If you believe that content on the official FPP website or in the Plugin's resources infringes your copyright, please contact us via Discord.
 
 **Contact for copyright notices:**
 
 | Channel | Details |
 |---------|---------|
 | **Discord** | https://discord.gg/QSN7f67nkJ |
+| **GitHub Issues** | https://github.com/Pepe-tf/fake-player-plugin/issues |
 | **Plugin Page** | https://modrinth.com/plugin/fake-player-plugin-(fpp) |
 
 ---
 
 ## Stay Updated
 
-To be notified when the open-source release happens:
-
-- 💬 **Join the Discord:** https://discord.gg/QSN7f67nkJ - announcements are posted here first
-- 📦 **Follow on Modrinth:** https://modrinth.com/plugin/fake-player-plugin-(fpp) - follow the project for release notifications
+- 💻 **GitHub:** https://github.com/Pepe-tf/fake-player-plugin — source, releases, and issues
+- 💬 **Discord:** https://discord.gg/QSN7f67nkJ — community announcements
+- 📦 **Modrinth:** https://modrinth.com/plugin/fake-player-plugin-(fpp) — compiled releases
 
 ---
 
-*Copyright © 2024-2026 Bill_Hub (El_Pepes). All rights reserved.*
+*Copyright © 2024-2026 Bill_Hub (El_Pepes). Released under the MIT License.*
 *Fake Player Plugin - Not affiliated with Mojang AB or Microsoft Corporation.*
-
