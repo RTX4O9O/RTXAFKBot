@@ -1,6 +1,6 @@
 # 🎨 Skin System
 
-FPP supports three skin modes and several ways to resolve a bot's appearance.
+FPP supports three skin modes, a built-in fallback pool of 1000 real Minecraft accounts, DB-backed caching, and NameTag plugin skin integration.
 
 ---
 
@@ -8,8 +8,8 @@ FPP supports three skin modes and several ways to resolve a bot's appearance.
 
 ```yaml
 skin:
-  mode: auto
-  guaranteed-skin: false
+  mode: player
+  guaranteed-skin: true
   clear-cache-on-reload: true
 ```
 
@@ -19,29 +19,30 @@ Run `/fpp reload` after changing skin settings.
 
 ## Modes
 
-### `auto`
+### `player` (recommended, default)
 
 FPP tries to fetch the Mojang skin matching the bot's name.
 
+- If the bot's name matches a real Minecraft account, that account's skin is used
+- If the name doesn't match (or Mojang returns no skin), the **built-in 1000-player fallback pool** provides a random real skin
+- DB-backed skin cache avoids repeated Mojang API lookups (7-day TTL)
+
+> **Legacy alias:** `auto` — works the same as `player`
+
 Best for:
-- online-mode servers
+- all server types (online and offline mode)
 - bot names that match real Minecraft accounts
+- bots with generated names that still need real-looking skins
 
-Important default behavior:
+With `guaranteed-skin: true` (default for new installs and enforced by v58→v59 migration):
+- bots whose names don't match a real Mojang account get a random skin from the built-in 1000-player pool
+- every bot always has a real-looking skin
 
-```yaml
-skin:
-  mode: auto
-  guaranteed-skin: false
-```
-
-With `guaranteed-skin: false`:
-- bots with non-Mojang/generated names simply use Steve/Alex
-- this avoids unnecessary API calls
-
-### `custom`
+### `random` (advanced)
 
 FPP resolves skins from a multi-step custom pipeline.
+
+> **Legacy alias:** `custom` — works the same as `random`
 
 Current resolution order:
 1. `skin.overrides`
@@ -50,9 +51,23 @@ Current resolution order:
 4. random entry from `skin.pool`
 5. fallback to normal Mojang name lookup behavior
 
-### `off`
+### `none`
 
 Bots use vanilla Steve/Alex appearance only.
+
+> **Legacy alias:** `off` — works the same as `none`
+
+---
+
+## SkinManager (v1.6.4+)
+
+The `SkinManager` class centralises all skin resolution, caching, and application:
+
+- **Resolution priority:** NameTag skin (if NameTag plugin detected) → DB cache → Mojang API → fallback pool
+- **DB skin cache:** resolved skins are cached in the `fpp_skin_cache` database table (7-day TTL, auto-cleanup)
+- **1000-player fallback pool:** hardcoded list of real Minecraft accounts with varied skins — no config needed
+- **NameTag skin priority:** when the [NameTag](https://lode.gg) plugin is installed and assigns a skin to a bot, that skin takes precedence over all other modes
+- **Public API:** `plugin.getSkinManager()` — `resolveEffectiveSkin`, `applySkinByPlayerName`, `applySkinFromProfile`, `applyNameTagSkin`, `resetToDefaultSkin`, `preloadSkin`, `clearCache`
 
 ---
 
@@ -60,8 +75,8 @@ Bots use vanilla Steve/Alex appearance only.
 
 ```yaml
 skin:
-  mode: auto
-  guaranteed-skin: false
+  mode: player
+  guaranteed-skin: true
   clear-cache-on-reload: true
   overrides: {}
   pool: []
@@ -70,12 +85,12 @@ skin:
 
 | Key | Description |
 |-----|-------------|
-| `mode` | `auto`, `custom`, or `off` |
-| `guaranteed-skin` | Try harder to fetch skins for generated names |
+| `mode` | `player`, `random`, or `none` (legacy: `auto`, `custom`, `off`) |
+| `guaranteed-skin` | When `true`, bots that can't resolve their name always use a fallback skin from the built-in pool |
 | `clear-cache-on-reload` | Clears cached skin results on `/fpp reload` |
-| `overrides` | Map of `bot-name -> minecraft-username` |
-| `pool` | List of fallback usernames for random assignment |
-| `use-skin-folder` | Enable scanning of `plugins/FakePlayerPlugin/skins/` |
+| `overrides` | Map of `bot-name -> minecraft-username` (random mode only) |
+| `pool` | List of fallback usernames for random assignment (random mode only) |
+| `use-skin-folder` | Enable scanning of `plugins/FakePlayerPlugin/skins/` (random mode only) |
 
 ---
 
@@ -146,24 +161,38 @@ plugins/FakePlayerPlugin/skins/README.txt
 Default is now:
 
 ```yaml
-guaranteed-skin: false
+guaranteed-skin: true
 ```
 
-That means generated / fake names normally display Steve/Alex unless custom skin sources are available.
+Bots whose names don't match a real Mojang account get a random skin from the built-in 1000-player fallback pool. Every bot always has a real-looking skin.
 
-This is the intended behavior in the current plugin line.
+> **Migration note:** existing installs that had `guaranteed-skin: false` are upgraded to `true` by config migration v58→v59.
 
 ---
 
 ## Removed Older Fallback Keys
 
-Older versions had extra fallback keys such as:
+Older versions had extra fallback keys:
 - `skin.fallback-pool`
 - `skin.fallback-name`
 
-Those are no longer part of the current config structure.
+These were removed in config migration v59→v60. The 1000-player fallback pool is now hardcoded inside `SkinManager` — no configuration needed.
 
-Use `pool`, `overrides`, and the `skins/` folder instead.
+---
+
+## DB Skin Cache (v1.6.4+)
+
+Resolved skins are cached in the `fpp_skin_cache` database table:
+
+| Column | Description |
+|--------|-------------|
+| `skin_name` | Minecraft username (primary key) |
+| `texture_value` | Base64 skin texture |
+| `texture_signature` | Mojang signature |
+| `source` | Origin label (e.g. `mojang:PlayerName`) |
+| `cached_at` | Timestamp; entries expire after 7 days |
+
+Cache entries are auto-cleaned on startup. This avoids repeated Mojang API calls for the same bot names.
 
 ---
 
@@ -179,11 +208,11 @@ Use `pool`, `overrides`, and the `skins/` folder instead.
 
 | Scenario | Recommended mode |
 |----------|------------------|
-| Online-mode server, real account-style names | `auto` |
-| Generated names, but you want custom-looking bots | `custom` + `pool` |
-| Exact skin control for specific names | `custom` + `overrides` |
-| Fully offline-mode / local-control setup | `custom` + `skins/` folder |
-| Appearance does not matter | `off` |
+| All servers (online or offline mode) | `player` (default) |
+| Generated names, but you want custom-looking bots | `random` + `pool` |
+| Exact skin control for specific names | `random` + `overrides` |
+| Fully offline-mode / local-control setup | `random` + `skins/` folder |
+| Appearance does not matter | `none` |
 
 ---
 
@@ -193,16 +222,16 @@ Use `pool`, `overrides`, and the `skins/` folder instead.
 
 ```yaml
 skin:
-  mode: auto
-  guaranteed-skin: false
+  mode: player
+  guaranteed-skin: true
 ```
 
 ### Controlled custom setup
 
 ```yaml
 skin:
-  mode: custom
-  guaranteed-skin: false
+  mode: random
+  guaranteed-skin: true
   overrides:
     TraderBot: Notch
   pool:

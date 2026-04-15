@@ -24,12 +24,13 @@
 | PlaceholderAPI | Optional | `%fpp_*%` placeholders for scoreboards, TAB, holograms, etc. |
 | LuckPerms | Optional | Per-bot groups, prefix/suffix integration, group diagnostics |
 | WorldGuard | Optional | Prevents player-sourced PvP damage to bots in no-PvP regions |
+| NameTag | Optional | Nick-conflict guard, bot isolation from nick cache, skin sync, sync-nick-as-rename |
 
 > `PacketEvents` is **not** a current dependency.
 
 ### 🌐 Server Notes
 
-- **Online mode:** recommended if you want `skin.mode: auto` to match real Mojang skins reliably
+- **Online mode:** recommended if you want `skin.mode: player` to match real Mojang skins reliably
 - **Simulation distance:** matters when `chunk-loading.radius: "auto"` is used
 - **Version support:** FPP is currently tested up to **1.21.11**; newer MC versions are guarded by the plugin's version check
 
@@ -51,7 +52,8 @@ plugins/
 ├── fpp-1.6.4.jar
 ├── PlaceholderAPI-2.11.x.jar      (optional)
 ├── LuckPerms-Bukkit-5.5.x.jar     (optional)
-└── WorldGuard-Bukkit-7.x.jar      (optional)
+├── WorldGuard-Bukkit-7.x.jar      (optional)
+└── NameTag-x.x.x.jar              (optional)
 ```
 
 ### 2) Verify first boot
@@ -328,9 +330,9 @@ ai-conversations:
 
 ### "Bots have no skins"
 
-- `skin.mode: auto` works best on online-mode servers
-- generated names without Mojang accounts will show Steve/Alex when `guaranteed-skin: false`
-- use `skin.mode: custom` if you want full control via usernames or PNG files
+- `skin.mode: player` (default) works best — it fetches Mojang skins and falls back to the built-in 1000-player pool
+- with `guaranteed-skin: true` (default), every bot always gets a real-looking skin
+- use `skin.mode: random` if you want full control via usernames or PNG files
 
 ### "Tab list not working"
 

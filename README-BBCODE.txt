@@ -1,6 +1,6 @@
 [CENTER][SIZE=7][B]ꜰᴀᴋᴇ ᴘʟᴀʏᴇʀ ᴘʟᴜɢɪɴ (FPP)[/B][/SIZE]
 
-[SIZE=5][I]Spawn realistic fake players on your Paper server — with tab list presence, server list count, join/leave messages, in-world bodies, guaranteed skins, chunk loading, bot swap/rotation, fake chat, AI conversations, area mining, block placing, pathfinding, per-bot settings GUI, per-bot swim AI & chunk-radius overrides, per-bot XP & item pickup control, LuckPerms integration, proxy network support, and full hot-reload.[/I][/SIZE]
+[SIZE=5][I]Spawn realistic fake players on your Paper server — with tab list presence, server list count, join/leave messages, in-world bodies, guaranteed skins, chunk loading, bot swap/rotation, fake chat, AI conversations, area mining, block placing, pathfinding, per-bot settings GUI, per-bot swim AI & chunk-radius overrides, per-bot XP & item pickup control, NameTag plugin integration, LuckPerms integration, proxy network support, and full hot-reload.[/I][/SIZE]
 
 [SIZE=4][B]Version:[/B] 1.6.4  [B]Minecraft:[/B] 1.21.x  [B]Platform:[/B] Paper  [B]Java:[/B] 21+[/SIZE]
 
@@ -37,6 +37,7 @@ FPP adds fake players to your server that look and behave like real ones:
 [*][B]Per-bot settings GUI[/B] — shift+right-click any bot to open a 6-row settings chest (General · Chat · PvP · Cmds · Danger)
 [*][B]AI conversations[/B] — bots respond to [FONT=monospace]/msg[/FONT] with AI-generated replies; 7 providers (OpenAI, Groq, Anthropic, Gemini, Ollama, Copilot, Custom); per-bot personalities via [FONT=monospace]personalities/[/FONT] folder
 [*][B]Badword filter[/B] — case-insensitive with leet-speak normalization, auto-rename bad names, remote word list
+[*][B]NameTag integration[/B] — nick-conflict guard, bot isolation from nick cache, skin sync, auto-rename via nick
 [*][B]LuckPerms[/B] — per-bot group assignment, weighted tab-list ordering, prefix/suffix in chat and nametags
 [*][B]Proxy/network support[/B] — Velocity & BungeeCord cross-server chat, alerts, and shared database
 [*][B]Config sync[/B] — push/pull configuration files across your proxy network
@@ -55,6 +56,7 @@ FPP adds fake players to your server that look and behave like real ones:
 [TR][TD][URL='https://luckperms.net']LuckPerms[/URL][/TD][TD]Optional — auto-detected[/TD][/TR]
 [TR][TD][URL='https://www.spigotmc.org/resources/placeholderapi.6245/']PlaceholderAPI[/URL][/TD][TD]Optional — auto-detected (29+ placeholders)[/TD][/TR]
 [TR][TD][URL='https://dev.bukkit.org/projects/worldguard']WorldGuard[/URL][/TD][TD]Optional — auto-detected (no-PvP region protection)[/TD][/TR]
+[TR][TD][URL='https://lode.gg']NameTag[/URL][/TD][TD]Optional — auto-detected (nick-conflict guard, skin sync)[/TD][/TR]
 [/TABLE]
 
 [B]Note:[/B] Supports all Paper 1.21.x versions (1.21.0 through 1.21.11). Check the server console after startup for any version-specific notes.
@@ -442,6 +444,27 @@ Bot chat uses the server's real chat pipeline, so formatting is handled by your 
 
 [SIZE=5][B]v1.6.4[/B][/SIZE] [I](2026-04-16)[/I]
 
+[B]🏷️ NameTag Plugin Integration[/B]
+[LIST]
+[*]New [B]soft-dependency[/B] on the [URL='https://lode.gg']NameTag[/URL] plugin — fully optional, auto-detected at startup
+[*][B]Nick-conflict guard[/B] — prevents spawning a bot whose [FONT=monospace]--name[/FONT] matches a real player's current NameTag nickname ([FONT=monospace]nametag-integration.block-nick-conflicts: true[/FONT])
+[*][B]Bot isolation[/B] — after each bot spawns, FPP removes it from NameTag's internal player cache to prevent NameTag from treating bots as real players ([FONT=monospace]nametag-integration.bot-isolation: true[/FONT])
+[*][B]Sync-nick-as-rename[/B] — when a bot has a NameTag nick set (e.g. via [FONT=monospace]/nick BotA Steve[/FONT]), FPP auto-triggers a full rename ([FONT=monospace]nametag-integration.sync-nick-as-rename: false[/FONT] — opt-in)
+[*][B]NameTag skin sync[/B] — bots inherit skins assigned via NameTag; preferred skin check runs before all other skin modes
+[*]New [FONT=monospace]NameTagHelper[/FONT] utility class: nick reading, skin reading, cache isolation, formatting strip, nick-conflict checks
+[*]New [FONT=monospace]FakePlayer.nameTagNick[/FONT] field; new lang key [FONT=monospace]spawn-name-taken-nick[/FONT]
+[/LIST]
+
+[B]🎨 Skin System Overhaul[/B]
+[LIST]
+[*]New [FONT=monospace]SkinManager[/FONT] class — centralised skin lifecycle: resolve, apply, cache, fallback, NameTag priority
+[*][B]Hardcoded 1000-player fallback skin pool[/B] — replaces old [FONT=monospace]skin.fallback-pool[/FONT] and [FONT=monospace]skin.fallback-name[/FONT] config keys; bots with non-Mojang names always get a real-looking skin
+[*][B]DB skin cache[/B] — new [FONT=monospace]fpp_skin_cache[/FONT] table with 7-day TTL and auto-cleanup; avoids repeated Mojang API lookups
+[*][FONT=monospace]skin.mode[/FONT] default enforced as [FONT=monospace]player[/FONT] for existing installs that had it disabled (v58→v59 migration)
+[*][FONT=monospace]skin.fallback-pool[/FONT] and [FONT=monospace]skin.fallback-name[/FONT] removed — hardcoded in SkinManager (v59→v60 migration)
+[*]Exposed via [FONT=monospace]plugin.getSkinManager()[/FONT] — public API for skin resolution, application, caching, and preloading
+[/LIST]
+
 [B]🏊 Per-Bot Swim AI & Chunk Load Radius[/B]
 [LIST]
 [*]Each bot now has an individual [B]swim AI toggle[/B] — override the global [FONT=monospace]swim-ai.enabled[/FONT] per-bot without restarting
@@ -460,17 +483,21 @@ Bot chat uses the server's real chat pipeline, so formatting is handled by your 
 [*]PvP category now shows coming-soon override previews: difficulty · combat-mode · critting · s-tapping · strafing · shielding · speed-buffs · jump-reset · random · gear · defensive-mode
 [/LIST]
 
-[B]💾 DB Schema v14[/B]
+[B]💾 DB Schema v14 → v15[/B]
 [LIST]
-[*][FONT=monospace]fpp_active_bots[/FONT] gains two new columns: [FONT=monospace]swim_ai_enabled BOOLEAN DEFAULT 1[/FONT] and [FONT=monospace]chunk_load_radius INT DEFAULT -1[/FONT]
-[*][FONT=monospace]updateBotAllSettings[/FONT] and [FONT=monospace]ActiveBotRow[/FONT] extended with [FONT=monospace]swimAiEnabled[/FONT] and [FONT=monospace]chunkLoadRadius[/FONT]
+[*]v14: [FONT=monospace]fpp_active_bots[/FONT] gains [FONT=monospace]swim_ai_enabled BOOLEAN DEFAULT 1[/FONT] and [FONT=monospace]chunk_load_radius INT DEFAULT -1[/FONT]
+[*]v15: new [FONT=monospace]fpp_skin_cache[/FONT] table (skin name → texture/signature/source/cached_at) with expiry index
 [*]Fully backward-compatible — existing rows receive safe defaults on schema upgrade
 [/LIST]
 
-[B]📋 Config v53 → v55[/B]
+[B]📋 Config v53 → v60[/B]
 [LIST]
-[*]v53→v54: [FONT=monospace]body.drop-items-on-despawn: false[/FONT] injected into existing installs (preserves pre-1.6.2 behaviour; new installs default [FONT=monospace]true[/FONT])
-[*]v54→v55: per-bot swim / chunk field persistence wired up
+[*]v53→v54: [FONT=monospace]body.drop-items-on-despawn: false[/FONT] injected into existing installs
+[*]v54→v55: shared global pathfinding tuning keys added
+[*]v55→v56: [FONT=monospace]nametag-integration[/FONT] section added (block-nick-conflicts, bot-isolation)
+[*]v56→v57: [FONT=monospace]nametag-integration.sync-nick-as-rename[/FONT] added
+[*]v58→v59: [FONT=monospace]skin.mode=player[/FONT], [FONT=monospace]guaranteed-skin=true[/FONT], [FONT=monospace]logging.debug.skin=true[/FONT] enforced for existing installs
+[*]v59→v60: removed [FONT=monospace]skin.fallback-pool[/FONT] and [FONT=monospace]skin.fallback-name[/FONT] (hardcoded in SkinManager)
 [/LIST]
 
 [SIZE=5][B]v1.6.3[/B][/SIZE] [I](2026-04-14)[/I]

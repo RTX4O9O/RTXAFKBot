@@ -1,6 +1,6 @@
 # ꜰᴀᴋᴇ ᴘʟᴀʏᴇʀ ᴘʟᴜɢɪɴ (FPP)
 
-> Spawn realistic fake players on your Paper server — with tab list presence, server list count, join/leave messages, in-world bodies, guaranteed skins, chunk loading, bot swap/rotation, fake chat, AI conversations, area mining, block placing, pathfinding, per-bot settings GUI, per-bot swim AI & chunk-radius overrides, per-bot XP & item pickup control, LuckPerms integration, proxy network support, and full hot-reload.
+> Spawn realistic fake players on your Paper server — with tab list presence, server list count, join/leave messages, in-world bodies, guaranteed skins, chunk loading, bot swap/rotation, fake chat, AI conversations, area mining, block placing, pathfinding, per-bot settings GUI, per-bot swim AI & chunk-radius overrides, per-bot XP & item pickup control, NameTag plugin integration, LuckPerms integration, proxy network support, and full hot-reload.
 
 [![Version](https://img.shields.io/modrinth/v/fake-player-plugin-%28fpp%29?style=flat-square&label=version&color=0079FF&logo=modrinth)](https://modrinth.com/plugin/fake-player-plugin-(fpp))
 ![MC](https://img.shields.io/badge/Minecraft-1.21.x-0079FF?style=flat-square)
@@ -46,6 +46,7 @@ FPP adds fake players to your server that look and behave like real ones:
 - **Per-bot settings GUI** — shift+right-click any bot to open a 6-row settings chest (General · Chat · PvP · Cmds · Danger)
 - **AI conversations** — bots respond to `/msg` with AI-generated replies; 7 providers (OpenAI, Groq, Anthropic, Gemini, Ollama, Copilot, Custom); per-bot personalities via `personalities/` folder
 - **Badword filter** — case-insensitive with leet-speak normalization, auto-rename bad names, remote word list
+- **NameTag integration** — nick-conflict guard, bot isolation from nick cache, skin sync, auto-rename via nick
 - **LuckPerms** — per-bot group assignment, weighted tab-list ordering, prefix/suffix in chat and nametags
 - **Proxy/network support** — Velocity & BungeeCord cross-server chat, alerts, and shared database
 - **Config sync** — push/pull configuration files across your proxy network
@@ -63,6 +64,7 @@ FPP adds fake players to your server that look and behave like real ones:
 | [LuckPerms](https://luckperms.net) | Optional — auto-detected |
 | [PlaceholderAPI](https://www.spigotmc.org/resources/placeholderapi.6245/) | Optional — auto-detected (29+ placeholders) |
 | [WorldGuard](https://dev.bukkit.org/projects/worldguard) | Optional — auto-detected (no-PvP region protection) |
+| [NameTag](https://lode.gg) | Optional — auto-detected (nick-conflict guard, skin sync) |
 
 > **PlaceholderAPI Integration:** FPP provides 29+ placeholders including per-world bot counts, player-relative stats, network state, and system status. See [PLACEHOLDERAPI.md](PLACEHOLDERAPI.md) for the complete reference.
 
@@ -428,6 +430,25 @@ Bot chat uses the server's real chat pipeline (`Player.chat()`), so formatting i
 
 ### v1.6.4 *(2026-04-16)*
 
+**NameTag Plugin Integration**
+- New **soft-dependency** on the [NameTag](https://lode.gg) plugin — fully optional, auto-detected at startup
+- **Nick-conflict guard** — prevents spawning a bot whose `--name` matches a real player's current NameTag nickname (`nametag-integration.block-nick-conflicts: true`)
+- **Bot isolation** — after each bot spawns, FPP removes it from NameTag's internal player cache to prevent NameTag from treating bots as real players (`nametag-integration.bot-isolation: true`)
+- **Sync-nick-as-rename** — when a bot has a NameTag nick set (e.g. via `/nick BotA Steve`), FPP auto-triggers a full rename so the bot's actual MC name becomes the nick (`nametag-integration.sync-nick-as-rename: false` — opt-in)
+- **NameTag skin sync** — bots inherit skins assigned via NameTag; `SkinManager.getPreferredSkin()` checks NameTag-assigned skins first
+- New `NameTagHelper` utility class: nick reading, skin reading, cache isolation, formatting strip, nick-conflict checks
+- New `FakePlayer.nameTagNick` field tracks the cached nick from NameTag
+- New lang key `spawn-name-taken-nick` shown when a bot name conflicts with a real player's nick
+
+**Skin System Overhaul**
+- New `SkinManager` class — centralised skin lifecycle: resolve, apply, cache, fallback, NameTag priority
+- **Hardcoded 1000-player fallback skin pool** — replaces the old `skin.fallback-pool` and `skin.fallback-name` config keys; bots with non-Mojang names always get a real-looking skin from the built-in pool
+- **DB skin cache** — new `fpp_skin_cache` table with 7-day TTL and auto-cleanup; resolved skins cached to database to avoid repeated Mojang API lookups
+- `skin.mode` default enforced as `player` for existing installs that had it disabled (v58→v59 migration)
+- `guaranteed-skin` default enforced as `true` for existing installs (v58→v59 migration)
+- `skin.fallback-pool` and `skin.fallback-name` config keys removed — now hardcoded in SkinManager (v59→v60 migration)
+- Exposed via `plugin.getSkinManager()` — public API: `resolveEffectiveSkin`, `applySkinByPlayerName`, `applySkinFromProfile`, `applyNameTagSkin`, `resetToDefaultSkin`, `preloadSkin`, `clearCache`
+
 **Per-Bot Swim AI & Chunk Load Radius**
 - Each bot now has an individual **swim AI toggle** — override the global `swim-ai.enabled` per-bot without restarting
 - Each bot now has an individual **chunk load radius** — `-1` = follow global `chunk-loading.radius`, `0` = disable chunk loading for this bot, `1-N` = fixed radius (capped at global max)
@@ -440,14 +461,18 @@ Bot chat uses the server's real chat pipeline (`Player.chat()`), so formatting i
 **BotSettingGui PvP Tab**
 - PvP category now shows full coming-soon override previews: difficulty, combat-mode, critting, s-tapping, strafing, shielding, speed-buffs, jump-reset, random, gear, defensive-mode
 
-**DB Schema v14**
-- `fpp_active_bots` gains two new columns: `swim_ai_enabled BOOLEAN DEFAULT 1`, `chunk_load_radius INT DEFAULT -1`
-- `updateBotAllSettings` and `ActiveBotRow` extended with `swimAiEnabled` and `chunkLoadRadius`
+**DB Schema v14 → v15**
+- v14: `fpp_active_bots` gains `swim_ai_enabled BOOLEAN DEFAULT 1`, `chunk_load_radius INT DEFAULT -1`
+- v15: new `fpp_skin_cache` table (skin name → texture/signature/source/cached_at) with expiry index
 - Fully backward-compatible — existing rows receive safe defaults on schema upgrade
 
-**Config v53 → v55**
-- v53→v54: `body.drop-items-on-despawn: false` injected into existing installs (preserves pre-1.6.2 behaviour; new installs default `true`)
-- v54→v55: per-bot swim / chunk field persistence wired up
+**Config v53 → v60**
+- v53→v54: `body.drop-items-on-despawn: false` injected into existing installs
+- v54→v55: shared global pathfinding tuning keys added
+- v55→v56: `nametag-integration` section added (block-nick-conflicts, bot-isolation)
+- v56→v57: `nametag-integration.sync-nick-as-rename` added
+- v58→v59: `skin.mode=player`, `guaranteed-skin=true`, `logging.debug.skin=true` enforced for existing installs
+- v59→v60: removed `skin.fallback-pool` and `skin.fallback-name` (hardcoded in SkinManager)
 
 ---
 

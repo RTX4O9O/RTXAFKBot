@@ -1,12 +1,31 @@
 # 📋 Changelog
 
 > **Full version history for Fake Player Plugin**  
-> Latest version: **v1.6.4** · Released: 2026-04-16 · Config version: **55**  
+> Latest version: **v1.6.4** · Released: 2026-04-16 · Config version: **60**  
 > 🎉 **Now Open Source** — [https://github.com/Pepe-tf/fake-player-plugin](https://github.com/Pepe-tf/fake-player-plugin)
 
 ---
 
 ## v1.6.4 *(2026-04-16)*
+
+### 🏷️ NameTag Plugin Integration
+- New **soft-dependency** on the [NameTag](https://lode.gg) plugin — fully optional, auto-detected at startup
+- **Nick-conflict guard** — prevents spawning a bot whose `--name` matches a real player's current NameTag nickname (`nametag-integration.block-nick-conflicts: true`)
+- **Bot isolation** — after each bot spawns, FPP removes it from NameTag's internal player cache to prevent NameTag from treating bots as real players (`nametag-integration.bot-isolation: true`)
+- **Sync-nick-as-rename** — when a bot has a NameTag nick set (e.g. via `/nick BotA Steve`), FPP auto-triggers a full rename so the bot's actual MC name becomes the nick (`nametag-integration.sync-nick-as-rename: false` — opt-in)
+- **NameTag skin sync** — bots inherit skins assigned via NameTag; `SkinManager.getPreferredSkin()` checks NameTag-assigned skins first
+- New `NameTagHelper` utility class: nick reading, skin reading, cache isolation, formatting strip, nick-conflict checks
+- New `FakePlayer.nameTagNick` field tracks the cached nick from NameTag
+- New lang key `spawn-name-taken-nick` shown when a bot name conflicts with a real player's nick
+
+### 🎨 Skin System Overhaul
+- New `SkinManager` class — centralised skin lifecycle: resolve, apply, cache, fallback, NameTag priority
+- **Hardcoded 1000-player fallback skin pool** — replaces the old `skin.fallback-pool` and `skin.fallback-name` config keys; bots with non-Mojang names always get a real-looking skin from the built-in pool
+- **DB skin cache** — new `fpp_skin_cache` table with 7-day TTL and auto-cleanup; resolved skins cached to database to avoid repeated Mojang API lookups
+- `skin.mode` default enforced as `player` for existing installs that had it disabled (v58→v59 migration)
+- `guaranteed-skin` default enforced as `true` for existing installs (v58→v59 migration)
+- `skin.fallback-pool` and `skin.fallback-name` config keys removed — now hardcoded in SkinManager (v59→v60 migration)
+- Exposed via `plugin.getSkinManager()` — public API: `resolveEffectiveSkin`, `applySkinByPlayerName`, `applySkinFromProfile`, `applyNameTagSkin`, `resetToDefaultSkin`, `preloadSkin`, `clearCache`
 
 ### 🏊 Per-Bot Swim AI & Chunk Load Radius
 - Each bot now has an individual **swim AI toggle** — override the global `swim-ai.enabled` per-bot without restarting
@@ -20,14 +39,20 @@
 ### ⚔ BotSettingGui PvP Tab
 - PvP category now shows full coming-soon override previews: difficulty, combat-mode, critting, s-tapping, strafing, shielding, speed-buffs, jump-reset, random, gear, defensive-mode
 
-### 💾 DB Schema v14
-- `fpp_active_bots` gains two new columns: `swim_ai_enabled BOOLEAN DEFAULT 1`, `chunk_load_radius INT DEFAULT -1`
+### 💾 DB Schema v14 → v15
+- v14: `fpp_active_bots` gains two new columns: `swim_ai_enabled BOOLEAN DEFAULT 1`, `chunk_load_radius INT DEFAULT -1`
+- v15: new `fpp_skin_cache` table (`skin_name`, `texture_value`, `texture_signature`, `source`, `cached_at`) with expiry index
 - `updateBotAllSettings` and `ActiveBotRow` extended with `swimAiEnabled` and `chunkLoadRadius`
 - Fully backward-compatible — existing rows receive safe defaults on schema upgrade
 
-### 📋 Config v53 → v55
+### 📋 Config v53 → v60
 - v53→v54: `body.drop-items-on-despawn: false` injected into existing installs (preserves pre-1.6.2 behaviour; new installs default `true`)
-- v54→v55: per-bot swim / chunk field persistence wired up
+- v54→v55: shared global pathfinding tuning keys added (`pathfinding.arrival-distance`, `patrol-arrival-distance`, `waypoint-arrival-distance`, `sprint-distance`, `follow-recalc-distance`, `recalc-interval`, `stuck-ticks`, `stuck-threshold`, `break-ticks`, `place-ticks`, `max-range`, `max-nodes`, `max-nodes-extended`)
+- v55→v56: `nametag-integration` section added (`block-nick-conflicts`, `bot-isolation`)
+- v56→v57: `nametag-integration.sync-nick-as-rename` added
+- v57→v58: (no-op placeholder)
+- v58→v59: `skin.mode=player`, `guaranteed-skin=true`, `logging.debug.skin=true` enforced for existing installs
+- v59→v60: removed `skin.fallback-pool` and `skin.fallback-name` (hardcoded in SkinManager's 1000-player pool)
 
 ---
 

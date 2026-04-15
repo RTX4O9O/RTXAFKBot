@@ -4,9 +4,9 @@ FPP is configured through `plugins/FakePlayerPlugin/config.yml`.
 
 Most changes apply after running `/fpp reload` — no full restart needed.
 
-> **Bundled config stamp:** `53`  
-> **Current migration target:** `55`  
-> The bundled file in the jar can be behind the runtime migrator target; migrations fill the gap automatically.
+> **Bundled config stamp:** `60`  
+> **Current migration target:** `60`  
+> The bundled file in the jar and the runtime migrator target are now in sync.
 
 ---
 
@@ -42,6 +42,7 @@ Most changes apply after running `/fpp reload` — no full restart needed.
 | `database` | SQLite / MySQL / NETWORK mode |
 | `config-sync` | Cross-server config sync |
 | `performance` | Position packet culling |
+| `nametag-integration` | NameTag plugin soft-dependency settings |
 | `debug` / `logging.debug.*` | Debug logging |
 | `update-checker` | Update notifications |
 | `metrics` | FastStats telemetry opt-in/out |
@@ -159,8 +160,8 @@ Placeholders:
 
 ```yaml
 skin:
-  mode: auto
-  guaranteed-skin: false
+  mode: player
+  guaranteed-skin: true
   clear-cache-on-reload: true
   overrides: {}
   pool: []
@@ -171,16 +172,18 @@ Modes:
 
 | Mode | Behavior |
 |------|----------|
-| `auto` | Mojang skin matching the bot name |
-| `custom` | Uses overrides / pool / skin folder pipeline |
-| `off` | Default Steve/Alex only |
+| `player` | Mojang skin matching the bot name, with 1000-player fallback pool and DB caching (legacy alias: `auto`) |
+| `random` | Uses overrides / pool / skin folder pipeline (legacy alias: `custom`) |
+| `none` | Default Steve/Alex only (legacy alias: `off`) |
 
 Important notes:
-- `guaranteed-skin: false` is the default
-- `overrides` maps `bot-name -> minecraft-username`
-- `pool` is a list of usernames used as random fallbacks
-- `use-skin-folder: true` scans `plugins/FakePlayerPlugin/skins/`
+- `guaranteed-skin: true` is the default — every bot always gets a real-looking skin
+- `overrides` maps `bot-name -> minecraft-username` (random mode only)
+- `pool` is a list of usernames used as random fallbacks (random mode only)
+- `use-skin-folder: true` scans `plugins/FakePlayerPlugin/skins/` (random mode only)
 - a `skins/README.txt` file is generated on first run
+- resolved skins are cached in the `fpp_skin_cache` DB table (7-day TTL)
+- when the [NameTag](https://lode.gg) plugin is installed, NameTag-assigned skins take priority over all other modes
 
 See [Skin-System](Skin-System.md).
 
@@ -647,6 +650,27 @@ Maximum distance for position-sync packets.
 
 - `0` = unlimited
 - `128.0` = recommended default
+
+---
+
+## `nametag-integration`
+
+```yaml
+nametag-integration:
+  block-nick-conflicts: true
+  bot-isolation: true
+  sync-nick-as-rename: false
+```
+
+Settings for the [NameTag](https://lode.gg) soft-dependency. Only active when NameTag is installed.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `block-nick-conflicts` | `true` | Prevents spawning a bot whose `--name` matches a real player's current NameTag nickname |
+| `bot-isolation` | `true` | Removes bots from NameTag's internal player cache after spawn, preventing NameTag from treating them as real players |
+| `sync-nick-as-rename` | `false` | When a bot has a NameTag nick set, auto-trigger a full FPP rename so the bot's MC name becomes the nick |
+
+> **Note:** `sync-nick-as-rename` requires `bot-isolation: true`. Enable consciously — it triggers a full despawn+respawn rename cycle.
 
 ---
 

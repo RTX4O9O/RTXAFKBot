@@ -1,8 +1,8 @@
 # 🔧 Migration & Backups
 
 > **Current plugin line:** 1.6.4  
-> **Bundled config stamp:** 53  
-> **Current migration target:** 55
+> **Bundled config stamp:** 60  
+> **Current migration target:** 60
 
 This page covers:
 - automatic config migration
@@ -195,7 +195,12 @@ The current config history important to modern installs is:
 | 52 | Added player-chat reaction era fake-chat improvements |
 | 53 | Reworked chunk-loading radius semantics (`"auto"` vs `0`) in the bundled config line |
 | 54 | Added `body.drop-items-on-despawn` |
-| 55 | Per-bot swim AI and chunk-load-radius persistence wired up; shared pathfinding tuning keys |
+| 55 | Shared global pathfinding tuning keys (`arrival-distance`, `patrol-arrival-distance`, `waypoint-arrival-distance`, `sprint-distance`, `follow-recalc-distance`, `recalc-interval`, `stuck-ticks`, `stuck-threshold`, `break-ticks`, `place-ticks`, `max-range`, `max-nodes`, `max-nodes-extended`) |
+| 56 | Added `nametag-integration` section (`block-nick-conflicts`, `bot-isolation`) |
+| 57 | Added `nametag-integration.sync-nick-as-rename` |
+| 58 | (no-op placeholder) |
+| 59 | Enforced `skin.mode=player`, `guaranteed-skin=true`, `logging.debug.skin=true` for existing installs |
+| 60 | Removed `skin.fallback-pool` and `skin.fallback-name` — hardcoded in SkinManager's 1000-player pool |
 
 ### Additional 1.6.x-era structural additions
 
@@ -212,12 +217,10 @@ Depending on when a user upgraded from, those sections may be added by migration
 
 One confusing but normal detail:
 
-- the shipped `config.yml` in resources can be stamped at `53`
-- the runtime migrator can target `55`
+- the shipped `config.yml` in resources is stamped at `60`
+- the runtime migrator targets `60`
 
-That does **not** mean the install is broken.
-
-It just means:
+These are currently in sync, but in general:
 - the bundled file reflects a stable packaged default
 - runtime migration code can still add/reshape newer keys on first boot or reload
 

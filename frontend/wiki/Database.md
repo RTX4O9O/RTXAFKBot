@@ -133,6 +133,17 @@ Stores the bot's last known:
 - frozen/chat/item/XP settings and other persistent bot state (depending on schema level)
 - per-bot overrides: head-AI, nav-parkour, nav-break-blocks, nav-place-blocks, swim-AI, chunk-load-radius (schema v14)
 
+### `fpp_skin_cache`
+
+Database-backed skin resolution cache (schema v15).
+
+Caches resolved Mojang skin textures so repeated bot spawns don't hit the Mojang API every time.
+
+- `skin_name` (primary key) — the Minecraft username used for lookup
+- `texture_value` / `texture_signature` — base64-encoded skin texture data
+- `source` — origin label (e.g. `mojang:PlayerName`)
+- `cached_at` — timestamp; entries expire after 7 days and are auto-cleaned
+
 ### `fpp_sleeping_bots`
 
 Crash-safe storage for the peak-hours sleeping queue.

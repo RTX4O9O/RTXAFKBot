@@ -125,7 +125,7 @@
 - **Whitelist Support** - Protect VIP players
 
 ### ⚙️ **Configuration**
-- **55 Config Versions** - Automatic migration system with backup before every change
+- **60 Config Versions** — Automatic migration system with backup before every change
 - **Hot Reload** - Change settings without restart via `/fpp reload`
 - **Backup System** - Automatic timestamped backups before any migration
 - **In-Game Settings GUI** - Toggle booleans and tune numbers without touching files
@@ -133,6 +133,18 @@
 ---
 
 ## 🆕 What's New in v1.6.4
+
+### 🏷️ **NameTag Plugin Integration**
+- New **soft-dependency** on the [NameTag](https://lode.gg) plugin — fully optional, auto-detected at startup
+- **Nick-conflict guard** — prevents spawning bots with names matching a real player's current NameTag nick
+- **Bot isolation** — removes bots from NameTag's player cache so NameTag doesn't treat them as real players
+- **Sync-nick-as-rename** — auto-rename bots when NameTag assigns them a nick (opt-in)
+- **NameTag skin sync** — bots inherit skins assigned via NameTag
+
+### 🎨 **Skin System Overhaul**
+- New `SkinManager` — centralised skin lifecycle with DB caching, fallback pool, and NameTag priority
+- **1000-player fallback skin pool** hardcoded — bots always get a real-looking skin, even with non-Mojang names
+- **DB skin cache** — `fpp_skin_cache` table avoids repeated Mojang API lookups (7-day TTL)
 
 ### 🏊 **Per-Bot Swim AI & Chunk Load Radius**
 - Each bot now has an individual **swim AI toggle** and **chunk load radius** — override the global config per-bot without restarting
@@ -142,8 +154,9 @@
 - General tab now has **7 action slots**: Frozen · Head-AI · Swim-AI · Chunk-Load-Radius · Pick-Up-Items · Pick-Up-XP · Rename
 - PvP tab now shows full coming-soon override previews
 
-### 💾 **DB Schema v14**
-- `fpp_active_bots` gains `swim_ai_enabled` and `chunk_load_radius` columns — backward-compatible
+### 💾 **DB Schema v14 → v15**
+- v14: `fpp_active_bots` gains `swim_ai_enabled` and `chunk_load_radius` columns
+- v15: new `fpp_skin_cache` table for DB-backed skin resolution caching
 
 See [📋 Changelog](Changelog.md) for full v1.6.4 release notes and the complete version history.
 

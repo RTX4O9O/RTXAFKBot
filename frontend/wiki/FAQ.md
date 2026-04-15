@@ -489,30 +489,29 @@ essentials:
 **Check Skin Mode (config.yml):**
 ```yaml
 skin:
-  mode: "auto"               # Try "custom" if auto fails
-  guaranteed-skin: false     # false = Steve/Alex for non-Mojang names
+  mode: "player"               # Default — fetches Mojang skins + 1000-player fallback pool
+  guaranteed-skin: true        # true = always use fallback pool for non-Mojang names
 ```
 
-**For Custom Mode:**
+**For Random Mode:**
 1. **Add skin files to `plugins/FakePlayerPlugin/skins/`**
 2. **Use proper .png format (64x64 or 64x32)**
 3. **Reload skins:** `/fpp reload skins`
 
 ---
 
-### ❌ **Skins Not Loading in Auto Mode**
+### ❌ **Skins Not Loading in Player Mode**
 
 **Symptoms:** Bots have default Steve skin
 
-**Requirements for Auto Mode:**
-- ✅ Server must be in online mode
-- ✅ Internet connection required
-- ✅ Bot names must be real Minecraft usernames
+**Requirements for Player Mode:**
+- ✅ Internet connection required for initial Mojang lookups (cached in DB after first resolve)
+- ✅ `guaranteed-skin: true` ensures bots always get a real-looking skin from the built-in 1000-player pool
 
-**Switch to Custom Mode:**
+**Switch to Random Mode for full control:**
 ```yaml
 skin:
-  mode: "custom"
+  mode: "random"
   guaranteed-skin: true
 ```
 
