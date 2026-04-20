@@ -21,7 +21,7 @@ public final class BotBroadcast {
 
   private static Component parseDisplayName(String raw) {
     if (raw == null || raw.isEmpty()) return Component.empty();
-    return TextUtil.colorizeOrYellow(raw);
+    return TextUtil.colorize(raw);
   }
 
   private static Component buildMessage(String langKey, String displayName, String... extraArgs) {

@@ -2,8 +2,29 @@
 
 FPP supports multi-server proxy setups through **`database.mode: "NETWORK"`** and a shared MySQL database.
 
-> **Current version line:** v1.6.6  
+> **Current version line:** v1.6.6.1  
 > **Requirements:** `database.mode: "NETWORK"` + `database.mysql-enabled: true`
+
+---
+
+## Proxy Companion Plugins
+
+FPP ships two optional **proxy companion plugins** that inflate the server-list player count to include FPP bots.  
+Drop the matching JAR into your proxy's `plugins/` folder — no configuration needed.
+
+| JAR | Proxy | Min version |
+|-----|-------|-------------|
+| `fpp-velocity.jar` | Velocity | 3.3.0+ |
+| `fpp-bungee.jar` | BungeeCord / Waterfall | Any modern Waterfall |
+
+Both companions:
+- Register the `fpp:proxy` plugin-messaging channel
+- Listen for `BOT_SPAWN`, `BOT_DESPAWN`, and `SERVER_OFFLINE` sub-messages from FPP backends
+- Maintain a live bot registry (UUID → display name + server ID)
+- Intercept `ProxyPingEvent` — inflates the displayed player count and adds bot names to the hover sample list (up to 12 entries)
+- Print an anti-scam warning on startup reminding admins that FPP is 100% free and open-source
+
+> **Note:** These companions are optional. Without them the backend servers still work perfectly in `NETWORK` mode — bots just won't appear in the proxy-level server-list count.
 
 ---
 

@@ -1,6 +1,6 @@
 # ꜰᴀᴋᴇ ᴘʟᴀʏᴇʀ ᴘʟᴜɢɪɴ (FPP)
 
-> Spawn realistic fake players on your Paper server — with tab list presence, server list count, join/leave messages, in-world bodies, guaranteed skins, chunk loading, bot swap/rotation, fake chat, AI conversations, area mining, block placing, pathfinding, follow-target automation, per-bot settings GUI, per-bot swim AI & chunk-radius overrides, per-bot PvE attack settings, per-bot XP & item pickup control, tab-list ping simulation, NameTag plugin integration, LuckPerms integration, proxy network support, Velocity companion plugin, full Paper 1.21.x compatibility (1.21.0–1.21.11), and full hot-reload.
+> Spawn realistic fake players on your Paper server — with tab list presence, server list count, join/leave messages, in-world bodies, guaranteed skins, chunk loading, bot swap/rotation, fake chat, AI conversations, area mining, block placing, pathfinding, follow-target automation, per-bot settings GUI, per-bot swim AI & chunk-radius overrides, per-bot PvE attack settings, per-bot XP & item pickup control, tab-list ping simulation, NameTag plugin integration, LuckPerms integration, proxy network support, Velocity companion plugin, BungeeCord companion plugin, full Paper 1.21.x compatibility (1.21.0–1.21.11), and full hot-reload.
 
 [![Version](https://img.shields.io/modrinth/v/fake-player-plugin-%28fpp%29?style=flat-square&label=version&color=0079FF&logo=modrinth)](https://modrinth.com/plugin/fake-player-plugin-(fpp))
 ![MC](https://img.shields.io/badge/Minecraft-1.21.x-0079FF?style=flat-square)
@@ -55,6 +55,7 @@ FPP adds fake players to your server that look and behave like real ones:
 - **LuckPerms** — per-bot group assignment, weighted tab-list ordering, prefix/suffix in chat and nametags
 - **Proxy/network support** — Velocity & BungeeCord cross-server chat, alerts, and shared database
 - **Velocity companion** (`fpp-velocity.jar`) — drop this into your Velocity proxy's `plugins/` folder to inflate the server-list player count and hover list with FPP bots; includes an anti-scam startup warning
+- **BungeeCord companion** (`fpp-bungee.jar`) — identical feature set for BungeeCord/Waterfall networks; drop into your BungeeCord `plugins/` folder; no configuration needed
 - **Config sync** — push/pull configuration files across your proxy network
 - **PlaceholderAPI** — 29+ placeholders including per-world bot counts, network state, spawn cooldown, and new proxy-aware counts
 - Fully **hot-reloadable** — no restarts needed
@@ -296,9 +297,13 @@ In `random` mode the resolution pipeline is: per-bot override → `skins/<name>.
 
 ---
 
-## Velocity Companion (`fpp-velocity.jar`)
+## Proxy Companions
 
-A lightweight standalone Velocity plugin that makes FPP bots count on the **proxy** server list — without any extra config.
+FPP ships two optional companion plugins that inflate the **proxy-level** server-list player count to include FPP bots.
+
+### Velocity Companion (`fpp-velocity.jar`)
+
+A lightweight standalone Velocity plugin.
 
 **What it does:**
 - Registers the `fpp:proxy` plugin-messaging channel and listens for `BOT_SPAWN` / `BOT_DESPAWN` / `SERVER_OFFLINE` messages from backend servers
@@ -309,7 +314,28 @@ A lightweight standalone Velocity plugin that makes FPP bots count on the **prox
 1. Drop `fpp-velocity.jar` into your Velocity proxy's `plugins/` folder — no config file needed
 2. Restart Velocity
 
-> ⚠️ **FPP and this companion are 100% FREE & open-source.** If you or your server paid money for either plugin, you were **scammed by a reseller**. Always download from the official sources:
+**Requirements:** Velocity 3.3.0+
+
+---
+
+### BungeeCord Companion (`fpp-bungee.jar`)
+
+Identical feature set for BungeeCord/Waterfall networks.
+
+**What it does:**
+- Registers the `fpp:proxy` plugin-messaging channel and listens for `BOT_SPAWN` / `BOT_DESPAWN` / `SERVER_OFFLINE` messages from backend servers
+- Maintains a live bot registry; pings all backend servers every 5 seconds and caches their player counts
+- Intercepts `ProxyPingEvent` to inflate the proxy-level player count and hover sample list with bot names (up to 12 shown)
+
+**Installation:**
+1. Drop `fpp-bungee.jar` into your BungeeCord/Waterfall proxy's `plugins/` folder — no config file needed
+2. Restart BungeeCord
+
+**Requirements:** BungeeCord or any Waterfall fork
+
+---
+
+> ⚠️ **FPP and both companion plugins are 100% FREE & open-source.** If you or your server paid money for any of them, you were **scammed by a reseller**. Always download from the official sources:
 > - **Modrinth:** https://modrinth.com/plugin/fake-player-plugin-(fpp)
 > - **GitHub:** https://github.com/Pepe-tf/fake-player-plugin
 > - **Discord:** https://discord.gg/QSN7f67nkJ
@@ -317,6 +343,21 @@ A lightweight standalone Velocity plugin that makes FPP bots count on the **prox
 ---
 
 ## Changelog
+
+### v1.6.6.1 *(2026-04-20)*
+
+**FPP BungeeCord Companion (`fpp-bungee.jar`)**
+- New standalone BungeeCord/Waterfall proxy plugin — drop `fpp-bungee.jar` into your BungeeCord `plugins/` folder; no config needed
+- Registers `fpp:proxy` plugin-messaging channel; listens for `BOT_SPAWN`, `BOT_DESPAWN`, `SERVER_OFFLINE` messages from backend servers
+- Maintains a live bot registry; pings all backend servers every 5 s and caches total player counts
+- Intercepts `ProxyPingEvent` to inflate the proxy-level server-list player count and hover sample list (up to 12 bot names shown)
+- Prints a prominent **anti-scam warning** on every startup — FPP and this companion are 100% free; if you paid for them you were scammed
+- Source: `bungee-companion/` module in the FPP repository
+
+**Bug Fixes**
+- **Bot join/leave message color fix** — `BotBroadcast` now parses display names with full MiniMessage + legacy `&`/`§` color support. Previously, color tags in bot display names could render as raw text in join/leave broadcasts; display names now render exactly as defined in `en.yml`
+
+---
 
 ### v1.6.6 *(2026-04-20)*
 
@@ -326,7 +367,7 @@ A lightweight standalone Velocity plugin that makes FPP bots count on the **prox
 - Maintains a live bot registry; pings all backend servers every 5 s and caches total player counts
 - Intercepts `ProxyPingEvent` to inflate the proxy-level server-list player count and hover sample list (up to 12 bot names shown)
 - Prints a prominent **anti-scam warning** on every startup — FPP and this companion are 100% free; if you paid for them you were scammed
-- ⚠️ See the [Velocity Companion](#velocity-companion-fpp-velocityjar) section above for install steps and official download links
+- ⚠️ See the [Proxy Companions](#proxy-companions) section above for install steps and official download links
 
 **Follow-Target Automation (`/fpp follow`)**
 - New `/fpp follow <bot|all> <player> [--stop]` command — bot continuously follows an online player; path recalculates whenever the target moves >3.5 blocks

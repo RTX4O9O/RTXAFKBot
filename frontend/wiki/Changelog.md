@@ -1,8 +1,27 @@
 # 📋 Changelog
 
 > **Full version history for Fake Player Plugin**  
-> Latest version: **v1.6.6** · Released: 2026-04-20 · Config version: **63**  
+> Latest version: **v1.6.6.1** · Released: 2026-04-20 · Config version: **63**  
 > 🎉 **Now Open Source** — [https://github.com/Pepe-tf/fake-player-plugin](https://github.com/Pepe-tf/fake-player-plugin)
+
+---
+
+## v1.6.6.1 *(2026-04-20)*
+
+### 🚀 FPP BungeeCord Companion (`fpp-bungee.jar`)
+- New standalone **BungeeCord/Waterfall proxy plugin** shipped alongside the main Paper plugin as `fpp-bungee.jar`
+- Registers the `fpp:proxy` plugin-messaging channel and listens for `BOT_SPAWN`, `BOT_DESPAWN`, and `SERVER_OFFLINE` sub-messages from backend servers
+- Maintains a live **bot registry** (`UUID → BotEntry`) populated via plugin messages; each entry stores `uuid`, `name`, `displayName`, and `serverId`
+- Pings all registered backend servers every **5 seconds** and caches the total real+bot player count in `cachedBackendTotal`
+- Intercepts `ProxyPingEvent` and inflates the displayed **server-list player count** to include FPP bots; merges bot display names into the hover sample list (up to 12 entries)
+- Startup and shutdown banners with timing, registry status, and session uptime printed to the BungeeCord console
+- Prints a prominent **anti-scam warning** on every startup reminding server owners that FPP and this companion are 100% free and open-source — if you paid for them, you were scammed
+- Compatible with **BungeeCord and Waterfall**; drop `fpp-bungee.jar` into your BungeeCord `plugins/` folder — no configuration needed
+- Source: `bungee-companion/` module in the FPP repository
+
+### 🐛 Bug Fixes
+
+- **Bot join/leave message color fix** — `BotBroadcast` now parses display names with full MiniMessage + legacy `&`/`§` color support. Previously, color tags in bot display names could render as raw text or apply incorrect fallback colors in join/leave broadcasts; display names now render exactly as configured in `en.yml`
 
 ---
 

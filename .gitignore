@@ -5,8 +5,9 @@
 /build/
 dist/
 
-# Velocity
+# Extensions
 velocity-companion/
+bungee-companion/
 
 # Maven
 dependency-reduced-pom.xml

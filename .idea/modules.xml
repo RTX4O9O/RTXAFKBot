@@ -3,6 +3,7 @@
   <component name="ProjectModuleManager">
     <modules>
       <module fileurl="file://$PROJECT_DIR$/fpp.iml" filepath="$PROJECT_DIR$/fpp.iml" />
+      <module fileurl="file://$PROJECT_DIR$/bungee-companion/fpp-bungee.iml" filepath="$PROJECT_DIR$/bungee-companion/fpp-bungee.iml" />
       <module fileurl="file://$PROJECT_DIR$/velocity-companion/fpp-velocity.iml" filepath="$PROJECT_DIR$/velocity-companion/fpp-velocity.iml" />
     </modules>
   </component>

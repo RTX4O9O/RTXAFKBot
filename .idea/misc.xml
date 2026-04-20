@@ -6,6 +6,7 @@
       <list>
         <option value="$PROJECT_DIR$/pom.xml" />
         <option value="$PROJECT_DIR$/velocity-companion/pom.xml" />
+        <option value="$PROJECT_DIR$/bungee-companion/pom.xml" />
       </list>
     </option>
     <option name="ignoredFiles">
