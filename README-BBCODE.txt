@@ -1,8 +1,8 @@
 [CENTER][SIZE=7][B]ꜰᴀᴋᴇ ᴘʟᴀʏᴇʀ ᴘʟᴜɢɪɴ (FPP)[/B][/SIZE]
 
-[SIZE=5][I]Spawn realistic fake players on your Paper server — with tab list presence, server list count, join/leave messages, in-world bodies, guaranteed skins, chunk loading, bot swap/rotation, fake chat, AI conversations, area mining, block placing, pathfinding, follow-target automation, per-bot settings GUI, per-bot swim AI & chunk-radius overrides, per-bot PvE attack settings, per-bot XP & item pickup control, tab-list ping simulation, NameTag plugin integration, LuckPerms integration, proxy network support, Velocity companion plugin, and full hot-reload.[/I][/SIZE]
+[SIZE=5][I]Spawn realistic fake players on your Paper server — with tab list presence, server list count, join/leave messages, in-world bodies, guaranteed skins, chunk loading, bot swap/rotation, fake chat, AI conversations, area mining, block placing, pathfinding, follow-target automation, per-bot settings GUI, per-bot swim AI & chunk-radius overrides, per-bot PvE attack settings, per-bot XP & item pickup control, tab-list ping simulation, NameTag plugin integration, LuckPerms integration, proxy network support, Velocity companion plugin, BungeeCord companion plugin, full Paper 1.21.x compatibility (1.21.0–1.21.11), and full hot-reload.[/I][/SIZE]
 
-[SIZE=4][B]Version:[/B] 1.6.6  [B]Minecraft:[/B] 1.21.x  [B]Platform:[/B] Paper  [B]Java:[/B] 21+[/SIZE]
+[SIZE=4][B]Version:[/B] 1.6.6.1  [B]Minecraft:[/B] 1.21.x  [B]Platform:[/B] Paper  [B]Java:[/B] 21+[/SIZE]
 
 [URL='https://modrinth.com/plugin/fake-player-plugin-(fpp)'][B][COLOR=#00AF5C]⬇ Download on Modrinth[/COLOR][/B][/URL]  [URL='https://www.spigotmc.org/resources/fake-player-plugin-fpp.133572/'][B][COLOR=#FF6B35]⬇ SpigotMC[/COLOR][/B][/URL]  [URL='https://hangar.papermc.io/Pepe-tf/FakePlayerPlugin'][B][COLOR=#00BFD8]⬇ PaperMC Hangar[/COLOR][/B][/URL]  [URL='https://builtbybit.com/resources/fake-player-plugin.98704/'][B][COLOR=#A855F7]⬇ BuiltByBit[/COLOR][/B][/URL]
 [URL='https://discord.gg/QSN7f67nkJ'][B][COLOR=#5865F2]💬 Join Discord[/COLOR][/B][/URL]  [URL='https://fakeplayerplugin.xyz'][B][COLOR=#7B8EF0]📖 Wiki[/COLOR][/B][/URL]  [URL='https://ko-fi.com/fakeplayerplugin'][B][COLOR=#FF5E5B]☕ Support on Ko-fi[/COLOR][/B][/URL]  [URL='https://github.com/sponsors/Pepe-tf'][B][COLOR=#EA4AAA]💖 GitHub Sponsors[/COLOR][/B][/URL]  [URL='https://www.patreon.com/c/F_PP?utm_medium=unknown&utm_source=join_link&utm_campaign=creatorshare_creator&utm_content=copyLink'][B][COLOR=#FF424D]🎗 Patreon[/COLOR][/B][/URL]
@@ -45,7 +45,8 @@ FPP adds fake players to your server that look and behave like real ones:
 [*][B]NameTag integration[/B] — nick-conflict guard, bot isolation from nick cache, skin sync, auto-rename via nick
 [*][B]LuckPerms[/B] — per-bot group assignment, weighted tab-list ordering, prefix/suffix in chat and nametags
 [*][B]Proxy/network support[/B] — Velocity & BungeeCord cross-server chat, alerts, and shared database
-[*][B]Velocity companion[/B] ([FONT=monospace]fpp-velocity.jar[/FONT]) — drop into your Velocity proxy's [FONT=monospace]plugins/[/FONT] folder to inflate the server-list player count and hover list with FPP bots
+[*][B]Velocity companion[/B] ([FONT=monospace]fpp-velocity.jar[/FONT]) — drop into your Velocity proxy's [FONT=monospace]plugins/[/FONT] folder to inflate the server-list player count and hover list with FPP bots; includes an anti-scam startup warning
+[*][B]BungeeCord companion[/B] ([FONT=monospace]fpp-bungee.jar[/FONT]) — identical feature set for BungeeCord/Waterfall networks; drop into your BungeeCord [FONT=monospace]plugins/[/FONT] folder; no configuration needed
 [*][B]Config sync[/B] — push/pull configuration files across your proxy network
 [*][B]PlaceholderAPI[/B] — 29+ placeholders including per-world bot counts, network state, proxy-aware counts, and spawn cooldown
 [*]Fully [B]hot-reloadable[/B] — no restarts needed
@@ -101,7 +102,7 @@ All commands are under [FONT=monospace]/fpp[/FONT] (aliases: [FONT=monospace]/fa
 [TR][TD][FONT=monospace]/fpp move <bot> --wp <route>[/FONT][/TD][TD]Patrol a named waypoint route on a loop[/TD][/TR]
 [TR][TD][FONT=monospace]/fpp move <bot> --stop[/FONT][/TD][TD]Stop the bot's current navigation[/TD][/TR]
 [TR][TD][FONT=monospace]/fpp mine <bot> [once|stop][/FONT][/TD][TD]Continuous or one-shot block mining[/TD][/TR]
-[TR][TD][FONT=monospace]/fpp mine <bot> --pos1|--pos2|--start|--stop[/FONT][/TD][TD]Area-selection cuboid mining mode[/TD][/TR]
+[TR][TD][FONT=monospace]/fpp mine <bot> --pos1|--pos2|--start|--status|--stop[/FONT][/TD][TD]Area-selection cuboid mining mode[/TD][/TR]
 [TR][TD][FONT=monospace]/fpp place <bot> [once|stop][/FONT][/TD][TD]Continuous or one-shot block placing[/TD][/TR]
 [TR][TD][FONT=monospace]/fpp storage <bot> [name|--list|--remove|--clear][/FONT][/TD][TD]Register supply containers for mine/place restocking[/TD][/TR]
 [TR][TD][FONT=monospace]/fpp use <bot>[/FONT][/TD][TD]Bot right-clicks / activates the block it's looking at[/TD][/TR]
@@ -110,6 +111,7 @@ All commands are under [FONT=monospace]/fpp[/FONT] (aliases: [FONT=monospace]/fa
 [TR][TD][FONT=monospace]/fpp cmd <bot> <command>[/FONT][/TD][TD]Execute a command on a bot; --add/--clear/--show manage its stored right-click command[/TD][/TR]
 [TR][TD][FONT=monospace]/fpp rename <old> <new>[/FONT][/TD][TD]Rename a bot preserving all state (inventory, XP, LP group, tasks)[/TD][/TR]
 [TR][TD][FONT=monospace]/fpp personality <bot> set|reset|show[/FONT][/TD][TD]Assign or clear AI personality per bot[/TD][/TR]
+[TR][TD][FONT=monospace]/fpp personality list|reload[/FONT][/TD][TD]List available personality files or reload them[/TD][/TR]
 [TR][TD][FONT=monospace]/fpp ping [<bot>] [--ping <ms>|--random] [--count <n>][/FONT][/TD][TD]Set simulated tab-list ping for one or all bots[/TD][/TR]
 [TR][TD][FONT=monospace]/fpp attack <bot> [--stop][/FONT][/TD][TD]Bot walks to sender and attacks nearby entities (PvE); --mob for stationary mob-targeting mode[/TD][/TR]
 [TR][TD][FONT=monospace]/fpp follow <bot|all> <player>[/FONT][/TD][TD]Bot continuously follows an online player; path recalculates as target moves[/TD][/TR]
@@ -240,13 +242,39 @@ Located at [FONT=monospace]plugins/FakePlayerPlugin/config.yml[/FONT]. Run [FONT
 [TR][TD][FONT=monospace]swap[/FONT][/TD][TD]Auto rotation — session length, absence duration, min-online floor, retry-on-fail, farewell/greeting chat[/TD][/TR]
 [TR][TD][FONT=monospace]peak-hours[/FONT][/TD][TD]Time-based bot pool scheduler — schedule, day-overrides, stagger-seconds, min-online[/TD][/TR]
 [TR][TD][FONT=monospace]performance[/FONT][/TD][TD]Position sync distance culling (position-sync-distance)[/TD][/TR]
-[TR][TD][FONT=monospace]pathfinding[/FONT][/TD][TD]A* pathfinding options — parkour, break-blocks, place-blocks, place-material (used by /fpp move)[/TD][/TR]
-[TR][TD][FONT=monospace]fake-chat[/FONT][/TD][TD]Enable, chance, interval, typing delays, burst messages, mention replies, event reactions, keyword reactions[/TD][/TR]
 [TR][TD][FONT=monospace]tab-list[/FONT][/TD][TD]Show/hide bots in the player tab list[/TD][/TR]
 [TR][TD][FONT=monospace]server-list[/FONT][/TD][TD]Whether bots count in the server-list player total; count-bots, include-remote-bots[/TD][/TR]
 [TR][TD][FONT=monospace]config-sync[/FONT][/TD][TD]Cross-server config push/pull mode (DISABLED/MANUAL/AUTO_PULL/AUTO_PUSH)[/TD][/TR]
 [TR][TD][FONT=monospace]database[/FONT][/TD][TD]mode (LOCAL/NETWORK), server-id, SQLite (default) or MySQL[/TD][/TR]
 [/TABLE]
+
+[HR][/HR]
+
+[SIZE=6][B]🤖 AI Conversations[/B][/SIZE]
+
+Bots can respond to [FONT=monospace]/msg[/FONT], [FONT=monospace]/tell[/FONT], and [FONT=monospace]/whisper[/FONT] with AI-generated replies matching their personality.
+
+[B]Setup:[/B]
+[LIST=1]
+[*]Edit [FONT=monospace]plugins/FakePlayerPlugin/secrets.yml[/FONT] and add your API key
+[*]Set [FONT=monospace]ai-conversations.enabled: true[/FONT] in [FONT=monospace]config.yml[/FONT]
+[*]Bots will automatically respond — no restart needed
+[/LIST]
+
+[B]Supported Providers[/B] (picked in priority order — first key that works wins):
+
+[TABLE="width: 100%"]
+[TR][TD][B]Provider[/B][/TD][TD][B]Key in secrets.yml[/B][/TD][/TR]
+[TR][TD]OpenAI[/TD][TD][FONT=monospace]openai-api-key[/FONT][/TD][/TR]
+[TR][TD]Anthropic[/TD][TD][FONT=monospace]anthropic-api-key[/FONT][/TD][/TR]
+[TR][TD]Groq[/TD][TD][FONT=monospace]groq-api-key[/FONT][/TD][/TR]
+[TR][TD]Google Gemini[/TD][TD][FONT=monospace]google-gemini-api-key[/FONT][/TD][/TR]
+[TR][TD]Ollama[/TD][TD][FONT=monospace]ollama-base-url[/FONT] (local, no key needed)[/TD][/TR]
+[TR][TD]Copilot / Azure[/TD][TD][FONT=monospace]copilot-api-key[/FONT][/TD][/TR]
+[TR][TD]Custom OpenAI-compatible[/TD][TD][FONT=monospace]custom-openai-base-url[/FONT][/TD][/TR]
+[/TABLE]
+
+[B]Personalities:[/B] Drop [FONT=monospace].txt[/FONT] files into [FONT=monospace]plugins/FakePlayerPlugin/personalities/[/FONT] to create custom personality prompts. Assign per-bot with [FONT=monospace]/fpp personality <bot> set <name>[/FONT]. Bundled personalities: [FONT=monospace]friendly[/FONT] · [FONT=monospace]grumpy[/FONT] · [FONT=monospace]noob[/FONT].
 
 [HR][/HR]
 
@@ -457,7 +485,11 @@ Bot chat uses the server's real chat pipeline, so formatting is handled by your 
 
 [HR][/HR]
 
-[SIZE=6][B]🚀 Velocity Companion (fpp-velocity.jar)[/B][/SIZE]
+[SIZE=6][B]🚀 Proxy Companions[/B][/SIZE]
+
+FPP ships two optional companion plugins that inflate the [B]proxy-level[/B] server-list player count to include FPP bots.
+
+[SIZE=5][B]Velocity Companion (fpp-velocity.jar)[/B][/SIZE]
 
 A lightweight standalone Velocity plugin that makes FPP bots count in the [B]proxy[/B] server list — no config required.
 
@@ -475,8 +507,30 @@ A lightweight standalone Velocity plugin that makes FPP bots count in the [B]pro
 [*]Restart Velocity — the startup banner confirms the channel is registered and ready
 [/LIST]
 
-[COLOR=#FF4444][B]⚠ FPP and this companion are 100% FREE & open-source.[/B][/COLOR]
-[COLOR=#FF4444][B]If you or your server paid money for either plugin, you were SCAMMED by a reseller.[/B][/COLOR]
+[B]Requirements:[/B] Velocity 3.3.0+
+
+[SIZE=5][B]BungeeCord Companion (fpp-bungee.jar)[/B][/SIZE]
+
+Identical feature set for BungeeCord/Waterfall networks.
+
+[B]What it does:[/B]
+[LIST]
+[*]Registers the [FONT=monospace]fpp:proxy[/FONT] plugin-messaging channel; listens for [FONT=monospace]BOT_SPAWN[/FONT], [FONT=monospace]BOT_DESPAWN[/FONT], and [FONT=monospace]SERVER_OFFLINE[/FONT] messages from backend servers
+[*]Maintains a live bot registry; pings all backend servers every 5 seconds and caches their real+bot player counts
+[*]Intercepts [FONT=monospace]ProxyPingEvent[/FONT] to inflate the proxy-level server-list player count and hover sample list (up to 12 bot names shown)
+[*]Prints a prominent [B]anti-scam warning[/B] on every startup — this plugin is [B]100% FREE[/B]; if you paid for it, you were scammed
+[/LIST]
+
+[B]Installation:[/B]
+[LIST=1]
+[*]Drop [FONT=monospace]fpp-bungee.jar[/FONT] into your BungeeCord/Waterfall proxy's [FONT=monospace]plugins/[/FONT] folder — no config file needed
+[*]Restart BungeeCord
+[/LIST]
+
+[B]Requirements:[/B] BungeeCord or any Waterfall fork
+
+[COLOR=#FF4444][B]⚠ FPP and both companion plugins are 100% FREE & open-source.[/B][/COLOR]
+[COLOR=#FF4444][B]If you or your server paid money for any of them, you were SCAMMED by a reseller.[/B][/COLOR]
 
 Always download from the official sources:
 [LIST]
@@ -488,6 +542,23 @@ Always download from the official sources:
 [HR][/HR]
 
 [SIZE=6][B]📖 Changelog[/B][/SIZE]
+
+[SIZE=5][B]v1.6.6.1[/B][/SIZE] [I](2026-04-20)[/I]
+
+[B]🟧 FPP BungeeCord Companion (fpp-bungee.jar)[/B]
+[LIST]
+[*]New standalone BungeeCord/Waterfall proxy plugin — drop [FONT=monospace]fpp-bungee.jar[/FONT] into your BungeeCord [FONT=monospace]plugins/[/FONT] folder; no config needed
+[*]Registers [FONT=monospace]fpp:proxy[/FONT] plugin-messaging channel; listens for [FONT=monospace]BOT_SPAWN[/FONT], [FONT=monospace]BOT_DESPAWN[/FONT], [FONT=monospace]SERVER_OFFLINE[/FONT] messages from backend servers
+[*]Maintains a live bot registry; pings all backends every 5 s and caches total player counts
+[*]Intercepts [FONT=monospace]ProxyPingEvent[/FONT] to inflate the proxy-level server-list player count and hover sample list (up to 12 bot names shown)
+[*]Prints a prominent [B]anti-scam warning[/B] on every startup — FPP and this companion are 100% free; if you paid for them you were scammed
+[*]Source: [FONT=monospace]bungee-companion/[/FONT] module in the FPP repository
+[/LIST]
+
+[B]🐛 Bug Fixes[/B]
+[LIST]
+[*][B]Bot join/leave message color fix[/B] — [FONT=monospace]BotBroadcast[/FONT] now parses display names with full MiniMessage + legacy [FONT=monospace]&[/FONT]/[FONT=monospace]§[/FONT] color support. Previously, color tags in bot display names could render as raw text in join/leave broadcasts; display names now render exactly as defined in [FONT=monospace]en.yml[/FONT]
+[/LIST]
 
 [SIZE=5][B]v1.6.6[/B][/SIZE] [I](2026-04-20)[/I]
 
@@ -1169,6 +1240,6 @@ Thank you for using Fake Player Plugin. Without you, it wouldn't be where it is 
 
 [HR][/HR]
 
-[CENTER][I]Built for Paper 1.21.x · Java 21 · FPP v1.6.6[/I]
+[CENTER][I]Built for Paper 1.21.x (1.21.0–1.21.11) · Java 21 · FPP v1.6.6.1[/I]
 
 [URL='https://modrinth.com/plugin/fake-player-plugin-(fpp)']Modrinth[/URL]  [URL='https://www.spigotmc.org/resources/fake-player-plugin-fpp.133572/']SpigotMC[/URL]  [URL='https://hangar.papermc.io/Pepe-tf/FakePlayerPlugin']PaperMC[/URL]  [URL='https://builtbybit.com/resources/fake-player-plugin.98704/']BuiltByBit[/URL]  [URL='https://fakeplayerplugin.xyz']Wiki[/URL][/CENTER]
