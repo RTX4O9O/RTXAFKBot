@@ -363,7 +363,7 @@ Current export docs should be treated as:
 
 ## Related Pages
 
-- [Configuration](Configuration.md)
-- [Proxy-Support](Proxy-Support.md)
-- [Migration](Migration.md)
-- [Commands](Commands.md)
+- [Configuration](Configuration)
+- [Proxy-Support](Proxy-Support)
+- [Migration](Migration)
+- [Commands](Commands)

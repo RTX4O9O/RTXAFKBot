@@ -187,7 +187,7 @@ Important notes:
 - resolved skins are cached in the `fpp_skin_cache` DB table (7-day TTL)
 - when the [NameTag](https://lode.gg) plugin is installed, NameTag-assigned skins take priority over all other modes
 
-See [Skin-System](Skin-System.md).
+See [Skin-System](Skin-System).
 
 ---
 
@@ -539,7 +539,7 @@ Also includes newer subsections:
 - `on-player-chat`
 - `keyword-reactions`
 
-See [Fake-Chat](Fake-Chat.md) for the full breakdown.
+See [Fake-Chat](Fake-Chat) for the full breakdown.
 
 ---
 
@@ -610,7 +610,7 @@ Newer important keys:
 - `retry-rejoin`
 - `retry-delay`
 
-See [Swap-System](Swap-System.md).
+See [Swap-System](Swap-System).
 
 ---
 
@@ -630,7 +630,7 @@ Scales the bot pool based on time windows.
 Requires:
 - `swap.enabled: true`
 
-See [Peak-Hours](Peak-Hours.md).
+See [Peak-Hours](Peak-Hours).
 
 ---
 
@@ -765,10 +765,10 @@ Controls anonymous FastStats telemetry.
 
 ## Related Pages
 
-- [Getting-Started](Getting-Started.md)
-- [Commands](Commands.md)
-- [Fake-Chat](Fake-Chat.md)
-- [Database](Database.md)
-- [Peak-Hours](Peak-Hours.md)
-- [Skin-System](Skin-System.md)
-- [Migration](Migration.md)
+- [Getting-Started](Getting-Started)
+- [Commands](Commands)
+- [Fake-Chat](Fake-Chat)
+- [Database](Database)
+- [Peak-Hours](Peak-Hours)
+- [Skin-System](Skin-System)
+- [Migration](Migration)

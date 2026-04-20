@@ -768,7 +768,7 @@ fpp.attack
 fpp.follow
 ```
 
-For the full permission list, see [Permissions](Permissions.md).
+For the full permission list, see [Permissions](Permissions).
 
 ---
 
@@ -811,4 +811,4 @@ For the full permission list, see [Permissions](Permissions.md).
 
 ---
 
-For config details, see [Configuration](Configuration.md). For permission setup, see [Permissions](Permissions.md).
+For config details, see [Configuration](Configuration). For permission setup, see [Permissions](Permissions).

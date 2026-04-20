@@ -135,8 +135,8 @@ This gives you one place to manage shared FPP config while keeping backend-speci
 
 ## Related Pages
 
-- [Proxy-Support](Proxy-Support.md)
-- [Database](Database.md)
-- [Configuration](Configuration.md)
-- [Commands](Commands.md)
+- [Proxy-Support](Proxy-Support)
+- [Database](Database)
+- [Configuration](Configuration)
+- [Commands](Commands)
 

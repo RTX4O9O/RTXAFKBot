@@ -274,6 +274,6 @@ peak-hours:
 ---
 
 See also:
-- [Swap-System](Swap-System.md)
-- [Configuration](Configuration.md)
-- [Database](Database.md)
+- [Swap-System](Swap-System)
+- [Configuration](Configuration)
+- [Database](Database)

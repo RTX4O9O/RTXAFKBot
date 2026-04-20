@@ -246,7 +246,7 @@ permissions:
   - fpp.op
 ```
 
-See [Permissions](Permissions.md) for the full list.
+See [Permissions](Permissions) for the full list.
 
 ---
 
@@ -363,12 +363,12 @@ ai-conversations:
 
 ## 🎓 Good Next Pages
 
-1. [Commands](Commands.md) — all command modes and examples
-2. [Permissions](Permissions.md) — every node and example group setups
-3. [Configuration](Configuration.md) — detailed config reference
-4. [Bot Behaviour](Bot-Behaviour.md) — physical bodies, AI, interaction systems
-5. [Fake Chat](Fake-Chat.md) — bot-to-bot chat, event triggers, AI-linked reactions
-6. [Database](Database.md) — SQLite/MySQL, task persistence, schema
+1. [Commands](Commands) — all command modes and examples
+2. [Permissions](Permissions) — every node and example group setups
+3. [Configuration](Configuration) — detailed config reference
+4. [Bot Behaviour](Bot-Behaviour) — physical bodies, AI, interaction systems
+5. [Fake Chat](Fake-Chat) — bot-to-bot chat, event triggers, AI-linked reactions
+6. [Database](Database) — SQLite/MySQL, task persistence, schema
 
 ---
 
@@ -377,8 +377,8 @@ ai-conversations:
 - **Discord:** [Join Community](https://discord.gg/QSN7f67nkJ)
 - **GitHub Issues:** [Report a bug or request a feature](https://github.com/Pepe-tf/fake-player-plugin/issues)
 - **Source Code:** [https://github.com/Pepe-tf/fake-player-plugin](https://github.com/Pepe-tf/fake-player-plugin)
-- **Wiki Home:** [Home](Home.md)
-- **Changelog:** [Changelog](Changelog.md)
+- **Wiki Home:** [Home](Home)
+- **Changelog:** [Changelog](Changelog)
 
 ---
 

@@ -1028,6 +1028,6 @@ rm plugins/fpp-*.jar
 **🎉 Most issues have simple solutions! Don't hesitate to ask for help in our Discord community.**
 
 For additional help, see:
-- **[Getting Started](Getting-Started.md)** - Setup and installation guide
-- **[Commands](Commands.md)** - Complete command reference  
-- **[Configuration](Configuration.md)** - Detailed configuration guide
+- **[Getting Started](Getting-Started)** - Setup and installation guide
+- **[Commands](Commands)** - Complete command reference  
+- **[Configuration](Configuration)** - Detailed configuration guide

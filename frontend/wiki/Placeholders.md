@@ -159,6 +159,6 @@ The old `bot-name.tab-list-format` and `fake-chat.chat-format` style of internal
 ---
 
 See also:
-- [Proxy-Support](Proxy-Support.md)
-- [Configuration](Configuration.md)
-- [README](../../README.md)
+- [Proxy-Support](Proxy-Support)
+- [Configuration](Configuration)
+- [README](../../README)

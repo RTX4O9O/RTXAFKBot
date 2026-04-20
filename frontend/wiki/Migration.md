@@ -272,7 +272,7 @@ Check:
 
 ## Related Pages
 
-- [Configuration](Configuration.md)
-- [Database](Database.md)
-- [Proxy-Support](Proxy-Support.md)
-- [Changelog](Changelog.md)
+- [Configuration](Configuration)
+- [Database](Database)
+- [Proxy-Support](Proxy-Support)
+- [Changelog](Changelog)

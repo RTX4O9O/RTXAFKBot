@@ -258,5 +258,5 @@ skin:
 ---
 
 See also:
-- [Configuration](Configuration.md)
-- [Bot-Behaviour](Bot-Behaviour.md)
+- [Configuration](Configuration)
+- [Bot-Behaviour](Bot-Behaviour)

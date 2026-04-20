@@ -94,7 +94,7 @@ A bot's interval is randomised independently within `[min, max]` each time it fi
 
 ## Farewell & Greeting Messages (Swap System)
 
-When the [Swap System](Swap-System.md) is active with `farewell-chat: true` or `greeting-chat: true`, bots automatically send a farewell message before leaving and/or a greeting after rejoining.
+When the [Swap System](Swap-System) is active with `farewell-chat: true` or `greeting-chat: true`, bots automatically send a farewell message before leaving and/or a greeting after rejoining.
 
 These messages come from the same `bot-messages.yml` pool - FPP selects naturally fitting messages (short, social phrases like "gtg", "brb", "hey", "back").
 

@@ -217,7 +217,7 @@ Useful network-aware placeholders:
 - `%fpp_network%`
 - `%fpp_server_id%`
 
-See [Placeholders](Placeholders.md).
+See [Placeholders](Placeholders).
 
 ---
 
@@ -263,7 +263,7 @@ Check:
 
 ## Related Pages
 
-- [Database](Database.md)
-- [Configuration](Configuration.md)
-- [Placeholders](Placeholders.md)
-- [Migration](Migration.md)
+- [Database](Database)
+- [Configuration](Configuration)
+- [Placeholders](Placeholders)
+- [Migration](Migration)

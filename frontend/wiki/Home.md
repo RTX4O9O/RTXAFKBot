@@ -61,36 +61,36 @@
 ### 🏁 Getting Started
 | Page | Description |
 |------|-------------|
-| [🚀 Getting Started](Getting-Started.md) | Complete setup guide and first steps |
-| [❓ FAQ & Troubleshooting](FAQ.md) | Common questions and solutions |
-| [📋 Changelog](Changelog.md) | Full version history and release notes |
+| [🚀 Getting Started](Getting-Started) | Complete setup guide and first steps |
+| [❓ FAQ & Troubleshooting](FAQ) | Common questions and solutions |
+| [📋 Changelog](Changelog) | Full version history and release notes |
 
 ### ⚙️ Core Features  
 | Page | Description |
 |------|-------------|
-| [⌨️ Commands](Commands.md) | All commands with examples and usage |
-| [🔐 Permissions](Permissions.md) | Complete permission system guide |
-| [⚙️ Configuration](Configuration.md) | All config options explained |
-| [🌍 Language](Language.md) | Customizing messages and translations |
+| [⌨️ Commands](Commands) | All commands with examples and usage |
+| [🔐 Permissions](Permissions) | Complete permission system guide |
+| [⚙️ Configuration](Configuration) | All config options explained |
+| [🌍 Language](Language) | Customizing messages and translations |
 
 ### 🤖 Bot Systems
 | Page | Description |
 |------|-------------|
-| [📝 Bot Names](Bot-Names.md) | Random name generation system |
-| [💬 Bot Messages](Bot-Messages.md) | Chat messages and broadcasts |
-| [🤖 Bot Behaviour](Bot-Behaviour.md) | Physics, AI, and interactions |
-| [🎨 Skin System](Skin-System.md) | Skin management and customization |
+| [📝 Bot Names](Bot-Names) | Random name generation system |
+| [💬 Bot Messages](Bot-Messages) | Chat messages and broadcasts |
+| [🤖 Bot Behaviour](Bot-Behaviour) | Physics, AI, and interactions |
+| [🎨 Skin System](Skin-System) | Skin management and customization |
 
 ### 🔧 Advanced Features
 | Page | Description |
 |------|-------------|
-| [🔄 Swap System](Swap-System.md) | Replace offline players automatically |
-| [💭 Fake Chat](Fake-Chat.md) | Bot chat system and formatting |
-| [📊 Placeholders (PAPI)](Placeholders.md) | PlaceholderAPI integration |
-| [💾 Database](Database.md) | Analytics and session tracking |
-| [🌐 Proxy Support](Proxy-Support.md) | Velocity & BungeeCord multi-server networks |
-| [🔄 Config Sync](./Config-Sync.md) | Synchronize configs across the proxy network |
-| [🔧 Migration](Migration.md) | Updating and data migration |
+| [🔄 Swap System](Swap-System) | Replace offline players automatically |
+| [💭 Fake Chat](Fake-Chat) | Bot chat system and formatting |
+| [📊 Placeholders (PAPI)](Placeholders) | PlaceholderAPI integration |
+| [💾 Database](Database) | Analytics and session tracking |
+| [🌐 Proxy Support](Proxy-Support) | Velocity & BungeeCord multi-server networks |
+| [🔄 Config Sync](./Config-Sync) | Synchronize configs across the proxy network |
+| [🔧 Migration](Migration) | Updating and data migration |
 
 ---
 
@@ -146,7 +146,7 @@
 - **Bot join/leave message color fix** — `BotBroadcast` now parses display names with full MiniMessage + legacy `&`/`§` color support; color tags no longer render as raw text
 - **`Attribute.MAX_HEALTH` compatibility** — resolved `NoSuchFieldError` on Paper/Purpur 1.21.1 and older via new `AttributeCompat` utility
 
-See [📋 Changelog](Changelog.md) for full v1.6.6.1 release notes.
+See [📋 Changelog](Changelog) for full v1.6.6.1 release notes.
 
 ---
 
@@ -172,7 +172,7 @@ See [📋 Changelog](Changelog.md) for full v1.6.6.1 release notes.
 
 ### 💾 **DB Schema v15 → v16 → v17 · Config v60 → v63**
 
-See [📋 Changelog](Changelog.md) for full v1.6.6 release notes and the complete version history.
+See [📋 Changelog](Changelog) for full v1.6.6 release notes and the complete version history.
 
 ---
 
@@ -182,7 +182,7 @@ See [📋 Changelog](Changelog.md) for full v1.6.6 release notes and the complet
 - Per-bot settings GUI (shift+right-click any bot) is now available to **all users with `fpp.settings` permission** — no longer dev-only
 - Grant `fpp.settings` via LuckPerms to allow non-op players to manage per-bot settings
 
-See [📋 Changelog](Changelog.md) for full v1.6.5.1 release notes and the complete version history.
+See [📋 Changelog](Changelog) for full v1.6.5.1 release notes and the complete version history.
 
 ---
 
@@ -209,7 +209,7 @@ See [📋 Changelog](Changelog.md) for full v1.6.5.1 release notes and the compl
 - Reusable command flag parser with deprecation aliases, duplicate/conflict detection
 - Beta build detection: `latestKnownVersion` and `isRunningBeta` fields
 
-See [📋 Changelog](Changelog.md) for full v1.6.5 release notes and the complete version history.
+See [📋 Changelog](Changelog) for full v1.6.5 release notes and the complete version history.
 
 ---
 
@@ -235,7 +235,7 @@ fpp.use           # User wildcard — basic commands (default: true / all player
 └── fpp.spawn.limit.1 (included — 1 personal bot by default)
 ```
 
-**See [🔐 Permissions](Permissions.md) for the complete list.**
+**See [🔐 Permissions](Permissions) for the complete list.**
 
 ---
 
@@ -259,7 +259,7 @@ FPP provides **29+ placeholders** for use with other plugins:
 - `%fpp_user_count%` - Player's bot count
 - `%fpp_user_max%` - Player's bot limit
 
-**See [📊 Placeholders](Placeholders.md) for the complete list.**
+**See [📊 Placeholders](Placeholders) for the complete list.**
 
 ---
 
@@ -294,7 +294,7 @@ FPP provides **29+ placeholders** for use with other plugins:
 
 ### 📢 **Stay Updated**  
 - **Modrinth:** [Download Updates](https://modrinth.com/plugin/fake-player-plugin-(fpp))
-- **Changelog:** [View full version history](Changelog.md)
+- **Changelog:** [View full version history](Changelog)
 - **Discord:** Get notified of new versions
 
 ### 🤝 **Contributing**
@@ -327,10 +327,10 @@ Donations are completely optional — every contribution goes directly toward im
 
 ## 🎉 Ready to Start?
 
-1. **📖 Read** [Getting Started](Getting-Started.md) for setup instructions
-2. **⌨️ Learn** [Commands](Commands.md) to control your bots  
-3. **⚙️ Configure** [Configuration](Configuration.md) to customize behavior
-4. **🎨 Customize** [Bot Names](Bot-Names.md) and [Skins](Skin-System.md)
+1. **📖 Read** [Getting Started](Getting-Started) for setup instructions
+2. **⌨️ Learn** [Commands](Commands) to control your bots  
+3. **⚙️ Configure** [Configuration](Configuration) to customize behavior
+4. **🎨 Customize** [Bot Names](Bot-Names) and [Skins](Skin-System)
 5. **🚀 Deploy** and enjoy your enhanced server!
 
 **Welcome to the future of Minecraft server population management!** 🎮

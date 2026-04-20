@@ -402,7 +402,7 @@ Bots can chat autonomously using:
 - event-triggered reactions
 - player-chat reactions
 
-See [Fake-Chat](Fake-Chat.md).
+See [Fake-Chat](Fake-Chat).
 
 ---
 
@@ -528,9 +528,9 @@ Check:
 
 ## Related Pages
 
-- [Commands](Commands.md)
-- [Configuration](Configuration.md)
-- [Fake-Chat](Fake-Chat.md)
-- [Swap-System](Swap-System.md)
-- [Peak-Hours](Peak-Hours.md)
-- [Skin-System](Skin-System.md)
+- [Commands](Commands)
+- [Configuration](Configuration)
+- [Fake-Chat](Fake-Chat)
+- [Swap-System](Swap-System)
+- [Peak-Hours](Peak-Hours)
+- [Skin-System](Skin-System)

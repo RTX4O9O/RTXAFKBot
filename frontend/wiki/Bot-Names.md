@@ -136,5 +136,5 @@ Permission: `fpp.badword`
 
 ## Swap System & Names
 
-When the [Swap System](Swap-System.md) is enabled, bots periodically leave and rejoin with a **new name** drawn from the pool.  
+When the [Swap System](Swap-System) is enabled, bots periodically leave and rejoin with a **new name** drawn from the pool.  
 A small `reconnect-chance` (configurable) causes the bot to rejoin with its **same name** instead - simulating a brief disconnect/reconnect.

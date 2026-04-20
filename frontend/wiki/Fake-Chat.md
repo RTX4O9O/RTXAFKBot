@@ -357,7 +357,7 @@ fake-chat:
 ---
 
 See also:
-- [Commands](Commands.md)
-- [Configuration](Configuration.md)
-- [Bot-Messages](Bot-Messages.md)
-- [Bot-Behaviour](Bot-Behaviour.md)
+- [Commands](Commands)
+- [Configuration](Configuration)
+- [Bot-Messages](Bot-Messages)
+- [Bot-Behaviour](Bot-Behaviour)
