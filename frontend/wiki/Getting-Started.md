@@ -1,6 +1,6 @@
 # 🚀 Getting Started
 
-> **Your complete setup guide for Fake Player Plugin v1.6.6.1**  
+> **Your complete setup guide for Fake Player Plugin v1.6.6.2**  
 > Install it correctly, verify the important systems, and get your first bots online fast.
 
 ---

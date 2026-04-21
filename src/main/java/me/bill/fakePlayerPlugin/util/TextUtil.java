@@ -14,7 +14,9 @@ public final class TextUtil {
   private static final MiniMessage MM = MiniMessage.miniMessage();
 
   private static final String NORMAL = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
-  private static final String SMALL_CAPS = "ᴀʙᴄᴅᴇꜰɢʜɪᴊᴋʟᴍɴᴏᴘǫʀѕᴛᴜᴠᴡхʏᴢ" + "ᴀʙᴄᴅᴠᴡхʏᴢ";
+  private static final String SMALL_CAPS =
+      "ᴀʙᴄᴅᴇꜰɢʜɪᴊᴋʟᴍɴᴏᴘǫʀꜱᴛᴜᴠᴡxʏᴢ" // a–z (26)
+          + "ᴀʙᴄᴅᴇꜰɢʜɪᴊᴋʟᴍɴᴏᴘǫʀꜱᴛᴜᴠᴡxʏᴢ"; // A–Z (26)
 
   public static String toSmallCaps(String text) {
     if (text == null) return "";

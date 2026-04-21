@@ -7,7 +7,7 @@ import org.bukkit.configuration.file.YamlConfiguration;
 
 public final class ConfigMigrator {
 
-  public static final int CURRENT_VERSION = 63;
+  public static final int CURRENT_VERSION = 65;
 
   private static boolean rawDebug = false;
 
@@ -121,6 +121,8 @@ public final class ConfigMigrator {
     if (stored < 61) anyChange |= v60to61(cfg);
     if (stored < 62) anyChange |= v61to62(cfg);
     if (stored < 63) anyChange |= v62to63(cfg);
+    if (stored < 64) anyChange |= v63to64(cfg);
+    if (stored < 65) anyChange |= v64to65(cfg);
 
     fillDefaults(plugin, cfg);
 
@@ -1237,6 +1239,25 @@ public final class ConfigMigrator {
       log("v62→v63", "removed obsolete pathfinding.sprint-jump-follow");
     }
     return changed;
+  }
+
+  private static boolean v63to64(YamlConfiguration cfg) {
+    boolean changed = false;
+    changed |= setIfMissing(cfg, "messages.death-message", true);
+    if (changed) log("v63→v64", "added messages.death-message (default true)");
+    return changed;
+  }
+
+  private static boolean v64to65(YamlConfiguration cfg) {
+    // Force drop-items-on-despawn to false so bots preserve their inventory/XP on despawn.
+    // The old resource default was 'true', which caused silent item loss on /fpp despawn.
+    // This migration flips it to false for all existing installs unconditionally.
+    if (cfg.getBoolean("body.drop-items-on-despawn", false)) {
+      cfg.set("body.drop-items-on-despawn", false);
+      log("v64→v65", "set body.drop-items-on-despawn = false (preserve inventory on despawn)");
+      return true;
+    }
+    return false;
   }
 
   private static boolean setIfMissing(YamlConfiguration cfg, String path, Object value) {

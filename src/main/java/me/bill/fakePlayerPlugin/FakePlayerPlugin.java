@@ -240,6 +240,10 @@ public final class FakePlayerPlugin extends JavaPlugin {
 
     fakePlayerManager.refreshCleanNamePool();
 
+    // Load persisted despawn snapshots (DB primary, YAML fallback) so bots that were manually
+    // despawned before the restart can have their inventory/XP restored on next spawn.
+    fakePlayerManager.initDespawnSnapshots();
+
     chunkLoader = new ChunkLoader(this, fakePlayerManager);
     fakePlayerManager.setChunkLoader(chunkLoader);
 

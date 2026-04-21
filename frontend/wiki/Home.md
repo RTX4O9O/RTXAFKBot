@@ -1,7 +1,7 @@
 # 🎮 Fake Player Plugin - Wiki
 
 > **The Ultimate Bot Spoofing Plugin for Paper 1.21+**  
-> **Version:** 1.6.6.1 · **Platform:** Paper 1.21.x (up to 1.21.11) · **Author:** Bill_Hub · **License:** [MIT (Open Source)](https://github.com/Pepe-tf/fake-player-plugin)
+> **Version:** 1.6.6.2 · **Platform:** Paper 1.21.x (up to 1.21.11) · **Author:** Bill_Hub · **License:** [MIT (Open Source)](https://github.com/Pepe-tf/fake-player-plugin)
 
 ---
 
@@ -130,6 +130,15 @@
 - **63 Config Versions** — Automatic migration system with backup before every change- **Hot Reload** - Change settings without restart via `/fpp reload`
 - **Backup System** - Automatic timestamped backups before any migration
 - **In-Game Settings GUI** - Toggle booleans and tune numbers without touching files
+
+---
+
+## 🆕 What's New in v1.6.6.2
+
+### 🔖 **Version Bump**
+- Plugin version updated to 1.6.6.2 for tracking purposes
+
+See [📋 Changelog](Changelog) for full v1.6.6.2 release notes.
 
 ---
 

@@ -4,7 +4,7 @@ FPP registers a full `%fpp_*%` PlaceholderAPI expansion for scoreboard plugins, 
 
 Requirement: [PlaceholderAPI](https://www.spigotmc.org/resources/placeholderapi.6245/)
 
-> **Current line:** v1.6.6.1  
+> **Current line:** v1.6.6.2  
 > **Placeholder count:** 29+  
 > Registered automatically when PlaceholderAPI is present.
 

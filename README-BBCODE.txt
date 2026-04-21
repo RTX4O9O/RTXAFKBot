@@ -2,7 +2,7 @@
 
 [SIZE=5][I]Spawn realistic fake players on your Paper server — with tab list presence, server list count, join/leave messages, in-world bodies, guaranteed skins, chunk loading, bot swap/rotation, fake chat, AI conversations, area mining, block placing, pathfinding, follow-target automation, per-bot settings GUI, per-bot swim AI & chunk-radius overrides, per-bot PvE attack settings, per-bot XP & item pickup control, tab-list ping simulation, NameTag plugin integration, LuckPerms integration, proxy network support, Velocity companion plugin, BungeeCord companion plugin, full Paper 1.21.x compatibility (1.21.0–1.21.11), and full hot-reload.[/I][/SIZE]
 
-[SIZE=4][B]Version:[/B] 1.6.6.1  [B]Minecraft:[/B] 1.21.x  [B]Platform:[/B] Paper  [B]Java:[/B] 21+[/SIZE]
+[SIZE=4][B]Version:[/B] 1.6.6.2  [B]Minecraft:[/B] 1.21.x  [B]Platform:[/B] Paper  [B]Java:[/B] 21+[/SIZE]
 
 [URL='https://modrinth.com/plugin/fake-player-plugin-(fpp)'][B][COLOR=#00AF5C]⬇ Download on Modrinth[/COLOR][/B][/URL]  [URL='https://www.spigotmc.org/resources/fake-player-plugin-fpp.133572/'][B][COLOR=#FF6B35]⬇ SpigotMC[/COLOR][/B][/URL]  [URL='https://hangar.papermc.io/Pepe-tf/FakePlayerPlugin'][B][COLOR=#00BFD8]⬇ PaperMC Hangar[/COLOR][/B][/URL]  [URL='https://builtbybit.com/resources/fake-player-plugin.98704/'][B][COLOR=#A855F7]⬇ BuiltByBit[/COLOR][/B][/URL]
 [URL='https://discord.gg/QSN7f67nkJ'][B][COLOR=#5865F2]💬 Join Discord[/COLOR][/B][/URL]  [URL='https://fakeplayerplugin.xyz'][B][COLOR=#7B8EF0]📖 Wiki[/COLOR][/B][/URL]  [URL='https://ko-fi.com/fakeplayerplugin'][B][COLOR=#FF5E5B]☕ Support on Ko-fi[/COLOR][/B][/URL]  [URL='https://github.com/sponsors/Pepe-tf'][B][COLOR=#EA4AAA]💖 GitHub Sponsors[/COLOR][/B][/URL]  [URL='https://www.patreon.com/c/F_PP?utm_medium=unknown&utm_source=join_link&utm_campaign=creatorshare_creator&utm_content=copyLink'][B][COLOR=#FF424D]🎗 Patreon[/COLOR][/B][/URL]
@@ -542,6 +542,40 @@ Always download from the official sources:
 [HR][/HR]
 
 [SIZE=6][B]📖 Changelog[/B][/SIZE]
+
+[SIZE=5][B]v1.6.6.2[/B][/SIZE] [I](2026-04-21)[/I]
+
+[B]Critical Bug Fixes[/B]
+
+[LIST]
+[*][B][FONT=monospace]/fpp despawn all[/FONT] inventory preservation[/B] — Fixed bug where bulk despawn erased all bot inventories and XP. [FONT=monospace]removeAll()[/FONT] now implements proper snapshot logic identical to single-bot despawn — captures inventory and XP before clearing any maps.
+
+[*][B]Dimension spawn coordinate fix[/B] — Bots spawned in Nether/End now stay at exact coordinates. [FONT=monospace]BotSpawnProtectionListener[/FONT] now blocks all teleport causes ([FONT=monospace]NETHER_PORTAL[/FONT], [FONT=monospace]END_PORTAL[/FONT], [FONT=monospace]END_GATEWAY[/FONT]) during the 5-tick spawn grace period.
+[/LIST]
+
+[B]Despawn Snapshot Persistence[/B]
+
+[LIST]
+[*][B]Inventory/XP survival across restarts[/B] — Bot inventory and XP are preserved when you despawn and respawn the same bot name, even after server restart. New [FONT=monospace]fpp_despawn_snapshots[/FONT] DB table (schema v17→v18) or [FONT=monospace]data/despawn-snapshots.yml[/FONT] fallback.
+
+[*][B]Config migration v64→v65[/B] — Auto-sets [FONT=monospace]body.drop-items-on-despawn: false[/FONT] for existing installs to enable snapshot preservation by default.
+[/LIST]
+
+[B]Configuration[/B]
+
+[LIST]
+[*][B]New:[/B] [FONT=monospace]messages.death-message[/FONT] (default [FONT=monospace]true[/FONT]) — toggle bot death messages
+[*][B]SettingGui:[/B] Added toggles for [FONT=monospace]body.drop-items-on-despawn[/FONT] and [FONT=monospace]messages.death-message[/FONT]
+[/LIST]
+
+[B]Technical[/B]
+
+[LIST]
+[*]Config version: 63 → 65
+[*]Database schema: 17 → 18
+[*]Language file character fixes
+[*]BotSpawnProtectionListener UUID fallback for early spawn detection
+[/LIST]
 
 [SIZE=5][B]v1.6.6.1[/B][/SIZE] [I](2026-04-20)[/I]
 
@@ -1240,6 +1274,6 @@ Thank you for using Fake Player Plugin. Without you, it wouldn't be where it is 
 
 [HR][/HR]
 
-[CENTER][I]Built for Paper 1.21.x (1.21.0–1.21.11) · Java 21 · FPP v1.6.6.1[/I]
+[CENTER][I]Built for Paper 1.21.x (1.21.0–1.21.11) · Java 21 · FPP v1.6.6.2[/I]
 
 [URL='https://modrinth.com/plugin/fake-player-plugin-(fpp)']Modrinth[/URL]  [URL='https://www.spigotmc.org/resources/fake-player-plugin-fpp.133572/']SpigotMC[/URL]  [URL='https://hangar.papermc.io/Pepe-tf/FakePlayerPlugin']PaperMC[/URL]  [URL='https://builtbybit.com/resources/fake-player-plugin.98704/']BuiltByBit[/URL]  [URL='https://fakeplayerplugin.xyz']Wiki[/URL][/CENTER]

@@ -27,6 +27,7 @@ import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.entity.EntityPickupItemEvent;
 import org.bukkit.event.entity.EntityPortalEvent;
 import org.bukkit.event.entity.EntityTeleportEvent;
+import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.player.PlayerPortalEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.persistence.PersistentDataType;
@@ -44,7 +45,16 @@ public class FakePlayerEntityListener implements Listener {
     this.chunkLoader = chunkLoader;
   }
 
+  /** Suppress the vanilla death message when messages.death-message is false. */
   @EventHandler(priority = EventPriority.LOWEST)
+  public void onBotDeathMessage(PlayerDeathEvent event) {
+    if (!isFakeBotBody(event.getEntity())) return;
+    if (!Config.deathMessage()) {
+      event.deathMessage(null);
+    }
+  }
+
+  @EventHandler(priority = EventPriority.MONITOR)
   public void onEntityDamage(EntityDamageEvent event) {
     if (!isFakeBotBody(event.getEntity())) return;
 

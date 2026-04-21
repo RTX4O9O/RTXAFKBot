@@ -57,41 +57,51 @@ public class BotSpawnProtectionListener implements Listener {
 
     PlayerTeleportEvent.TeleportCause cause = event.getCause();
 
+    // Always allow explicit /tp commands.
     if (cause == PlayerTeleportEvent.TeleportCause.COMMAND) {
       return;
     }
 
-    if (cause == PlayerTeleportEvent.TeleportCause.PLUGIN) {
-      event.setCancelled(true);
-      Config.debugNms(
-          "BotSpawnProtection: blocked PLUGIN teleport for "
-              + player.getName()
-              + " from "
-              + formatLoc(event.getFrom())
-              + " to "
-              + formatLoc(event.getTo()));
-      return;
-    }
-
-    if (cause == PlayerTeleportEvent.TeleportCause.UNKNOWN) {
-      event.setCancelled(true);
-      Config.debugNms(
-          "BotSpawnProtection: blocked UNKNOWN teleport for "
-              + player.getName()
-              + " from "
-              + formatLoc(event.getFrom())
-              + " to "
-              + formatLoc(event.getTo()));
-    }
+    // Block ALL other teleport causes during the 5-tick grace window.
+    // This covers PLUGIN and UNKNOWN (other-plugin interference) as well as
+    // NETHER_PORTAL / END_PORTAL / END_GATEWAY (dimension respawn logic that
+    // fires when a bot is spawned directly into the nether or end and has no
+    // prior player-data at that location).
+    event.setCancelled(true);
+    Config.debugNms(
+        "BotSpawnProtection: blocked "
+            + cause.name()
+            + " teleport for "
+            + player.getName()
+            + " from "
+            + formatLoc(event.getFrom())
+            + " to "
+            + formatLoc(event.getTo()));
   }
 
-  private static boolean isFppBot(Player player) {
-    if (FakePlayerManager.FAKE_PLAYER_KEY == null) return false;
-    String marker =
-        player
-            .getPersistentDataContainer()
-            .get(FakePlayerManager.FAKE_PLAYER_KEY, PersistentDataType.STRING);
-    return marker != null && marker.startsWith("fpp-visual:");
+  /**
+   * Returns true if {@code player} is a managed FPP bot.
+   *
+   * <p>During the initial spawn, the PDC key is not yet written (it is set after
+   * {@link me.bill.fakePlayerPlugin.fakeplayer.NmsPlayerSpawner#spawnFakePlayer} returns), so we
+   * fall back to a UUID lookup against the active-player map which is populated before the NMS
+   * body is spawned.
+   */
+  private boolean isFppBot(Player player) {
+    // Fast path: PDC key present (works after first-spawn completes and on restores).
+    if (FakePlayerManager.FAKE_PLAYER_KEY != null) {
+      String marker =
+          player
+              .getPersistentDataContainer()
+              .get(FakePlayerManager.FAKE_PLAYER_KEY, PersistentDataType.STRING);
+      if (marker != null && marker.startsWith("fpp-visual:")) return true;
+    }
+    // Fallback: check active-player registry by UUID.
+    // This path fires during the very first PlayerJoinEvent emitted inside
+    // placeNewPlayer(), before the PDC key has been written.
+    me.bill.fakePlayerPlugin.fakeplayer.FakePlayerManager manager =
+        plugin.getFakePlayerManager();
+    return manager != null && manager.getByUuid(player.getUniqueId()) != null;
   }
 
   private String formatLoc(Location loc) {

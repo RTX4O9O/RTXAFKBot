@@ -314,6 +314,10 @@ public final class Config {
     return cfg.getBoolean("messages.leave-message", true);
   }
 
+  public static boolean deathMessage() {
+    return cfg.getBoolean("messages.death-message", true);
+  }
+
   public static boolean killMessage() {
     return cfg.getBoolean("messages.kill-message", false);
   }

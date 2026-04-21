@@ -1,6 +1,7 @@
 package me.bill.fakePlayerPlugin.fakeplayer;
 
 import java.util.*;
+import java.util.Base64;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -8,6 +9,10 @@ import me.bill.fakePlayerPlugin.FakePlayerPlugin;
 import me.bill.fakePlayerPlugin.config.Config;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
+import org.bukkit.Material;
+import org.bukkit.entity.Player;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.PlayerInventory;
 
 public final class BotSwapAI {
 
@@ -161,6 +166,15 @@ public final class BotSwapAI {
 
   private final Map<UUID, Long> sessionExpiry = new ConcurrentHashMap<>();
 
+  /** Inventory + XP snapshot stored while a bot is offline between swap leave and rejoin. */
+  private final Map<UUID, SwapSnapshot> swapSnapshots = new ConcurrentHashMap<>();
+
+  private record SwapSnapshot(
+      Map<String, String> inventorySlots,
+      int xpTotal,
+      int xpLevel,
+      float xpProgress) {}
+
   public BotSwapAI(FakePlayerPlugin plugin, FakePlayerManager manager) {
     this.plugin = plugin;
     this.manager = manager;
@@ -263,6 +277,7 @@ public final class BotSwapAI {
     personalities.clear();
     swapCounts.clear();
     sessionExpiry.clear();
+    swapSnapshots.clear();
     swappedOut.set(0);
   }
 
@@ -418,6 +433,26 @@ public final class BotSwapAI {
                           + (totalRejoinDelay / 20)
                           + "s.");
 
+                  // Snapshot inventory + XP before the entity is deleted so we can
+                  // restore them when the bot rejoins.
+                  FakePlayer leavingBot = manager.getByName(oldName);
+                  if (leavingBot != null) {
+                    Player leavingPlayer = leavingBot.getPlayer();
+                    if (leavingPlayer != null && leavingPlayer.isValid()) {
+                      swapSnapshots.put(
+                          leavingUuid,
+                          new SwapSnapshot(
+                              serializeInventory(leavingPlayer.getInventory()),
+                              leavingPlayer.getTotalExperience(),
+                              leavingPlayer.getLevel(),
+                              leavingPlayer.getExp()));
+                      Config.debugSwap(
+                          "[SwapAI] Snapshotted inventory+XP for '"
+                              + oldName
+                              + "' before swap-leave.");
+                    }
+                  }
+
                   manager.delete(oldName);
                   rejoinTimers.put(leavingUuid, rid);
                 },
@@ -486,6 +521,35 @@ public final class BotSwapAI {
     personalities.put(newBot.getUuid(), p);
     swapCounts.put(newBot.getUuid(), newSwapCount);
 
+    // Restore snapshotted inventory + XP from the bot that left.
+    SwapSnapshot snapshot = swapSnapshots.remove(leavingUuid);
+    if (snapshot != null) {
+      final UUID newBotUuid = newBot.getUuid();
+      Bukkit.getScheduler()
+          .runTaskLater(
+              plugin,
+              () -> {
+                FakePlayer restored = manager.getByUuid(newBotUuid);
+                if (restored == null) return;
+                Player bot = restored.getPlayer();
+                if (bot == null || !bot.isValid()) return;
+                if (!snapshot.inventorySlots().isEmpty()) {
+                  applyInventory(bot.getInventory(), snapshot.inventorySlots());
+                }
+                if (snapshot.xpTotal() > 0 || snapshot.xpLevel() > 0 || snapshot.xpProgress() > 0f) {
+                  bot.setTotalExperience(0);
+                  bot.setLevel(0);
+                  bot.setExp(0f);
+                  bot.setLevel(snapshot.xpLevel());
+                  bot.setExp(snapshot.xpProgress());
+                  bot.setTotalExperience(snapshot.xpTotal());
+                }
+                Config.debugSwap(
+                    "[SwapAI] Restored inventory+XP to '" + restored.getName() + "' on rejoin.");
+              },
+              10L);
+    }
+
     Config.debugSwap(
         "[SwapAI] "
             + newBot.getName()
@@ -550,6 +614,51 @@ public final class BotSwapAI {
     personalities.remove(uuid);
     swapCounts.remove(uuid);
     sessionExpiry.remove(uuid);
+    swapSnapshots.remove(uuid);
+  }
+
+  private static Map<String, String> serializeInventory(PlayerInventory inv) {
+    Map<String, String> slots = new java.util.LinkedHashMap<>();
+    ItemStack[] contents = inv.getContents();
+    for (int i = 0; i < contents.length; i++) {
+      if (contents[i] != null && contents[i].getType() != Material.AIR) {
+        try {
+          slots.put(String.valueOf(i),
+              Base64.getEncoder().encodeToString(contents[i].serializeAsBytes()));
+        } catch (Exception ignored) {}
+      }
+    }
+    ItemStack[] armour = inv.getArmorContents();
+    for (int i = 0; i < armour.length; i++) {
+      if (armour[i] != null && armour[i].getType() != Material.AIR) {
+        try {
+          slots.put(String.valueOf(36 + i),
+              Base64.getEncoder().encodeToString(armour[i].serializeAsBytes()));
+        } catch (Exception ignored) {}
+      }
+    }
+    ItemStack offhand = inv.getItemInOffHand();
+    if (offhand != null && offhand.getType() != Material.AIR) {
+      try {
+        slots.put("40", Base64.getEncoder().encodeToString(offhand.serializeAsBytes()));
+      } catch (Exception ignored) {}
+    }
+    return slots;
+  }
+
+  private static void applyInventory(PlayerInventory inv, Map<String, String> slots) {
+    for (Map.Entry<String, String> entry : slots.entrySet()) {
+      try {
+        int slot = Integer.parseInt(entry.getKey());
+        ItemStack item = ItemStack.deserializeBytes(Base64.getDecoder().decode(entry.getValue()));
+        if (slot <= 35) inv.setItem(slot, item);
+        else if (slot == 36) inv.setBoots(item);
+        else if (slot == 37) inv.setLeggings(item);
+        else if (slot == 38) inv.setChestplate(item);
+        else if (slot == 39) inv.setHelmet(item);
+        else if (slot == 40) inv.setItemInOffHand(item);
+      } catch (Exception ignored) {}
+    }
   }
 
   private static Personality randomPersonality() {

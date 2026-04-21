@@ -11,7 +11,7 @@ import me.bill.fakePlayerPlugin.util.FppLogger;
 
 public class DatabaseManager {
 
-  private static final int SCHEMA_VERSION = 17;
+  private static final int SCHEMA_VERSION = 18;
 
   public static int getCurrentSchemaVersion() {
     return SCHEMA_VERSION;
@@ -225,6 +225,18 @@ public class DatabaseManager {
           + "  PRIMARY KEY (bot_uuid, server_id, task_type)"
           + ")";
 
+  private static final String CREATE_DESPAWN_SNAPSHOTS =
+      "CREATE TABLE IF NOT EXISTS fpp_despawn_snapshots ("
+          + "  bot_name       VARCHAR(64)  NOT NULL,"
+          + "  server_id      VARCHAR(64)  NOT NULL DEFAULT 'default',"
+          + "  inventory_data TEXT         DEFAULT NULL,"
+          + "  xp_total       INTEGER      DEFAULT 0,"
+          + "  xp_level       INTEGER      DEFAULT 0,"
+          + "  xp_progress    REAL         DEFAULT 0.0,"
+          + "  saved_at       BIGINT       NOT NULL,"
+          + "  PRIMARY KEY (bot_name, server_id)"
+          + ")";
+
   private static final String CREATE_META =
       "CREATE TABLE IF NOT EXISTS fpp_meta ("
           + "  key_name VARCHAR(64)  NOT NULL PRIMARY KEY,"
@@ -356,6 +368,18 @@ public class DatabaseManager {
     {
       "ALTER TABLE fpp_active_bots ADD COLUMN skin_texture   TEXT DEFAULT NULL",
       "ALTER TABLE fpp_active_bots ADD COLUMN skin_signature TEXT DEFAULT NULL"
+    },
+    {
+      "CREATE TABLE IF NOT EXISTS fpp_despawn_snapshots ("
+          + "  bot_name       VARCHAR(64)  NOT NULL,"
+          + "  server_id      VARCHAR(64)  NOT NULL DEFAULT 'default',"
+          + "  inventory_data TEXT         DEFAULT NULL,"
+          + "  xp_total       INTEGER      DEFAULT 0,"
+          + "  xp_level       INTEGER      DEFAULT 0,"
+          + "  xp_progress    REAL         DEFAULT 0.0,"
+          + "  saved_at       BIGINT       NOT NULL,"
+          + "  PRIMARY KEY (bot_name, server_id)"
+          + ")"
     }
   };
 
@@ -488,6 +512,7 @@ public class DatabaseManager {
     exec(isMysql ? CREATE_IDENTITIES_MYSQL : CREATE_IDENTITIES_SQLITE);
     exec(isMysql ? CREATE_TASKS_MYSQL : CREATE_TASKS_SQLITE);
     exec(isMysql ? CREATE_SKIN_CACHE_MYSQL : CREATE_SKIN_CACHE_SQLITE);
+    exec(CREATE_DESPAWN_SNAPSHOTS);
     exec(CREATE_META);
   }
 
@@ -2144,6 +2169,101 @@ public class DatabaseManager {
         });
   }
 
+  // ── Despawn snapshots ────────────────────────────────────────────────────
+
+  /**
+   * Saves (upserts) a despawn snapshot for a bot so it can be restored on the next same-name
+   * spawn, even across server restarts. {@code inventoryData} is the pipe-separated slot encoding
+   * produced by {@code FakePlayerManager.serializeSlots()}.
+   */
+  public void saveDespawnSnapshot(
+      String botName,
+      String serverId,
+      String inventoryData,
+      int xpTotal,
+      int xpLevel,
+      float xpProgress) {
+    if (!isAlive()) return;
+    final long savedAt = System.currentTimeMillis();
+    enqueue(
+        () -> {
+          if (!isAlive()) return;
+          String sql =
+              isMysql
+                  ? "INSERT INTO fpp_despawn_snapshots"
+                      + " (bot_name,server_id,inventory_data,xp_total,xp_level,xp_progress,saved_at)"
+                      + " VALUES (?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE"
+                      + " inventory_data=VALUES(inventory_data),xp_total=VALUES(xp_total),"
+                      + " xp_level=VALUES(xp_level),xp_progress=VALUES(xp_progress),saved_at=VALUES(saved_at)"
+                  : "INSERT OR REPLACE INTO fpp_despawn_snapshots"
+                      + " (bot_name,server_id,inventory_data,xp_total,xp_level,xp_progress,saved_at)"
+                      + " VALUES (?,?,?,?,?,?,?)";
+          try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setString(1, botName);
+            ps.setString(2, serverId);
+            ps.setString(3, inventoryData);
+            ps.setInt(4, xpTotal);
+            ps.setInt(5, xpLevel);
+            ps.setFloat(6, xpProgress);
+            ps.setLong(7, savedAt);
+            ps.executeUpdate();
+            Config.debugDatabase(
+                "DB saved despawn snapshot for '" + botName + "' on server '" + serverId + "'.");
+          } catch (SQLException e) {
+            FppLogger.error("DB saveDespawnSnapshot: " + e.getMessage());
+          }
+        });
+  }
+
+  /** Removes the despawn snapshot for a bot (called after inventory is restored on respawn). */
+  public void deleteDespawnSnapshot(String botName, String serverId) {
+    if (!isAlive()) return;
+    enqueue(
+        () -> {
+          if (!isAlive()) return;
+          try (PreparedStatement ps =
+              connection.prepareStatement(
+                  "DELETE FROM fpp_despawn_snapshots WHERE bot_name=? AND server_id=?")) {
+            ps.setString(1, botName);
+            ps.setString(2, serverId);
+            ps.executeUpdate();
+          } catch (SQLException e) {
+            FppLogger.error("DB deleteDespawnSnapshot: " + e.getMessage());
+          }
+        });
+  }
+
+  /**
+   * Synchronous read — returns all despawn snapshots for the current server. Called once at
+   * startup to re-populate the in-memory map after a restart.
+   */
+  public List<DespawnSnapshotRow> loadDespawnSnapshotsForServer(String serverId) {
+    List<DespawnSnapshotRow> list = new ArrayList<>();
+    if (!isAlive()) return list;
+    try (PreparedStatement ps =
+        connection.prepareStatement(
+            "SELECT bot_name,server_id,inventory_data,xp_total,xp_level,xp_progress,saved_at"
+                + " FROM fpp_despawn_snapshots WHERE server_id=?")) {
+      ps.setString(1, serverId);
+      try (ResultSet rs = ps.executeQuery()) {
+        while (rs.next()) {
+          list.add(
+              new DespawnSnapshotRow(
+                  rs.getString("bot_name"),
+                  rs.getString("server_id"),
+                  rs.getString("inventory_data"),
+                  rs.getInt("xp_total"),
+                  rs.getInt("xp_level"),
+                  rs.getFloat("xp_progress"),
+                  rs.getLong("saved_at")));
+        }
+      }
+    } catch (SQLException e) {
+      FppLogger.error("DB loadDespawnSnapshotsForServer: " + e.getMessage());
+    }
+    return list;
+  }
+
   private BotTaskRow mapBotTaskRow(ResultSet rs) throws SQLException {
     String worldName = null;
     try {
@@ -2221,6 +2341,15 @@ public class DatabaseManager {
       double z,
       float yaw,
       float pitch) {}
+
+  public record DespawnSnapshotRow(
+      String botName,
+      String serverId,
+      String inventoryData,
+      int xpTotal,
+      int xpLevel,
+      float xpProgress,
+      long savedAt) {}
 
   public record BotTaskRow(
       String botUuid,

@@ -1,6 +1,6 @@
 # ?? Permissions
 
-> **Complete permission reference - v1.6.6.1**  
+> **Complete permission reference - v1.6.6.2**  
 > FPP uses **`fpp.op`** (alias **`fpp.admin`**) for admins and **`fpp.use`** for user-tier access.  
 > All nodes are declared in `plugin.yml` so they appear in LuckPerms tab-completion.
 
@@ -9,8 +9,8 @@
 ## ??? Permission Structure
 
 ```text
-fpp.admin               # Admin wildcard — preferred (default: op)
-fpp.op                  # Admin wildcard — legacy alias (default: op)
+fpp.admin               # Admin wildcard ï¿½ preferred (default: op)
+fpp.op                  # Admin wildcard ï¿½ legacy alias (default: op)
 fpp.use                 # User wildcard (default: true)
 fpp.spawn.limit.<N>     # Personal bot limits (1-100)
 fpp.bypass.maxbots      # Ignore global bot cap
@@ -81,7 +81,7 @@ Current nodes are:
 | `fpp.ping.set` | `/fpp ping --ping <ms>` | Set a specific ping value |
 | `fpp.ping.random` | `/fpp ping --random` | Assign random ping distribution |
 | `fpp.ping.bulk` | `/fpp ping --count <n>` | Target multiple bots at once |
-| `fpp.attack` | `/fpp attack` | PvE attack — walk to sender, attack entities (classic & mob-targeting modes) |
+| `fpp.attack` | `/fpp attack` | PvE attack ï¿½ walk to sender, attack entities (classic & mob-targeting modes) |
 | `fpp.follow` | `/fpp follow` | Follow-target bot automation (continuous following, persistent across restarts) |
 
 ### Network / proxy
@@ -186,16 +186,16 @@ Grant `fpp.spawn.limit.<N>` to set a player's personal cap. FPP always uses the 
 
 ### `fpp.admin` vs `fpp.op`
 
-- `fpp.admin` — **new preferred name** for the admin wildcard (v1.6.5+)
-- `fpp.op` — legacy admin wildcard, still fully supported
-- Both are identical in effect — `fpp.admin` is a parent of `fpp.op`
+- `fpp.admin` ï¿½ **new preferred name** for the admin wildcard (v1.6.5+)
+- `fpp.op` ï¿½ legacy admin wildcard, still fully supported
+- Both are identical in effect ï¿½ `fpp.admin` is a parent of `fpp.op`
 
 ### `fpp.despawn` vs `fpp.delete`
 
-- `fpp.despawn` — **new preferred name** for the despawn permission (v1.6.5+)
-- `fpp.delete` — legacy despawn permission, still fully supported
-- `fpp.despawn.bulk` — mass despawn (`all`, `--random`, `--num`)
-- `fpp.despawn.own` — despawn only bots the sender spawned
+- `fpp.despawn` ï¿½ **new preferred name** for the despawn permission (v1.6.5+)
+- `fpp.delete` ï¿½ legacy despawn permission, still fully supported
+- `fpp.despawn.bulk` ï¿½ mass despawn (`all`, `--random`, `--num`)
+- `fpp.despawn.own` ï¿½ despawn only bots the sender spawned
 
 ### Granular sub-nodes (v1.6.5+)
 
@@ -215,8 +215,8 @@ The parent node (e.g. `fpp.mine`) grants all its sub-nodes automatically.
 
 ### `fpp.rename` vs `fpp.rename.own`
 
-- `fpp.rename` — rename any active bot
-- `fpp.rename.own` — rename only bots you personally spawned
+- `fpp.rename` ï¿½ rename any active bot
+- `fpp.rename.own` ï¿½ rename only bots you personally spawned
 - admins with `fpp.rename` effectively inherit the owned-bot capability too
 
 ### `/fpp use` command permission name
@@ -230,7 +230,7 @@ fpp.useitem
 ### `/fpp settings` vs per-bot settings GUI
 
 - `/fpp settings` uses `fpp.settings`
-- Shift+right-clicking a bot entity also uses `fpp.settings` — grant this to non-op players to allow per-bot tuning without full admin access
+- Shift+right-clicking a bot entity also uses `fpp.settings` ï¿½ grant this to non-op players to allow per-bot tuning without full admin access
 - shift-right-click bot settings are controlled by interaction config and normal bot interaction access, not a separate public permission node
 
 ---

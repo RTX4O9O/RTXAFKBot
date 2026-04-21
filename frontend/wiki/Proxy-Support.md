@@ -2,7 +2,7 @@
 
 FPP supports multi-server proxy setups through **`database.mode: "NETWORK"`** and a shared MySQL database.
 
-> **Current version line:** v1.6.6.1  
+> **Current version line:** v1.6.6.2  
 > **Requirements:** `database.mode: "NETWORK"` + `database.mysql-enabled: true`
 
 ---

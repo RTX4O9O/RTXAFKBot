@@ -5,7 +5,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Internal — managed automatically. Do NOT edit.
-config-version: 63
+config-version: 65
 language: en
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -131,6 +131,7 @@ bot-interaction:
 messages:
   join-message: true          # Broadcast "<Name> joined the game"
   leave-message: true         # Broadcast "<Name> left the game"
+  death-message: true         # Broadcast the vanilla "X was slain by Y" death message when a bot dies
   kill-message: false         # Broadcast when a real player kills a bot
   notify-admins-on-join: true # Send compatibility warnings to online admins on join
 
@@ -148,7 +149,7 @@ body:
                        # false = immune to player/entity damage only (fall, fire, etc. still apply)
   pick-up-items: true  # true = bots pick up items from the ground like a real player
   pick-up-xp:   true   # true = bots pick up XP orbs from the ground like a real player
-  drop-items-on-despawn: true  # true = bots drop inventory + XP to the ground when despawned (/fpp despawn or GUI delete)
+  drop-items-on-despawn: false  # false = bot remembers inventory + XP on despawn/respawn; true = drop everything to the ground
 
 # ── Combat ────────────────────────────────────────────────────────────────────
 combat:

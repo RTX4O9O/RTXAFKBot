@@ -61,7 +61,7 @@ public final class SettingGui implements Listener {
 
   private static final java.util.UUID SKIN_OWNER_UUID =
       java.util.UUID.fromString("a318f9f4-e2bf-479c-a47a-6a2c1b0b9e66");
-  private static final String SKIN_OWNER_NAME = "El_Pepes";
+  private static final String SKIN_OWNER_NAME = "F_PP";
 
   private static final long SKULL_TTL_MS = 30L * 60 * 1_000;
 
@@ -528,7 +528,10 @@ public final class SettingGui implements Listener {
 
     TextColor nameColor = isToggle ? (isOn ? ON_GREEN : OFF_RED) : ACCENT;
 
-    ItemStack item = new ItemStack(entry.icon);
+    ItemStack item =
+        "skin.guaranteed-skin".equals(entry.configKey)
+            ? getOwnerSkull()
+            : new ItemStack(entry.icon);
     ItemMeta meta = item.getItemMeta();
 
     if (isToggle && isOn) {
@@ -1119,6 +1122,11 @@ public final class SettingGui implements Listener {
                 "ꜱᴜᴘᴘʀᴇꜱꜱ ᴅʀᴏᴘꜱ",
                 "ʙᴏᴛꜱ ᴅʀᴏᴘ ɴᴏ ɪᴛᴇᴍꜱ ᴏʀ xᴘ\nᴡʜᴇɴ ᴛʜᴇʏ ᴅɪᴇ.",
                 Material.CHEST),
+            SettingEntry.toggle(
+                "body.drop-items-on-despawn",
+                "ᴅʀᴏᴘ ᴏɴ ᴅᴇꜱᴘᴀᴡɴ",
+                "ᴅʀᴏᴘ ɪɴᴠᴇɴᴛᴏʀʏ + xᴘ ᴡʜᴇɴ ᴀ ʙᴏᴛ\nɪꜱ ᴅᴇꜱᴘᴀᴡɴᴇᴅ. ᴏꜰꜰ = ʀᴇᴍᴇᴍʙᴇʀꜱ ɪᴛᴇᴍꜱ\nᴏɴ ɴᴇxᴛ ꜱᴘᴀᴡɴ ᴡɪᴛʜ ᴛʜᴇ ꜱᴀᴍᴇ ɴᴀᴍᴇ.",
+                Material.ENDER_CHEST),
             SettingEntry.cycleDouble(
                 "combat.max-health",
                 "ᴍᴀx ʜᴇᴀʟᴛʜ (½-ʜᴇᴀʀᴛꜱ)",
@@ -1149,6 +1157,7 @@ public final class SettingGui implements Listener {
                 "fake-chat.require-player-online",
                 "ʀᴇQᴜɪʀᴇ ᴘʟᴀʏᴇʀ ᴏɴʟɪɴᴇ",
                 "ʙᴏᴛꜱ ᴏɴʟʏ ᴄʜᴀᴛ ᴡʜᴇɴ ᴀᴛ ʟᴇᴀꜱᴛ\nᴏɴᴇ ʀᴇᴀʟ ᴘʟᴀʏᴇʀ ɪꜱ ᴏɴ ᴛʜᴇ ꜱᴇʀᴠᴇʀ.",
+                // NOTE: label contains uppercase Q intentionally (Bukkit renders it fine)
                 Material.SPYGLASS),
             SettingEntry.toggle(
                 "fake-chat.typing-delay",
@@ -1163,7 +1172,7 @@ public final class SettingGui implements Listener {
             SettingEntry.toggle(
                 "fake-chat.activity-variation",
                 "ᴀᴄᴛɪᴠɪᴛʏ ᴠᴀʀɪᴀᴛɪᴏɴ",
-                "ᴀꜱꜱɪɢɴ ᴇᴀᴄʜ ʙᴏᴛ ᴀ ᴜɴɪQᴜᴇ ᴄʜᴀᴛ\nᴛɪᴇʀ - Qᴜɪᴇᴛ ᴛᴏ ᴄʜᴀᴛᴛʏ.",
+                "ᴀꜱꜱɪɢɴ ᴇᴀᴄʜ ʙᴏᴛ ᴀ ᴜɴɪQᴜᴇ ᴄʜᴀᴛ\nᴛɪᴇʀ — Qᴜɪᴇᴛ ᴛᴏ ᴄʜᴀᴛᴛʏ.",
                 Material.COMPARATOR),
             SettingEntry.toggle(
                 "fake-chat.event-triggers.enabled",
@@ -1173,7 +1182,7 @@ public final class SettingGui implements Listener {
             SettingEntry.cycleDouble(
                 "fake-chat.chance",
                 "ᴄʜᴀᴛ ᴄʜᴀɴᴄᴇ (0–1)",
-                "ᴘʀᴏʙᴀʙɪʟɪᴛʏ ᴏꜱ ᴄʜᴀᴛᴛɪɴɢ\nᴏɴ ᴇᴀᴄʜ ɪɴᴛᴇʀᴠᴀʟ ᴄʜᴇᴄᴋ.",
+                "ᴘʀᴏʙᴀʙɪʟɪᴛʏ ᴏꜰ ᴄʜᴀᴛᴛɪɴɢ\nᴏɴ ᴇᴀᴄʜ ɪɴᴛᴇʀᴠᴀʟ ᴄʜᴇᴄᴋ.",
                 Material.RABBIT_FOOT,
                 new double[] {0.25, 0.50, 0.75, 1.0}),
             SettingEntry.cycleInt(
@@ -1210,7 +1219,12 @@ public final class SettingGui implements Listener {
                 "ᴍᴇꜱꜱᴀɢᴇ ʜɪꜱᴛᴏʀʏ ꜱɪᴢᴇ",
                 "ʀᴇᴄᴇɴᴛ ᴍᴇꜱꜱᴀɡᴇꜱ ᴘᴇʀ ʙᴏᴛ ᴛʀᴀᴄᴋᴇᴅ\nᴛᴏ ᴀᴠᴏɪᴅ ʀᴇᴘᴇᴀᴛɪɴɢ. 0 = ᴏꜰꜰ.",
                 Material.KNOWLEDGE_BOOK,
-                new int[] {0, 3, 5, 10, 15, 20})));
+                new int[] {0, 3, 5, 10, 15, 20}),
+            SettingEntry.toggle(
+                "messages.death-message",
+                "ᴅᴇᴀᴛʜ ᴍᴇꜱꜱᴀɢᴇ",
+                "ʙʀᴏᴀᴅᴄᴀꜱᴛ ᴛʜᴇ ᴠᴀɴɪʟʟᴀ ᴅᴇᴀᴛʜ\nᴍᴇꜱꜱᴀɢᴇ ᴡʜᴇɴ ᴀ ʙᴏᴛ ᴅɪᴇꜱ.",
+                Material.SKELETON_SKULL)));
   }
 
   private Category swap() {
@@ -1255,18 +1269,18 @@ public final class SettingGui implements Listener {
             SettingEntry.cycleInt(
                 "swap.absence.min",
                 "ᴀʙꜱᴇɴᴄᴇ - ᴍɪɴ (ꜱ)",
-                "ꜱʜᴏʀᴛᴇꜱᴛ ᴛɪᴍᴇ ᴀ ʙᴏᴛ\nꜱᴘᴇɴᴅꜱ ᴏꜦꜦʟɪɴᴇ.",
+                "ꜱʜᴏʀᴛᴇꜱᴛ ᴛɪᴍᴇ ᴀ ʙᴏᴛ\nꜱᴘᴇɴᴅꜱ ᴏꜰꜰʟɪɴᴇ.",
                 Material.GRAY_DYE,
                 new int[] {15, 30, 60, 120}),
             SettingEntry.cycleInt(
                 "swap.absence.max",
                 "ᴀʙꜱᴇɴᴄᴇ - ᴍᴀx (ꜱ)",
-                "ʟᴏɴɡᴇꜱᴛ ᴛɪᴍᴇ ᴀ ʙᴏᴛ\nꜱᴘᴇɴᴅꜱ ᴏꜦꜦʟɪɴᴇ.",
+                "ʟᴏɴɡᴇꜱᴛ ᴛɪᴍᴇ ᴀ ʙᴏᴛ\nꜱᴘᴇɴᴅꜱ ᴏꜰꜰʟɪɴᴇ.",
                 Material.GRAY_DYE,
                 new int[] {30, 60, 120, 300}),
             SettingEntry.cycleInt(
                 "swap.max-swapped-out",
-                "ᴍᴀx ᴏꜦꜦʟɪɴᴇ ᴀᴛ ᴏɴᴄᴇ",
+                "ᴍᴀx ᴏꜰꜰʟɪɴᴇ ᴀᴛ ᴏɴᴄᴇ",
                 "ᴄᴀᴘ ᴏɴ ꜱɪᴍᴜʟᴀᴛᴀɴᴇᴏᴜꜱʟʏ ᴀʙꜱᴇɴᴛ\nʙᴏᴛꜱ. 0 = ᴜɴʟɪᴍɪᴛᴇᴅ.",
                 Material.HOPPER,
                 new int[] {0, 1, 2, 3, 5, 10})));
@@ -1283,6 +1297,7 @@ public final class SettingGui implements Listener {
                 "peak-hours.enabled",
                 "ᴘᴇᴀᴋ ʜᴏᴜʀꜱ",
                 "ꜱᴄᴀʟᴇ ʙᴏᴛ ᴄᴏᴜɴᴛ ʙʏ ᴛɪᴍᴇ ᴡɪɴᴅᴏᴡ.\nʀᴇQᴜɪʀᴇꜱ ꜱᴡᴀᴘ ᴛᴏ ʙᴇ ᴇɴᴀʙʟᴇᴅ.",
+                // NOTE: "ʀᴇQᴜɪʀᴇꜱ" — uppercase Q is intentional branding style in GUI labels
                 Material.DAYLIGHT_DETECTOR),
             SettingEntry.toggle(
                 "peak-hours.notify-transitions",
@@ -1292,7 +1307,7 @@ public final class SettingGui implements Listener {
             SettingEntry.cycleInt(
                 "peak-hours.min-online",
                 "ᴍɪɴ ʙᴏᴛꜱ ᴏɴʟɪɴᴇ",
-                "ꜰʟᴏᴏʀ: ᴍɪɴɪᴍᴜᴍ ᴀᴄᴛɪᴠᴇ ʙᴏᴛꜱ\nʀᴇɡᴀʀᴅʟᴇꜱꜱ ᴏꜦ ꜰʀᴀᴄᴛɪᴏɴ. 0 = ᴏ꜡.",
+                "ꜰʟᴏᴏʀ: ᴍɪɴɪᴍᴜᴍ ᴀᴄᴛɪᴠᴇ ʙᴏᴛꜱ\nʀᴇɡᴀʀᴅʟᴇꜱꜱ ᴏꜰ ꜰʀᴀᴄᴛɪᴏɴ. 0 = ᴏꜰꜰ.",
                 Material.COMPARATOR,
                 new int[] {0, 1, 2, 5, 10}),
             SettingEntry.cycleInt(

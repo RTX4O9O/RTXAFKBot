@@ -1,0 +1,12 @@
+{
+  "id": "fpp",
+  "name": "FakePlayerPlugin",
+  "version": "1.6.6.2",
+  "description": "Advanced Fake Player Spoofer for Paper 1.21+ - spawn realistic fake players with tab list presence, server list count, join/leave messages, in-world bodies, guaranteed skins, chunk loading, bot swap/rotation, fake chat, AI conversations, area mining, block placing, pathfinding, follow-target automation, per-bot settings GUI, LuckPerms integration, proxy network support, and full hot-reload",
+  "url": "https://fakeplayerplugin.xyz",
+  "authors": [
+    "el_pepes"
+  ],
+  "main": "me.bill.fakePlayerPlugin.FakePlayerPlugin"
+}
+

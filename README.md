@@ -344,6 +344,34 @@ Identical feature set for BungeeCord/Waterfall networks.
 
 ## Changelog
 
+### v1.6.6.2 *(2026-04-21)*
+
+**Critical Bug Fixes**
+
+- **`/fpp despawn all` inventory preservation** — Fixed bug where bulk despawn erased all bot inventories and XP. `removeAll()` now implements proper snapshot logic identical to single-bot despawn — captures inventory and XP before clearing any maps.
+
+- **Dimension spawn coordinate fix** — Bots spawned in Nether/End now stay at exact coordinates. `BotSpawnProtectionListener` now blocks all teleport causes (`NETHER_PORTAL`, `END_PORTAL`, `END_GATEWAY`) during the 5-tick spawn grace period.
+
+**Despawn Snapshot Persistence**
+
+- **Inventory/XP survival across restarts** — Bot inventory and XP are preserved when you despawn and respawn the same bot name, even after server restart. New `fpp_despawn_snapshots` DB table (schema v17→v18) or `data/despawn-snapshots.yml` fallback.
+
+- **Config migration v64→v65** — Auto-sets `body.drop-items-on-despawn: false` for existing installs to enable snapshot preservation by default.
+
+**Configuration**
+
+- **New:** `messages.death-message` (default `true`) — toggle bot death messages
+- **SettingGui:** Added toggles for `body.drop-items-on-despawn` and `messages.death-message`
+
+**Technical**
+
+- Config version: 63 → 65
+- Database schema: 17 → 18
+- Language file character fixes
+- BotSpawnProtectionListener UUID fallback for early spawn detection
+
+---
+
 ### v1.6.6.1 *(2026-04-20)*
 
 **FPP BungeeCord Companion (`fpp-bungee.jar`)**
@@ -868,4 +896,4 @@ Thank you for using Fake Player Plugin. Without you, it wouldn't be where it is 
 
 ---
 
-*Built for Paper 1.21.x · Java 21 · FPP v1.6.6 · [Modrinth](https://modrinth.com/plugin/fake-player-plugin-(fpp)) · [SpigotMC](https://www.spigotmc.org/resources/fake-player-plugin-fpp.133572/) · [PaperMC](https://hangar.papermc.io/Pepe-tf/FakePlayerPlugin) · [BuiltByBit](https://builtbybit.com/resources/fake-player-plugin.98704/) · [Wiki](https://fakeplayerplugin.xyz) · [GitHub](https://github.com/Pepe-tf/fake-player-plugin)*
+*Built for Paper 1.21.x · Java 21 · FPP v1.6.6.2 · [Modrinth](https://modrinth.com/plugin/fake-player-plugin-(fpp)) · [SpigotMC](https://www.spigotmc.org/resources/fake-player-plugin-fpp.133572/) · [PaperMC](https://hangar.papermc.io/Pepe-tf/FakePlayerPlugin) · [BuiltByBit](https://builtbybit.com/resources/fake-player-plugin.98704/) · [Wiki](https://fakeplayerplugin.xyz) · [GitHub](https://github.com/Pepe-tf/fake-player-plugin)*

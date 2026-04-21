@@ -64,6 +64,25 @@ public class FakePlayerManager {
 
   private final Set<UUID> renamingBotIds = ConcurrentHashMap.newKeySet();
 
+  /**
+   * Inventory + XP snapshot saved when a bot is manually despawned (only when
+   * {@code dropItemsOnDespawn=false}). Keyed by lowercase bot name. Consumed on the next
+   * same-name spawn so inventory and XP survive a manual despawn → spawn cycle.
+   */
+  private record DespawnSnapshot(
+      ItemStack[] mainContents,
+      ItemStack[] armorContents,
+      ItemStack[] extraContents,
+      int xpTotal,
+      int xpLevel,
+      float xpProgress) {}
+
+  private final ConcurrentHashMap<String, DespawnSnapshot> despawnSnapshots =
+      new ConcurrentHashMap<>();
+
+  /** YAML fallback file for despawn snapshots (used when DB is disabled). */
+  private volatile java.io.File despawnSnapshotFile = null;
+
   private ChunkLoader chunkLoader;
   private DatabaseManager db;
   private BotPersistence persistence;
@@ -1046,6 +1065,28 @@ public class FakePlayerManager {
             persistence.saveAsync(activePlayers.values());
           }
 
+          // Restore inventory+XP from a prior manual despawn of the same bot name.
+          DespawnSnapshot despawnSnap = despawnSnapshots.remove(fp.getName().toLowerCase());
+          if (despawnSnap != null) {
+            removeDespawnSnapshotPersistent(fp.getName().toLowerCase());
+            final UUID snapBotUuid = fp.getUuid();
+            Bukkit.getScheduler()
+                .runTaskLater(
+                    plugin,
+                    () -> {
+                      FakePlayer restoredFp = getByUuid(snapBotUuid);
+                      if (restoredFp == null) return;
+                      Player restoredBot = restoredFp.getPlayer();
+                      if (restoredBot == null || !restoredBot.isValid()) return;
+                      applyDespawnSnapshot(restoredBot, despawnSnap);
+                      Config.debugSwap(
+                          "[DespawnSnapshot] Restored inventory+XP to '"
+                              + restoredFp.getName()
+                              + "'.");
+                    },
+                    10L);
+          }
+
           if (plugin.isLuckPermsAvailable()) {
             UUID botUuid = fp.getUuid();
             String group =
@@ -1265,6 +1306,30 @@ public class FakePlayerManager {
     if (activePlayers.isEmpty()) return;
 
     List<FakePlayer> toRemove = new ArrayList<>(activePlayers.values());
+
+    // Snapshot inventory + XP for ALL bots BEFORE clearing maps or removing entities.
+    // This ensures /fpp despawn all preserves items just like single-bot despawn does.
+    if (!Config.dropItemsOnDespawn()) {
+      for (FakePlayer fp : toRemove) {
+        if (renamingBotIds.contains(fp.getUuid())) continue;
+        Player snapBody = fp.getPhysicsEntity();
+        if (snapBody != null && snapBody.isOnline()) {
+          String botName = fp.getName();
+          DespawnSnapshot snap =
+              new DespawnSnapshot(
+                  cloneContents(snapBody.getInventory().getContents()),
+                  cloneContents(snapBody.getInventory().getArmorContents()),
+                  cloneContents(snapBody.getInventory().getExtraContents()),
+                  snapBody.getTotalExperience(),
+                  snapBody.getLevel(),
+                  snapBody.getExp());
+          despawnSnapshots.put(botName.toLowerCase(), snap);
+          persistDespawnSnapshot(botName.toLowerCase(), snap);
+          Config.debugSwap("[DespawnSnapshot] Saved inventory+XP for '" + botName + "' (bulk despawn).");
+        }
+      }
+    }
+
     activePlayers.clear();
     usedNames.clear();
     entityIdIndex.clear();
@@ -1285,6 +1350,11 @@ public class FakePlayerManager {
       final FakePlayer target = fp;
       Runnable doVisualRemove =
           () -> {
+            // Drop items if configured (same logic as single-bot despawn).
+            if (Config.dropItemsOnDespawn()) {
+              dropBotContents(target);
+            }
+
             String despawnName = resolveDespawnDisplayName(target);
             despawningBotIds.put(target.getUuid(), despawnName);
             try {
@@ -1355,12 +1425,226 @@ public class FakePlayerManager {
     }
   }
 
+  private static ItemStack[] cloneContents(ItemStack[] contents) {
+    if (contents == null) return new ItemStack[0];
+    ItemStack[] clone = new ItemStack[contents.length];
+    for (int i = 0; i < contents.length; i++) {
+      if (contents[i] != null) clone[i] = contents[i].clone();
+    }
+    return clone;
+  }
+
+  private static void applyDespawnSnapshot(Player bot, DespawnSnapshot snap) {
+    org.bukkit.inventory.PlayerInventory inv = bot.getInventory();
+    if (snap.mainContents().length > 0) inv.setContents(snap.mainContents());
+    if (snap.armorContents().length > 0) inv.setArmorContents(snap.armorContents());
+    if (snap.extraContents().length > 0) inv.setExtraContents(snap.extraContents());
+    bot.setTotalExperience(0);
+    bot.setLevel(0);
+    bot.setExp(0f);
+    bot.setLevel(snap.xpLevel());
+    bot.setExp(Math.max(0f, Math.min(1f, snap.xpProgress())));
+    bot.setTotalExperience(snap.xpTotal());
+  }
+
+  // ── Despawn snapshot persistence ─────────────────────────────────────────
+
+  /**
+   * Called once from {@code FakePlayerPlugin.onEnable()} after the DB manager is wired in.
+   * Loads any persisted despawn snapshots into the in-memory map so bots whose inventory was saved
+   * before a restart can still be restored when they are spawned again.
+   */
+  public void initDespawnSnapshots() {
+    despawnSnapshotFile =
+        new java.io.File(plugin.getDataFolder(), "data" + java.io.File.separator + "despawn-snapshots.yml");
+
+    // 1. Try DB first (primary store)
+    if (db != null) {
+      try {
+        List<DatabaseManager.DespawnSnapshotRow> rows =
+            db.loadDespawnSnapshotsForServer(me.bill.fakePlayerPlugin.config.Config.serverId());
+        for (DatabaseManager.DespawnSnapshotRow row : rows) {
+          DespawnSnapshot snap =
+              deserializeSlots(row.inventoryData(), row.xpTotal(), row.xpLevel(), row.xpProgress());
+          if (snap != null) despawnSnapshots.put(row.botName().toLowerCase(), snap);
+        }
+        if (!rows.isEmpty()) {
+          Config.debugDatabase(
+              "[DespawnSnapshot] Loaded " + rows.size() + " snapshot(s) from DB.");
+        }
+      } catch (Exception e) {
+        FppLogger.warn("[DespawnSnapshot] Failed to load from DB: " + e.getMessage());
+      }
+      return; // DB is authoritative — skip YAML
+    }
+
+    // 2. YAML fallback
+    if (!despawnSnapshotFile.exists()) return;
+    try {
+      org.bukkit.configuration.file.YamlConfiguration yaml =
+          org.bukkit.configuration.file.YamlConfiguration.loadConfiguration(despawnSnapshotFile);
+      org.bukkit.configuration.ConfigurationSection sec = yaml.getConfigurationSection("snapshots");
+      if (sec == null) return;
+      for (String key : sec.getKeys(false)) {
+        org.bukkit.configuration.ConfigurationSection entry = sec.getConfigurationSection(key);
+        if (entry == null) continue;
+        String invData = entry.getString("inventory-data", "");
+        int xpTotal = entry.getInt("xp-total", 0);
+        int xpLevel = entry.getInt("xp-level", 0);
+        float xpProgress = (float) entry.getDouble("xp-progress", 0.0);
+        DespawnSnapshot snap = deserializeSlots(invData, xpTotal, xpLevel, xpProgress);
+        if (snap != null) despawnSnapshots.put(key.toLowerCase(), snap);
+      }
+      if (!sec.getKeys(false).isEmpty()) {
+        Config.debugDatabase(
+            "[DespawnSnapshot] Loaded " + sec.getKeys(false).size() + " snapshot(s) from YAML.");
+      }
+    } catch (Exception e) {
+      FppLogger.warn("[DespawnSnapshot] Failed to load YAML: " + e.getMessage());
+    }
+  }
+
+  /** Persists a snapshot to the DB (primary) or YAML fallback (async, best-effort). */
+  private void persistDespawnSnapshot(String botNameLower, DespawnSnapshot snap) {
+    String invData = serializeSlots(snap);
+    String serverId = me.bill.fakePlayerPlugin.config.Config.serverId();
+
+    if (db != null) {
+      db.saveDespawnSnapshot(
+          botNameLower, serverId, invData, snap.xpTotal(), snap.xpLevel(), snap.xpProgress());
+      return;
+    }
+
+    // YAML fallback — write async
+    final java.io.File yamlFile = despawnSnapshotFile;
+    if (yamlFile == null) return;
+    final String invDataFinal = invData;
+    final int xpT = snap.xpTotal(), xpL = snap.xpLevel();
+    final float xpP = snap.xpProgress();
+    Bukkit.getScheduler()
+        .runTaskAsynchronously(
+            plugin,
+            () -> {
+              try {
+                org.bukkit.configuration.file.YamlConfiguration yaml =
+                    yamlFile.exists()
+                        ? org.bukkit.configuration.file.YamlConfiguration.loadConfiguration(yamlFile)
+                        : new org.bukkit.configuration.file.YamlConfiguration();
+                String path = "snapshots." + botNameLower;
+                yaml.set(path + ".inventory-data", invDataFinal);
+                yaml.set(path + ".xp-total", xpT);
+                yaml.set(path + ".xp-level", xpL);
+                yaml.set(path + ".xp-progress", (double) xpP);
+                yaml.set(path + ".saved-at", System.currentTimeMillis());
+                yaml.save(yamlFile);
+              } catch (Exception e) {
+                FppLogger.warn("[DespawnSnapshot] YAML save failed: " + e.getMessage());
+              }
+            });
+  }
+
+  /** Removes a snapshot from DB/YAML after it has been restored (called on respawn). */
+  private void removeDespawnSnapshotPersistent(String botNameLower) {
+    String serverId = me.bill.fakePlayerPlugin.config.Config.serverId();
+    if (db != null) {
+      db.deleteDespawnSnapshot(botNameLower, serverId);
+      return;
+    }
+
+    final java.io.File yamlFile = despawnSnapshotFile;
+    if (yamlFile == null || !yamlFile.exists()) return;
+    Bukkit.getScheduler()
+        .runTaskAsynchronously(
+            plugin,
+            () -> {
+              try {
+                org.bukkit.configuration.file.YamlConfiguration yaml =
+                    org.bukkit.configuration.file.YamlConfiguration.loadConfiguration(yamlFile);
+                yaml.set("snapshots." + botNameLower, null);
+                yaml.save(yamlFile);
+              } catch (Exception e) {
+                FppLogger.warn("[DespawnSnapshot] YAML delete failed: " + e.getMessage());
+              }
+            });
+  }
+
+  /**
+   * Serialises a {@link DespawnSnapshot} to a compact pipe-delimited string.
+   * Format: {@code slot:base64|slot:base64|…} — uses only chars safe from splitting.
+   * Uses {@code mainContents} (all 41 slots) which already contains armor and offhand.
+   */
+  private static String serializeSlots(DespawnSnapshot snap) {
+    StringBuilder sb = new StringBuilder();
+    ItemStack[] all = snap.mainContents();
+    for (int i = 0; i < all.length; i++) {
+      if (all[i] != null && all[i].getType() != Material.AIR) {
+        try {
+          String b64 = java.util.Base64.getEncoder().encodeToString(all[i].serializeAsBytes());
+          if (sb.length() > 0) sb.append('|');
+          sb.append(i).append(':').append(b64);
+        } catch (Exception ignored) {}
+      }
+    }
+    return sb.toString();
+  }
+
+  /**
+   * Deserialises the pipe-delimited slot string back into a {@link DespawnSnapshot}.
+   * Returns {@code null} if the data is blank or entirely corrupt.
+   */
+  private static DespawnSnapshot deserializeSlots(
+      String data, int xpTotal, int xpLevel, float xpProgress) {
+    ItemStack[] main = new ItemStack[41];
+    if (data != null && !data.isBlank()) {
+      for (String token : data.split("\\|")) {
+        int colon = token.indexOf(':');
+        if (colon < 1) continue;
+        try {
+          int slot = Integer.parseInt(token.substring(0, colon));
+          if (slot < 0 || slot >= main.length) continue;
+          byte[] bytes = java.util.Base64.getDecoder().decode(token.substring(colon + 1));
+          main[slot] = ItemStack.deserializeBytes(bytes);
+        } catch (Exception ignored) {}
+      }
+    }
+    // Build armor (slots 36-39) and extra (slot 40) sub-arrays for applyDespawnSnapshot
+    ItemStack[] armor = new ItemStack[]{main[36], main[37], main[38], main[39]};
+    ItemStack[] extra = new ItemStack[]{main[40]};
+    boolean hasContent = xpTotal > 0 || xpLevel > 0 || xpProgress > 0f;
+    for (ItemStack item : main) {
+      if (item != null && item.getType() != Material.AIR) { hasContent = true; break; }
+    }
+    if (!hasContent) return null;
+    return new DespawnSnapshot(main, armor, extra, xpTotal, xpLevel, xpProgress);
+  }
+
   public boolean delete(String name) {
     FakePlayer fp = getByName(name);
     if (fp == null) return false;
 
     final FakePlayer target = fp;
     final String botName = target.getName();
+
+    // Snapshot inventory + XP BEFORE removing from maps or despawning entity.
+    // Must happen synchronously here (not in the delayed task) so bulk operations
+    // like /fpp despawn all don't race — by the time the 1-tick delay fires,
+    // earlier bots' entities may already be gone and snapBody.isOnline() fails.
+    if (!Config.dropItemsOnDespawn() && !renamingBotIds.contains(target.getUuid())) {
+      Player snapBody = target.getPhysicsEntity();
+      if (snapBody != null && snapBody.isOnline()) {
+        DespawnSnapshot snap =
+            new DespawnSnapshot(
+                cloneContents(snapBody.getInventory().getContents()),
+                cloneContents(snapBody.getInventory().getArmorContents()),
+                cloneContents(snapBody.getInventory().getExtraContents()),
+                snapBody.getTotalExperience(),
+                snapBody.getLevel(),
+                snapBody.getExp());
+        despawnSnapshots.put(botName.toLowerCase(), snap);
+        persistDespawnSnapshot(botName.toLowerCase(), snap);
+        Config.debugSwap("[DespawnSnapshot] Saved inventory+XP for '" + botName + "'.");
+      }
+    }
 
     activePlayers.remove(target.getUuid());
     nameIndex.remove(botName.toLowerCase());
@@ -1400,6 +1684,8 @@ public class FakePlayerManager {
 
     Runnable doVisualRemove =
         () -> {
+          // Snapshot was already taken synchronously at the start of delete()
+          // so we only need to drop items here if configured.
           if (Config.dropItemsOnDespawn()) {
             dropBotContents(target);
           }
