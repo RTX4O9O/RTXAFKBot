@@ -18,6 +18,8 @@
         <deploy.dir>${user.home}/Desktop/dmc/plugins</deploy.dir>
         <!-- Local build output folder inside the project root -->
         <build.output.dir>${basedir}/build</build.output.dir>
+        <!-- Bundled Mojang-mapped Paper server jar checked into libs/ -->
+        <paper.server.jar>${project.basedir}/libs/paper-1.21.11-mojang-mapped.jar</paper.server.jar>
     </properties>
 
     <build>
@@ -119,44 +121,6 @@
                     </execution>
                 </executions>
             </plugin>
-            <!-- Build companion modules (velocity + bungee) as part of root package -->
-            <plugin>
-                <groupId>org.codehaus.mojo</groupId>
-                <artifactId>exec-maven-plugin</artifactId>
-                <version>3.2.0</version>
-                <executions>
-                    <execution>
-                        <id>build-velocity-companion</id>
-                        <phase>package</phase>
-                        <goals><goal>exec</goal></goals>
-                        <configuration>
-                            <executable>mvn</executable>
-                            <workingDirectory>${project.basedir}/velocity-companion</workingDirectory>
-                            <arguments>
-                                <argument>-DskipTests</argument>
-                                <argument>--no-transfer-progress</argument>
-                                <argument>clean</argument>
-                                <argument>package</argument>
-                            </arguments>
-                        </configuration>
-                    </execution>
-                    <execution>
-                        <id>build-bungee-companion</id>
-                        <phase>package</phase>
-                        <goals><goal>exec</goal></goals>
-                        <configuration>
-                            <executable>mvn</executable>
-                            <workingDirectory>${project.basedir}/bungee-companion</workingDirectory>
-                            <arguments>
-                                <argument>-DskipTests</argument>
-                                <argument>--no-transfer-progress</argument>
-                                <argument>clean</argument>
-                                <argument>package</argument>
-                            </arguments>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
         </plugins>
         <resources>
             <!-- Regular resources: YAML, properties, etc. — text filtering enabled -->
@@ -223,15 +187,14 @@
 
         <!-- True Mojang-mapped server JAR — needed for FakeServerGamePacketListenerImpl
              which extends ServerGamePacketListenerImpl with proper Mojang class+method names.
-             This JAR is already installed in the local Maven repo.
-             NOTE: paper-mojmap was removed because it has Spigot-obfuscated methods that
-             shadow Entity/ServerCommonPacketListenerImpl from this JAR on the classpath. -->
+             Use the checked-in libs/paper-1.21.11-mojang-mapped.jar directly so the build does
+             not depend on a pre-seeded ~/.m2 snapshot/classifier artifact on this machine. -->
         <dependency>
             <groupId>io.papermc.paper</groupId>
             <artifactId>paper-server</artifactId>
-            <version>1.21.11-R0.1-SNAPSHOT</version>
-            <classifier>mojang-mapped</classifier>
-            <scope>provided</scope>
+            <version>1.21.11</version>
+            <scope>system</scope>
+            <systemPath>${paper.server.jar}</systemPath>
         </dependency>
 
         <!-- Mojang DataFixerUpper — required by paper-server for type annotations -->
@@ -326,4 +289,68 @@
             <scope>provided</scope>
         </dependency>
     </dependencies>
+
+    <profiles>
+        <!-- Optional companion builds. Enable explicitly with:
+             -Pbuild-velocity-companion and/or -Pbuild-bungee-companion -->
+        <profile>
+            <id>build-velocity-companion</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <version>3.2.0</version>
+                        <executions>
+                            <execution>
+                                <id>build-velocity-companion</id>
+                                <phase>package</phase>
+                                <goals><goal>exec</goal></goals>
+                                <configuration>
+                                    <executable>mvn</executable>
+                                    <workingDirectory>${project.basedir}/velocity-companion</workingDirectory>
+                                    <arguments>
+                                        <argument>-DskipTests</argument>
+                                        <argument>--no-transfer-progress</argument>
+                                        <argument>clean</argument>
+                                        <argument>package</argument>
+                                    </arguments>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <profile>
+            <id>build-bungee-companion</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <version>3.2.0</version>
+                        <executions>
+                            <execution>
+                                <id>build-bungee-companion</id>
+                                <phase>package</phase>
+                                <goals><goal>exec</goal></goals>
+                                <configuration>
+                                    <executable>mvn</executable>
+                                    <workingDirectory>${project.basedir}/bungee-companion</workingDirectory>
+                                    <arguments>
+                                        <argument>-DskipTests</argument>
+                                        <argument>--no-transfer-progress</argument>
+                                        <argument>clean</argument>
+                                        <argument>package</argument>
+                                    </arguments>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>
