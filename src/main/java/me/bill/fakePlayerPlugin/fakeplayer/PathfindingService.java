@@ -15,10 +15,15 @@ import org.bukkit.block.Block;
 import org.bukkit.entity.Player;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scheduler.BukkitTask;
+import org.bukkit.util.Vector;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 public final class PathfindingService {
+
+  private static final int SWIM_SURFACE_SCAN = 6;
+  private static final int SWIM_CEILING_SCAN = 3;
+  private static final int SWIM_NEAR_SURFACE_THRESHOLD = 2;
 
   public enum Owner {
     MOVE,
@@ -659,6 +664,55 @@ public final class PathfindingService {
     sessions.put(botUuid, new Session(request.owner(), task));
   }
 
+  public static void tickSwimAi(Player bot, boolean navJump, boolean isNavigating) {
+    if (!bot.isInWater() && !bot.isInLava()) return;
+
+    if (navJump) {
+      NmsPlayerSpawner.setJumping(bot, true);
+      return;
+    }
+
+    if (bot.isInLava()) {
+      NmsPlayerSpawner.setJumping(bot, true);
+      return;
+    }
+
+    Location loc = bot.getLocation();
+    World world = bot.getWorld();
+    int bx = loc.getBlockX();
+    int by = loc.getBlockY();
+    int bz = loc.getBlockZ();
+
+    int distToSurface = distanceToSurface(world, bx, by, bz);
+    boolean hasCeiling = hasSolidCeiling(world, bx, by, bz);
+
+    if (distToSurface == 0) {
+      if (isAtWaterExit(world, bx, by, bz, loc.getYaw())) {
+        applySwimExitImpulse(bot);
+      }
+      NmsPlayerSpawner.setJumping(bot, false);
+      return;
+    }
+
+    if (distToSurface <= SWIM_NEAR_SURFACE_THRESHOLD && !hasCeiling) {
+      if (distToSurface == 1 && isAtWaterExit(world, bx, by, bz, loc.getYaw())) {
+        applySwimExitImpulse(bot);
+      }
+      NmsPlayerSpawner.setJumping(bot, false);
+      return;
+    }
+
+    NmsPlayerSpawner.setJumping(bot, true);
+
+    if (!isNavigating) {
+      Location current = bot.getLocation();
+      bot.setRotation(current.getYaw(), -20f);
+      NmsPlayerSpawner.setHeadYaw(bot, current.getYaw());
+      bot.setSprinting(true);
+      NmsPlayerSpawner.setMovementForward(bot, 1.0f);
+    }
+  }
+
   private void primeInitialMovement(Player bot, Location dest, double arrivalDistance) {
     Location bl = bot.getLocation();
     double initDist = xzDist(bl, dest);
@@ -689,6 +743,53 @@ public final class PathfindingService {
     if (!w.getBlockAt(bx, by + 2, bz).isPassable())
       return new Location(w, bx + 0.5, by + 2.5, bz + 0.5);
     return null;
+  }
+
+  private static void applySwimExitImpulse(Player bot) {
+    Vector vel = bot.getVelocity();
+    if (vel.getY() < 0.2) {
+      vel.setY(0.42);
+      bot.setVelocity(vel);
+    }
+  }
+
+  private static boolean isAtWaterExit(World world, int bx, int by, int bz, float yaw) {
+    double rad = Math.toRadians(yaw);
+    int dx = (int) Math.round(-Math.sin(rad));
+    int dz = (int) Math.round(Math.cos(rad));
+    Material front = world.getBlockAt(bx + dx, by, bz + dz).getType();
+    Material frontAbove = world.getBlockAt(bx + dx, by + 1, bz + dz).getType();
+    return front.isSolid() && !frontAbove.isSolid();
+  }
+
+  private static int distanceToSurface(World world, int x, int y, int z) {
+    for (int dy = 1; dy <= SWIM_SURFACE_SCAN; dy++) {
+      int cy = y + dy;
+      if (cy >= world.getMaxHeight()) return SWIM_SURFACE_SCAN;
+      Material mat = world.getBlockAt(x, cy, z).getType();
+      if (mat.isAir()) {
+        return dy;
+      }
+      if (mat != Material.WATER
+          && mat != Material.KELP_PLANT
+          && mat != Material.KELP
+          && mat != Material.SEAGRASS
+          && mat != Material.TALL_SEAGRASS
+          && mat != Material.BUBBLE_COLUMN) {
+        return SWIM_SURFACE_SCAN;
+      }
+    }
+    return SWIM_SURFACE_SCAN;
+  }
+
+  private static boolean hasSolidCeiling(World world, int x, int y, int z) {
+    for (int dy = 1; dy <= SWIM_CEILING_SCAN; dy++) {
+      int cy = y + dy;
+      if (cy >= world.getMaxHeight()) return true;
+      Material mat = world.getBlockAt(x, cy, z).getType();
+      if (mat.isSolid()) return true;
+    }
+    return false;
   }
 
   private Material resolvePlaceMaterial() {

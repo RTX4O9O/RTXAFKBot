@@ -273,7 +273,7 @@ public class FakePlayerManager {
                   if (fp.isSwimAiEnabled()) {
                     boolean isNavigating = plugin.getPathfindingService() != null
                         && plugin.getPathfindingService().isNavigating(fp.getUuid());
-                    SwimAI.tick(bot, navJump, isNavigating);
+                    PathfindingService.tickSwimAi(bot, navJump, isNavigating);
                   } else if (navJump) {
 
                     NmsPlayerSpawner.setJumping(bot, true);
