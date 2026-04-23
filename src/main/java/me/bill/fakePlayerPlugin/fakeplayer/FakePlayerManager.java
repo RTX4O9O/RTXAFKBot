@@ -834,6 +834,8 @@ public class FakePlayerManager {
                 if (wgSafeLoc != null) {
                   final Player safeBody = body;
                   final org.bukkit.Location safeTarget = wgSafeLoc;
+                  // Use 25L so this fires after the BotSpawnProtectionListener's
+                  // 20-tick protection window (which is used for custom-world spawns).
                   Bukkit.getScheduler()
                       .runTaskLater(
                           plugin,
@@ -855,7 +857,7 @@ public class FakePlayerManager {
                                     + ","
                                     + safeTarget.getBlockZ());
                           },
-                          10L);
+                          25L);
                 } else {
                   me.bill.fakePlayerPlugin.util.FppLogger.warn(
                       "WorldGuard: bot '"
@@ -1704,6 +1706,8 @@ public class FakePlayerManager {
     if (useCmd != null) useCmd.stopUsing(target.getUuid());
     var followCmd = plugin.getFollowCommand();
     if (followCmd != null) followCmd.cleanupBot(target.getUuid());
+    var sleepCmd = plugin.getSleepCommand();
+    if (sleepCmd != null) sleepCmd.cleanupBot(target.getUuid());
 
     long leaveDelay = 1L;
 

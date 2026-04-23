@@ -58,6 +58,7 @@ public final class FakePlayerPlugin extends JavaPlugin {
   private me.bill.fakePlayerPlugin.fakeplayer.RemoteBotCache remoteBotCache;
   private me.bill.fakePlayerPlugin.sync.ConfigSyncManager configSyncManager;
   private SettingGui settingGui;
+  private me.bill.fakePlayerPlugin.gui.BotSettingGui botSettingGui;
   private me.bill.fakePlayerPlugin.gui.HelpGui helpGui;
   private me.bill.fakePlayerPlugin.fakeplayer.BotIdentityCache botIdentityCache;
   private XpCommand xpCommand;
@@ -67,6 +68,7 @@ public final class FakePlayerPlugin extends JavaPlugin {
   private me.bill.fakePlayerPlugin.command.UseCommand useCommand;
   private me.bill.fakePlayerPlugin.command.AttackCommand attackCommand;
   private me.bill.fakePlayerPlugin.command.FollowCommand followCommand;
+  private me.bill.fakePlayerPlugin.command.SleepCommand sleepCommand;
   private PathfindingService pathfindingService;
   private me.bill.fakePlayerPlugin.command.WaypointStore waypointStore;
   private me.bill.fakePlayerPlugin.command.StorageStore storageStore;
@@ -320,12 +322,17 @@ public final class FakePlayerPlugin extends JavaPlugin {
             this, fakePlayerManager, pathfindingService);
     commandManager.register(followCommand);
 
-    BotSettingGui botSettingGui = new BotSettingGui(this, fakePlayerManager);
+    sleepCommand =
+        new me.bill.fakePlayerPlugin.command.SleepCommand(
+            this, fakePlayerManager, pathfindingService);
+    commandManager.register(sleepCommand);
+
+    botSettingGui = new BotSettingGui(this, fakePlayerManager);
     inventoryCommand = new InventoryCommand(fakePlayerManager, this, botSettingGui);
     commandManager.register(inventoryCommand);
 
     settingGui = new SettingGui(this);
-    commandManager.register(new SettingCommand(settingGui));
+    commandManager.register(new SettingCommand(settingGui, botSettingGui, fakePlayerManager));
     Config.debugStartup("Commands registered: " + commandManager.getCommands().size() + " total.");
 
     botPersistence.setMoveCommand(moveCommand);
@@ -335,6 +342,13 @@ public final class FakePlayerPlugin extends JavaPlugin {
     botPersistence.setAttackCommand(attackCommand);
     botPersistence.setFollowCommand(followCommand);
     botPersistence.setWaypointStore(waypointStore);
+
+    sleepCommand.setMineCommand(mineCommand);
+    sleepCommand.setUseCommand(useCommand);
+    sleepCommand.setPlaceCommand(placeCommand);
+    sleepCommand.setAttackCommand(attackCommand);
+    sleepCommand.setFollowCommand(followCommand);
+    sleepCommand.setMoveCommand(moveCommand);
 
     var fppCmd = getCommand("fpp");
     if (fppCmd != null) {
@@ -601,6 +615,8 @@ public final class FakePlayerPlugin extends JavaPlugin {
 
     if (botSwapAI != null) botSwapAI.cancelAll();
 
+    if (sleepCommand != null) sleepCommand.stopAll();
+
     if (botPersistence != null && fakePlayerManager != null) {
       if (Config.persistOnRestart()) {
         Config.debugStartup(
@@ -729,6 +745,10 @@ public final class FakePlayerPlugin extends JavaPlugin {
 
   public me.bill.fakePlayerPlugin.command.FollowCommand getFollowCommand() {
     return followCommand;
+  }
+
+  public me.bill.fakePlayerPlugin.command.SleepCommand getSleepCommand() {
+    return sleepCommand;
   }
 
   public PathfindingService getPathfindingService() {

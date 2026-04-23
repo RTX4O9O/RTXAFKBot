@@ -339,6 +339,15 @@ public final class UseCommand implements FppCommand {
     return v != null && v;
   }
 
+  public void resumeUsing(FakePlayer fp) {
+    UUID uuid = fp.getUuid();
+    Location useLoc = getActiveUseLocation(uuid);
+    boolean once = isActiveUseOnce(uuid);
+    if (useLoc != null) {
+      resumeUsing(fp, once, useLoc);
+    }
+  }
+
   public void resumeUsing(FakePlayer fp, boolean once, Location loc) {
     if (fp == null || loc == null) return;
     Player bot = fp.getPlayer();

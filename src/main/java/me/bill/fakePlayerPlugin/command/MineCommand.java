@@ -552,6 +552,15 @@ public final class MineCommand implements FppCommand {
         "Restored area mining for bot '" + fp.getName() + "' (" + sel.blockCount() + " blocks).");
   }
 
+  public void resumeMining(FakePlayer fp) {
+    UUID uuid = fp.getUuid();
+    Location mineLoc = getActiveMineLocation(uuid);
+    boolean once = isActiveMineOnce(uuid);
+    if (mineLoc != null) {
+      resumeMining(fp, once, mineLoc);
+    }
+  }
+
   public void resumeMining(FakePlayer fp, boolean once, Location loc) {
     if (fp == null || loc == null) return;
     Player bot = fp.getPlayer();

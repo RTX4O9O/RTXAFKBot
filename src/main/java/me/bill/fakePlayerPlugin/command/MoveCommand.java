@@ -232,9 +232,9 @@ public final class MoveCommand implements FppCommand {
 
     if (args.length > 2) {
       String token = args[2];
-      if (token.contains(",")) {
+      if (token.contains(",") || token.contains(" ")) {
 
-        String[] parts = token.split(",");
+        String[] parts = token.contains(",") ? token.split(",") : token.split(" ");
         if (parts.length != 3) {
           sender.sendMessage(Lang.get("move-roam-invalid-coords"));
           return true;
@@ -330,8 +330,8 @@ public final class MoveCommand implements FppCommand {
       double radius = 20.0;
       if (args.length > 2) {
         String token = args[2];
-        if (token.contains(",")) {
-          String[] parts = token.split(",");
+        if (token.contains(",") || token.contains(" ")) {
+          String[] parts = token.contains(",") ? token.split(",") : token.split(" ");
           if (parts.length == 3) {
             try {
               double cx =
@@ -864,7 +864,7 @@ public final class MoveCommand implements FppCommand {
 
       if (sender instanceof Player p) {
         Location loc = p.getLocation();
-        out.add(loc.getBlockX() + "," + loc.getBlockY() + "," + loc.getBlockZ());
+        out.add(loc.getBlockX() + " " + loc.getBlockY() + " " + loc.getBlockZ());
       }
       out.add("10");
       out.add("20");
@@ -901,5 +901,17 @@ public final class MoveCommand implements FppCommand {
     activeRandomFlags.put(uid, random);
     if (random) startRandomPatrol(bot, route);
     else startPatrol(bot, route);
+  }
+
+  public void resumePatrol(@NotNull FakePlayer fp, @NotNull String routeName) {
+    Player bot = fp.getPlayer();
+    if (bot == null || !bot.isOnline()) return;
+    if (waypointStore == null) return;
+
+    List<Location> route = waypointStore.getRoute(routeName);
+    if (route == null || route.isEmpty()) return;
+
+    boolean random = isRandomPatrolForBot(fp.getUuid());
+    resumePatrol(bot, route, random, routeName);
   }
 }

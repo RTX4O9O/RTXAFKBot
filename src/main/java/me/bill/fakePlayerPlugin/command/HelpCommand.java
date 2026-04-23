@@ -1,6 +1,7 @@
 package me.bill.fakePlayerPlugin.command;
 
 import java.util.List;
+import me.bill.fakePlayerPlugin.config.Config;
 import me.bill.fakePlayerPlugin.gui.HelpGui;
 import me.bill.fakePlayerPlugin.lang.Lang;
 import me.bill.fakePlayerPlugin.permission.Perm;
@@ -59,7 +60,7 @@ public class HelpCommand implements FppCommand {
   @Override
   public boolean execute(CommandSender sender, String[] args) {
 
-    if (sender instanceof Player player && helpGui != null) {
+    if (sender instanceof Player player && helpGui != null && "gui".equals(Config.helpMode())) {
       helpGui.open(player, lastLabel);
       return true;
     }

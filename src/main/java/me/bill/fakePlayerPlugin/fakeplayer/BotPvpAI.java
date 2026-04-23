@@ -250,6 +250,7 @@ public final class BotPvpAI {
     int potionCooldown = 0;
     boolean isEating = false;
     int eatingTicks = 0;
+    int eatingSlot = -1;
     Material pendingFoodType = null;
 
     PotionPhase potionPhase = PotionPhase.IDLE;
@@ -347,6 +348,24 @@ public final class BotPvpAI {
 
       if (s.eatingTicks == 0) {
         s.isEating = false;
+
+        // Consume the food item after eating completes
+        ItemStack foodInHand = bot.getInventory().getItemInMainHand();
+        if (foodInHand != null && foodInHand.getType().isEdible()) {
+          foodInHand.setAmount(foodInHand.getAmount() - 1);
+          if (foodInHand.getAmount() <= 0) {
+            // Food fully consumed - restore original main hand item
+            if (s.eatingSlot >= 0 && s.eatingSlot < 36) {
+              ItemStack originalItem = bot.getInventory().getItem(s.eatingSlot);
+              bot.getInventory().setItemInMainHand(originalItem);
+              bot.getInventory().setItem(s.eatingSlot, null);
+            } else {
+              bot.getInventory().setItemInMainHand(null);
+            }
+          }
+        }
+        s.eatingSlot = -1;
+
         if (s.pendingFoodType != null) {
           applyFoodBenefits(bot, s.pendingFoodType);
           s.pendingFoodType = null;
@@ -1413,7 +1432,8 @@ public final class BotPvpAI {
     s.isEating = true;
     s.eatingTicks = 36;
     s.eatCooldown = EAT_COOLDOWN;
-    s.pendingFoodType = null;
+    s.pendingFoodType = food.getType();  // Remember food type for benefits
+    s.eatingSlot = slot;  // Remember where original main hand item is stored
     s.isFleeing = true;
   }
 
@@ -1577,7 +1597,7 @@ public final class BotPvpAI {
             inv.setItem(emptySlot, currentOffhand);
           } else {
 
-            bot.getWorld().dropItemNaturally(bot.getLocation(), currentOffhand);
+                        // No empty slot - consume the item instead of dropping it to prevent dupe
           }
         }
       }

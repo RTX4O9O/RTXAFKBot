@@ -109,6 +109,14 @@ public final class FakePlayer {
 
   private volatile boolean tabListDirty = true;
 
+  // ── Sleep system ──────────────────────────────────────────────────────────
+  /** Station location used as the center for bed searching. null = not configured. */
+  private Location sleepOrigin = null;
+  /** Bed-search radius in blocks. 0 = sleep disabled for this bot. */
+  private double sleepRadius = 0.0;
+  /** True while the bot is currently in the sleeping state. */
+  private boolean sleeping = false;
+
   public FakePlayer(UUID uuid, String name, PlayerProfile profile) {
     this.uuid = uuid;
     this.name = name;
@@ -585,5 +593,32 @@ public final class FakePlayer {
 
   public boolean hasPveMobType(String type) {
     return pveMobTypes.contains(type);
+  }
+
+  // ── Sleep system accessors ────────────────────────────────────────────────
+
+  @org.jetbrains.annotations.Nullable
+  public Location getSleepOrigin() {
+    return sleepOrigin;
+  }
+
+  public void setSleepOrigin(@org.jetbrains.annotations.Nullable Location origin) {
+    this.sleepOrigin = origin != null ? origin.clone() : null;
+  }
+
+  public double getSleepRadius() {
+    return sleepRadius;
+  }
+
+  public void setSleepRadius(double radius) {
+    this.sleepRadius = radius;
+  }
+
+  public boolean isSleeping() {
+    return sleeping;
+  }
+
+  public void setSleeping(boolean sleeping) {
+    this.sleeping = sleeping;
   }
 }

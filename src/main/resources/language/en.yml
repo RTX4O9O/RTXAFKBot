@@ -632,3 +632,38 @@ attack-mob-no-target: "{prefix}<gray><#0079FF>{name}</#0079FF><gray> ꜱᴄᴀɴ
 attack-mob-invalid-type: "{prefix}<red>ᴜɴᴋɴᴏᴡɴ ᴍᴏʙ ᴛʏᴘᴇ<dark_gray>: <#0079FF>{type}</#0079FF><dark_gray>."
 attack-mob-invalid-range: "{prefix}<red>ʀᴀɴɢᴇ ᴍᴜꜱᴛ ʙᴇ ʙᴇᴛᴡᴇᴇɴ <#0079FF>1</#0079FF> ᴀɴᴅ <#0079FF>64</#0079FF><red>."
 
+# ═════════════════════════════════════════════════════════════════════════════
+#  SETTINGS COMMAND
+# {name} — bot name typed by the player
+settings-bot-not-found: "{prefix}<red>ɴᴏ ᴀᴄᴛɪᴠᴇ ʙᴏᴛ ɴᴀᴍᴇᴅ <white>{name}<red>."
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  SLEEP COMMAND  (/fpp sleep)
+# ═════════════════════════════════════════════════════════════════════════════
+
+# Usage hint
+sleep-usage:           "{prefix}<red>ᴜꜱᴀɢᴇ<gray>: <#0079FF>/fpp sleep <bot|all> <x y z> <radius></#0079FF>  <dark_gray>|  <#0079FF>/fpp sleep <bot|all> --stop</#0079FF>"
+
+# Single-bot configure success  {name} {x} {y} {z} {radius}
+sleep-configured:      "{prefix}<green>ꜱʟᴇᴇᴘ ᴄᴏɴꜰɪɢᴜʀᴇᴅ ꜰᴏʀ <#0079FF>{name}</#0079FF><green>. ᴏʀɪɢɪɴ<dark_gray>: <white>{x} {y} {z} <green>ʀᴀᴅɪᴜꜱ<dark_gray>: <white>{radius}<green>."
+
+# Bulk configure success  {count} {radius} {skipped}
+sleep-all-configured:  "{prefix}<green>ꜱʟᴇᴇᴘ ᴄᴏɴꜰɪɢᴜʀᴇᴅ ꜰᴏʀ <#0079FF>{count}</#0079FF><green> ʙᴏᴛ(ꜱ) <dark_gray>(<gray>ʀᴀᴅɪᴜꜱ <#0079FF>{radius}</#0079FF><dark_gray>). <gray>ꜱᴋɪᴘᴘᴇᴅ <#0079FF>{skipped}</#0079FF><gray>."
+
+# Stopped  {name}
+sleep-stopped:         "{prefix}<gray>ꜱʟᴇᴇᴘ ᴅɪꜱᴀʙʟᴇᴅ ꜰᴏʀ <#0079FF>{name}</#0079FF><gray>."
+
+# Bulk stopped  {count}
+sleep-all-stopped:     "{prefix}<gray>ꜱʟᴇᴇᴘ ᴅɪꜱᴀʙʟᴇᴅ ꜰᴏʀ <#0079FF>{count}</#0079FF><gray> ʙᴏᴛ(ꜱ)."
+
+# Bot not found  {name}
+sleep-not-found:       "{prefix}<red>ɴᴏ ᴀᴄᴛɪᴠᴇ ʙᴏᴛ ɴᴀᴍᴇᴅ <#0079FF>{name}</#0079FF><red>."
+
+# Bot has no body / offline  {name}
+sleep-bot-offline:     "{prefix}<red><#0079FF>{name}</#0079FF><red> ʜᴀꜱ ɴᴏ ᴀᴄᴛɪᴠᴇ ᴘʟᴀʏᴇʀ ʙᴏᴅʏ."
+
+# Bad number arguments
+sleep-invalid-args:    "{prefix}<red>ɪɴᴠᴀʟɪᴅ ᴄᴏᴏʀᴅɪɴᴀᴛᴇꜱ ᴏʀ ʀᴀᴅɪᴜꜱ. ᴘʟᴇᴀꜱᴇ ᴘʀᴏᴠɪᴅᴇ ɴᴜᴍᴇʀɪᴄ ᴠᴀʟᴜᴇꜱ."
+
+

@@ -759,6 +759,15 @@ public final class AttackCommand implements FppCommand {
     return state != null && state.mobMode;
   }
 
+  public void resumeAttacking(FakePlayer fp) {
+    UUID uuid = fp.getUuid();
+    Location attackLoc = getActiveAttackLocation(uuid);
+    boolean once = isActiveAttackOnce(uuid);
+    if (attackLoc != null) {
+      resumeAttacking(fp, once, attackLoc);
+    }
+  }
+
   public void resumeAttacking(FakePlayer fp, boolean once, Location loc) {
     if (fp == null || loc == null) return;
     Player bot = fp.getPlayer();

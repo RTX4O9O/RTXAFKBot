@@ -34,8 +34,31 @@ public class BotSpawnProtectionListener implements Listener {
     UUID botUuid = player.getUniqueId();
     protectedBots.add(botUuid);
 
+    // Vanilla worlds (NORMAL/NETHER/THE_END) only need 5 ticks to block the
+    // synchronous NMS portal-spawn teleports.  Custom worlds (Environment.CUSTOM
+    // or any non-vanilla environment) additionally require protection against
+    // delayed PLUGIN-cause teleports fired by world-management plugins such as
+    // Multiverse-Core, EssentialsX, or CMI that run first-join spawn logic up to
+    // ~15 ticks after the PlayerJoinEvent.  Using 20 ticks covers both cases
+    // universally without affecting legitimate movement commands (which use
+    // NMS-level position updates, not Bukkit teleport events).
+    org.bukkit.World.Environment env = player.getWorld().getEnvironment();
+    boolean isVanillaDimension =
+        env == org.bukkit.World.Environment.NORMAL
+            || env == org.bukkit.World.Environment.NETHER
+            || env == org.bukkit.World.Environment.THE_END;
+    long protectionTicks = isVanillaDimension ? 5L : 20L;
+
     Config.debugNms(
-        "BotSpawnProtection: protecting " + player.getName() + " from teleports for 5 ticks");
+        "BotSpawnProtection: protecting "
+            + player.getName()
+            + " from teleports for "
+            + protectionTicks
+            + " ticks (world="
+            + player.getWorld().getName()
+            + ", env="
+            + env.name()
+            + ")");
 
     Bukkit.getScheduler()
         .runTaskLater(
@@ -44,7 +67,7 @@ public class BotSpawnProtectionListener implements Listener {
               protectedBots.remove(botUuid);
               Config.debugNms("BotSpawnProtection: removed protection for " + player.getName());
             },
-            5L);
+            protectionTicks);
   }
 
   @EventHandler(priority = EventPriority.HIGHEST)
@@ -62,11 +85,12 @@ public class BotSpawnProtectionListener implements Listener {
       return;
     }
 
-    // Block ALL other teleport causes during the 5-tick grace window.
-    // This covers PLUGIN and UNKNOWN (other-plugin interference) as well as
-    // NETHER_PORTAL / END_PORTAL / END_GATEWAY (dimension respawn logic that
-    // fires when a bot is spawned directly into the nether or end and has no
-    // prior player-data at that location).
+    // Block ALL other teleport causes during the grace window (5 ticks for vanilla
+    // worlds, 20 ticks for custom/non-vanilla worlds).
+    // This covers PLUGIN and UNKNOWN (other-plugin interference) such as Multiverse-Core
+    // first-join spawn teleports, as well as NETHER_PORTAL / END_PORTAL / END_GATEWAY
+    // (dimension respawn logic that fires when a bot is spawned directly into the nether
+    // or end and has no prior player-data at that location).
     event.setCancelled(true);
     Config.debugNms(
         "BotSpawnProtection: blocked "

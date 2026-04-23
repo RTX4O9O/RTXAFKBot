@@ -616,6 +616,19 @@ public final class PlaceCommand implements FppCommand {
     return state != null && state.once;
   }
 
+  public boolean isPlacing(UUID botUuid) {
+    return placeStates.containsKey(botUuid);
+  }
+
+  public void resumePlacing(FakePlayer fp) {
+    UUID uuid = fp.getUuid();
+    Location placeLoc = getActivePlaceLocation(uuid);
+    boolean once = isActivePlaceOnce(uuid);
+    if (placeLoc != null) {
+      resumePlacing(fp, once, placeLoc);
+    }
+  }
+
   public void resumePlacing(FakePlayer fp, boolean once, Location loc) {
     if (fp == null || loc == null) return;
     Player bot = fp.getPlayer();

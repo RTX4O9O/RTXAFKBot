@@ -1,5 +1,5 @@
 name: FakePlayerPlugin
-version: '1.6.6.2'
+version: '1.6.6.4'
 main: me.bill.fakePlayerPlugin.FakePlayerPlugin
 api-version: '1.21'
 authors: [ el_pepes ]
@@ -126,6 +126,7 @@ permissions:
       fpp.attack:               true
       fpp.find:                 true
       fpp.follow:               true
+      fpp.sleep:                true
       fpp.waypoint:             true
       fpp.badword:              true
       fpp.rename:               true
@@ -587,6 +588,10 @@ permissions:
 
   fpp.follow:
     description: Make a bot continuously follow a player using pathfinding.
+    default: op
+
+  fpp.sleep:
+    description: Set a sleep origin and radius for a bot — the bot auto-sleeps at night and wakes at dawn.
     default: op
 
   # ════════════════════════════════════════════════════════════════════════════

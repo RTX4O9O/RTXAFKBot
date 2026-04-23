@@ -5,7 +5,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Internal — managed automatically. Do NOT edit.
-config-version: 66
+config-version: 65
 language: en
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -239,13 +239,6 @@ pathfinding:
   max-nodes: 2000                # Node cap for plain searches
   max-nodes-extended: 4000       # Node cap when parkour/break/place are enabled
   max-fall: 3                    # Max blocks the bot will fall during navigation (1-16)
-
-  # ── Detour / Wall Avoidance ────────────────────────────────────────────────
-  detour-attempts: 5             # How many lateral sweep steps to try per side when A* fails
-  detour-radius: 16.0            # Total lateral radius (blocks) spread across detour-attempts
-
-  # ── Sprint-Jump ────────────────────────────────────────────────────────────
-  sprint-jump: false             # Bots periodically sprint-jump while navigating (per-bot overridable)
 
 # ── PVP AI  ·  ⚠ COMING SOON ─────────────────────────────────────────────────
 # Restricted to internal testing — all settings below are locked to their defaults.

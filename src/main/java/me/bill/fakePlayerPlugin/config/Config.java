@@ -91,6 +91,14 @@ public final class Config {
     return cfg.getBoolean("update-checker.enabled", true);
   }
 
+  /**
+   * Help display mode. "gui" (default) opens the HelpGui chest for players; "text" always uses
+   * the paginated chat renderer. Controlled by the "help.mode" config key.
+   */
+  public static String helpMode() {
+    return cfg.getString("help.mode", "gui").toLowerCase();
+  }
+
   public static boolean metricsEnabled() {
     return cfg.getBoolean("metrics.enabled", true);
   }

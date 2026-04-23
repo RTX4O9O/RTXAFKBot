@@ -123,6 +123,8 @@ public final class Perm {
 
   public static final String FOLLOW = "fpp.follow";
 
+  public static final String SLEEP = "fpp.sleep";
+
   public static final String PLACE = "fpp.place";
 
   public static final String PLACE_START = "fpp.place.start";

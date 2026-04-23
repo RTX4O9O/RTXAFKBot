@@ -254,6 +254,14 @@ public final class FollowCommand implements FppCommand {
     startFollowing(fp, target);
   }
 
+  public void resumeFollowing(@NotNull FakePlayer fp) {
+    UUID uuid = fp.getUuid();
+    UUID targetUuid = getFollowTarget(uuid);
+    if (targetUuid != null) {
+      resumeFollowing(fp, targetUuid);
+    }
+  }
+
   public void resumeFollowing(@NotNull FakePlayer fp, @NotNull UUID targetUuid) {
     Player target = Bukkit.getPlayer(targetUuid);
     if (target == null || !target.isOnline()) return;

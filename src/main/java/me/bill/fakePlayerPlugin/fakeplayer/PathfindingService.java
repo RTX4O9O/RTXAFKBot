@@ -32,6 +32,7 @@ public final class PathfindingService {
     USE,
     ATTACK,
     FOLLOW,
+    SLEEP,
     SYSTEM
   }
 
