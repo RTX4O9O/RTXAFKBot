@@ -27,9 +27,7 @@ public class ServerListListener implements Listener {
 
   @EventHandler(priority = EventPriority.HIGHEST)
   public void onPing(PaperServerListPingEvent event) {
-    if (shouldKeepPlayersHidden(event)) {
-      return;
-    }
+    boolean hidePlayers = shouldKeepPlayersHidden(event);
 
     List<FakePlayer> localBots = new ArrayList<>(manager.getActivePlayers());
 
@@ -50,6 +48,12 @@ public class ServerListListener implements Listener {
 
       int realPlayers = Math.max(0, Bukkit.getOnlinePlayers().size() - localBots.size());
       event.setNumPlayers(realPlayers);
+    }
+
+    if (hidePlayers) {
+      List<PaperServerListPingEvent.ListedPlayerInfo> listed = event.getListedPlayers();
+      listed.clear();
+      return;
     }
 
     List<PaperServerListPingEvent.ListedPlayerInfo> freshSample = new ArrayList<>();

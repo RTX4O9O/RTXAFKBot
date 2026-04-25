@@ -437,6 +437,10 @@ public final class Config {
     return cfg.getDouble("pathfinding.follow-recalc-distance", 3.5);
   }
 
+  public static int pathfindingFollowRecalcInterval() {
+    return Math.max(1, cfg.getInt("pathfinding.follow-recalc-interval", 100));
+  }
+
   public static int pathfindingRecalcInterval() {
     return Math.max(1, cfg.getInt("pathfinding.recalc-interval", 60));
   }

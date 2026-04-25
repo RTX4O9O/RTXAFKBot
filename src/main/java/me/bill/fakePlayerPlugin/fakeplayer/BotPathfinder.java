@@ -18,17 +18,23 @@ public final class BotPathfinder {
 
   private BotPathfinder() {}
 
-  private static final int WALK = 10;
-  private static final int DIAGONAL = 14;
-  private static final int ASCEND = 12;
-  private static final int CLIMB = 11;
-  private static final int FALL_PER = 3;
-  private static final int PARKOUR_C = 20;
-  private static final int BREAK_C = 30;
-  private static final int PLACE_C = 20;
-  private static final int PILLAR_C = 18;
-  private static final int SWIM_C = 14;
-  private static final int WATER_PEN = 6;
+  // Cost model adapted from Baritone's 1.21 movement timing math.
+  private static final double WALK = 20.0 / 4.317;
+  private static final double DIAGONAL = WALK * Math.sqrt(2.0);
+  private static final double CLIMB_UP = 20.0 / 2.35;
+  private static final double CLIMB_DOWN = 20.0 / 3.0;
+  private static final double SWIM = 20.0 / 2.2;
+  private static final double WALK_OFF_BLOCK_COST = WALK * 0.8;
+  private static final double CENTER_AFTER_FALL_COST = WALK - WALK_OFF_BLOCK_COST;
+  private static final double FALL_1_25_BLOCKS_COST = distanceToTicks(1.25);
+  private static final double FALL_0_25_BLOCKS_COST = distanceToTicks(0.25);
+  private static final double ASCEND = FALL_1_25_BLOCKS_COST - FALL_0_25_BLOCKS_COST + 2.0;
+  private static final double PARKOUR_C = ASCEND + WALK * 2.0;
+  private static final double BREAK_C = WALK * 6.0;
+  private static final double PLACE_C = WALK * 4.0;
+  private static final double PILLAR_C = ASCEND + PLACE_C;
+  private static final double WATER_PEN = SWIM - WALK;
+  private static final double SLOW_BLOCK_PEN = WALK;
 
   private static final Set<Material> HAZARDS =
       EnumSet.of(
@@ -48,10 +54,10 @@ public final class BotPathfinder {
       EnumSet.of(Material.SOUL_SAND, Material.HONEY_BLOCK, Material.COBWEB);
 
   private static final int[][] DIRS = {
-    {1, 0, WALK}, {-1, 0, WALK},
-    {0, 1, WALK}, {0, -1, WALK},
-    {1, 1, DIAGONAL}, {1, -1, DIAGONAL},
-    {-1, 1, DIAGONAL}, {-1, -1, DIAGONAL}
+    {1, 0}, {-1, 0},
+    {0, 1}, {0, -1},
+    {1, 1}, {1, -1},
+    {-1, 1}, {-1, -1}
   };
 
   private static final int[][] CARDINAL = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
@@ -63,6 +69,8 @@ public final class BotPathfinder {
     ASCEND,
     CLIMB,
     DESCEND,
+    ELEVATOR_UP,
+    ELEVATOR_DOWN,
     PARKOUR,
     BREAK,
     PLACE,
@@ -89,11 +97,13 @@ public final class BotPathfinder {
     }
   }
 
-  private record Node(Pos pos, Node parent, int g, int h, MoveType action) {
-    int f() {
+  private record Node(Pos pos, Node parent, double g, double h, MoveType action) {
+    double f() {
       return g + h;
     }
   }
+
+  private record Neighbor(int x, int y, int z, double cost, MoveType type) {}
 
   /**
    * Attempts to find a detour waypoint when the direct A* path between (sx,sy,sz) and (tx,ty,tz)
@@ -236,46 +246,18 @@ public final class BotPathfinder {
     }
 
     Pos start = snap(world, sx, sy, sz, opts, true);
-    Pos goal = snap(world, tx, ty, tz, opts, false);
-    if (start == null || goal == null) return null;
-    if (start.equals(goal))
-      return List.of(new Move(start.x(), start.y(), start.z(), MoveType.WALK));
+    if (start == null) return null;
 
     int nodeLimit =
         opts.anyEnabled() ? Config.pathfindingMaxNodesExtended() : Config.pathfindingMaxNodes();
 
-    PriorityQueue<Node> open = new PriorityQueue<>(Comparator.comparingInt(Node::f));
-
-    Map<Long, Integer> best = new HashMap<>(nodeLimit);
-
-    open.add(new Node(start, null, 0, heuristic(start, goal), MoveType.WALK));
-    best.put(posKey(start.x(), start.y(), start.z()), 0);
-
-    int explored = 0;
-    while (!open.isEmpty() && explored++ < nodeLimit) {
-      Node cur = open.poll();
-
-      long curKey = posKey(cur.pos().x(), cur.pos().y(), cur.pos().z());
-      Integer bestG = best.get(curKey);
-      if (bestG != null && cur.g() > bestG) continue;
-
-      if (Math.abs(cur.pos().x() - goal.x()) <= 1
-          && cur.pos().y() == goal.y()
-          && Math.abs(cur.pos().z() - goal.z()) <= 1) {
-        return buildPathMoves(cur);
+    for (Pos goal : prioritizedGoals(world, tx, ty, tz, opts)) {
+      if (start.equals(goal)) {
+        return List.of(new Move(start.x(), start.y(), start.z(), MoveType.WALK));
       }
-
-      for (int[] nb : neighbors(world, cur.pos().x(), cur.pos().y(), cur.pos().z(), opts)) {
-        Pos np = new Pos(nb[0], nb[1], nb[2]);
-        long npKey = posKey(nb[0], nb[1], nb[2]);
-        int newG = cur.g() + nb[3];
-        MoveType mt = MOVE_TYPES[nb[4]];
-
-        Integer existing = best.get(npKey);
-        if (existing == null || newG < existing) {
-          best.put(npKey, newG);
-          open.add(new Node(np, cur, newG, heuristic(np, goal), mt));
-        }
+      List<Move> path = findPathMovesInternal(world, start, goal, opts, nodeLimit);
+      if (path != null) {
+        return path;
       }
     }
 
@@ -291,8 +273,6 @@ public final class BotPathfinder {
     return result;
   }
 
-  private static final MoveType[] MOVE_TYPES = MoveType.values();
-
   // Key layout (64 bits):
   //   bits 63-38  : x + 33554432   (26 bits, covers ±30M blocks)
   //   bits 37-12  : z + 33554432   (26 bits, covers ±30M blocks)
@@ -305,25 +285,16 @@ public final class BotPathfinder {
     return ((long) (x + X_BIAS) << 38) | ((long) (z + Z_BIAS) << 12) | (long) (y + Y_BIAS);
   }
 
-  private static List<int[]> neighbors(World world, int x, int y, int z, PathOptions opts) {
-    List<int[]> out = new ArrayList<>(48);
-
-    final int WK = MoveType.WALK.ordinal(),
-        AS = MoveType.ASCEND.ordinal(),
-        CL = MoveType.CLIMB.ordinal(),
-        DE = MoveType.DESCEND.ordinal(),
-        PK = MoveType.PARKOUR.ordinal(),
-        BK = MoveType.BREAK.ordinal(),
-        PL = MoveType.PLACE.ordinal(),
-        PI = MoveType.PILLAR.ordinal(),
-        SW = MoveType.SWIM.ordinal();
+  private static List<Neighbor> neighbors(World world, int x, int y, int z, PathOptions opts) {
+    List<Neighbor> out = new ArrayList<>(48);
 
     int maxFall = Config.pathfindingMaxFall();
 
     for (int[] d : DIRS) {
-      int dx = d[0], dz = d[1], base = d[2];
+      int dx = d[0], dz = d[1];
       int nx = x + dx, nz = z + dz;
       boolean isDiag = (dx != 0 && dz != 0);
+      double base = isDiag ? DIAGONAL : WALK;
 
       if (isDiag) {
         if (blocksDiagonal(world, x + dx, y, z)
@@ -342,42 +313,53 @@ public final class BotPathfinder {
           isLava(world, nx, y, nz) || isLava(world, nx, y + 1, nz) || isLava(world, nx, y - 1, nz);
       boolean srcClimbable = isClimbablePosition(world, x, y, z);
       boolean destClimbable = isClimbablePosition(world, nx, y, nz);
+      boolean destClimbableUp = isClimbablePosition(world, nx, y + 1, nz);
+      boolean destClimbableDown = isClimbablePosition(world, nx, y - 1, nz);
+      boolean srcBubbleUp = isBubbleElevatorUp(world, x, y, z);
+      boolean srcBubbleDown = isBubbleElevatorDown(world, x, y, z);
+      boolean destBubble = isBubbleColumn(world, nx, y, nz);
 
       if (feetClear && headClear && floorSolid) {
         if (opts.avoidWater() && destInWater && !srcInWater) continue;
         if (opts.avoidLava() && destInLava && !srcInLava) continue;
-        if (opts.avoidWater() && isNearWater(world, nx, y, nz) && !srcInWater) continue;
+        if (opts.avoidWater() && isNearWater(world, nx, y, nz) && !srcInWater && !destBubble) continue;
         if (opts.avoidLava() && isNearLava(world, nx, y, nz) && !srcInLava) continue;
-        int cost = base;
+        double cost = base;
 
         if (isWater(world, nx, y, nz)) cost += WATER_PEN;
-        else if (isSlowBlock(world, nx, y, nz)) cost += WATER_PEN;
+        else if (isSlowBlock(world, nx, y, nz)) cost += SLOW_BLOCK_PEN;
 
         if (isSafeStandPosition(world, nx, y, nz)) {
-          out.add(new int[] {nx, y, nz, cost, WK});
+          out.add(new Neighbor(nx, y, nz, cost, MoveType.WALK));
         }
       } else if (!isDiag && opts.breakBlocks() && floorSolid) {
-        int cost = base;
+        double cost = base;
         if (!feetClear && canBreak(world, nx, y, nz)) cost += BREAK_C;
         else if (!feetClear) continue;
         if (!headClear && canBreak(world, nx, y + 1, nz)) cost += BREAK_C;
         else if (!headClear) continue;
         if (cost > base) {
-          out.add(new int[] {nx, y, nz, cost, BK});
+          out.add(new Neighbor(nx, y, nz, cost, MoveType.BREAK));
         }
       }
 
       if (!isDiag && (srcClimbable || destClimbable)) {
         if (destClimbable && isSafeStandPosition(world, nx, y, nz)) {
-          out.add(new int[] {nx, y, nz, base + CLIMB, CL});
+          out.add(new Neighbor(nx, y, nz, base + WALK, MoveType.CLIMB));
         }
+      }
+      if (!isDiag && destClimbableUp && canOccupyClimbNode(world, nx, y + 1, nz)) {
+        out.add(new Neighbor(nx, y + 1, nz, base + CLIMB_UP, MoveType.CLIMB));
+      }
+      if (!isDiag && srcClimbable && destClimbableDown && canOccupyClimbNode(world, nx, y - 1, nz)) {
+        out.add(new Neighbor(nx, y - 1, nz, base + CLIMB_DOWN, MoveType.CLIMB));
       }
 
       if (!isDiag && opts.placeBlocks() && !floorSolid && feetClear && headClear) {
 
         if (hasAdjacentSolid(world, nx, y - 1, nz)) {
           if (isSafeStandPosition(world, nx, y, nz)) {
-            out.add(new int[] {nx, y, nz, base + PLACE_C, PL});
+            out.add(new Neighbor(nx, y, nz, base + PLACE_C, MoveType.PLACE));
           }
         }
       }
@@ -389,9 +371,9 @@ public final class BotPathfinder {
 
       if (srcHeadClear && tgtFeetClear && tgtHeadClear && tgtFloorSolid) {
         if (isSafeStandPosition(world, nx, y + 1, nz)) {
-          int cost = base + ASCEND;
-          if (isSlowBlock(world, x, y, z)) cost += 4;
-          out.add(new int[] {nx, y + 1, nz, cost, AS});
+          double cost = base + ASCEND;
+          if (isSlowBlock(world, x, y, z)) cost += SLOW_BLOCK_PEN;
+          out.add(new Neighbor(nx, y + 1, nz, cost, MoveType.ASCEND));
         }
       } else if (!isDiag
           && opts.breakBlocks()
@@ -400,7 +382,7 @@ public final class BotPathfinder {
           && !srcHeadClear
           && canBreak(world, x, y + 2, z)
           && tgtHeadClear) {
-        out.add(new int[] {nx, y + 1, nz, base + ASCEND + BREAK_C, BK});
+        out.add(new Neighbor(nx, y + 1, nz, base + ASCEND + BREAK_C, MoveType.BREAK));
       }
 
       if (feetClear && headClear) {
@@ -411,10 +393,7 @@ public final class BotPathfinder {
               && canPassThrough(world, nx, ny, nz)
               && canPassThrough(world, nx, ny + 1, nz)) {
             if (isSafeStandPosition(world, nx, ny, nz)) {
-              int fallCost = base + drop * FALL_PER;
-
-              if (drop >= 4) fallCost += (drop - 3) * 8;
-              out.add(new int[] {nx, ny, nz, fallCost, DE});
+              out.add(new Neighbor(nx, ny, nz, base + fallCost(drop), MoveType.DESCEND));
             }
             break;
           }
@@ -426,45 +405,62 @@ public final class BotPathfinder {
           && isWater(world, nx, y, nz)
           && isWater(world, nx, y + 1, nz)) {
 
-        out.add(new int[] {nx, y, nz, SWIM_C, SW});
+        out.add(new Neighbor(nx, y, nz, SWIM, MoveType.SWIM));
 
         if (canPassThrough(world, nx, y + 2, nz) || isWater(world, nx, y + 2, nz)) {
-          out.add(new int[] {nx, y + 1, nz, SWIM_C + 2, SW});
+          out.add(new Neighbor(nx, y + 1, nz, SWIM + CLIMB_UP * 0.5, MoveType.SWIM));
         }
 
         if (isWater(world, nx, y - 1, nz) || canPassThrough(world, nx, y - 1, nz)) {
-          out.add(new int[] {nx, y - 1, nz, SWIM_C - 1, SW});
+          out.add(new Neighbor(nx, y - 1, nz, Math.max(1.0, SWIM - 1.0), MoveType.SWIM));
         }
       }
 
       if (!isDiag && opts.parkour()) {
-        tryParkour(world, x, y, z, dx, dz, out, PK, feetClear, headClear);
+        tryParkour(world, x, y, z, dx, dz, out, feetClear, headClear);
       }
     }
 
     if (opts.placeBlocks() && canPassThrough(world, x, y + 2, z)) {
 
       if (canPassThrough(world, x, y + 1, z) && canPassThrough(world, x, y + 2, z)) {
-        out.add(new int[] {x, y + 1, z, PILLAR_C, PI});
+        out.add(new Neighbor(x, y + 1, z, PILLAR_C, MoveType.PILLAR));
       }
     }
 
     if ((!opts.avoidWater() || isWater(world, x, y + 1, z)) && isWater(world, x, y, z)) {
       if (isWater(world, x, y + 1, z) || canPassThrough(world, x, y + 1, z)) {
-        out.add(new int[] {x, y + 1, z, SWIM_C, SW});
+        out.add(new Neighbor(x, y + 1, z, SWIM, MoveType.SWIM));
       }
       if (isWater(world, x, y - 1, z) || canPassThrough(world, x, y - 1, z)) {
-        out.add(new int[] {x, y - 1, z, SWIM_C - 1, SW});
+        out.add(new Neighbor(x, y - 1, z, Math.max(1.0, SWIM - 1.0), MoveType.SWIM));
       }
     }
 
     boolean srcClimbable = isClimbablePosition(world, x, y, z);
     if (srcClimbable) {
       if (canOccupyClimbNode(world, x, y + 1, z)) {
-        out.add(new int[] {x, y + 1, z, CLIMB, CL});
+        out.add(new Neighbor(x, y + 1, z, CLIMB_UP, MoveType.CLIMB));
       }
       if (canOccupyClimbNode(world, x, y - 1, z)) {
-        out.add(new int[] {x, y - 1, z, CLIMB, CL});
+        out.add(new Neighbor(x, y - 1, z, CLIMB_DOWN, MoveType.CLIMB));
+      }
+    }
+
+    if (isBubbleElevatorUp(world, x, y, z)) {
+      if (canOccupyBubbleNode(world, x, y + 1, z)) {
+        out.add(new Neighbor(x, y + 1, z, CLIMB_UP * 0.8, MoveType.ELEVATOR_UP));
+      }
+      if (canOccupyBubbleNode(world, x, y + 2, z)) {
+        out.add(new Neighbor(x, y + 2, z, CLIMB_UP * 1.4, MoveType.ELEVATOR_UP));
+      }
+    }
+    if (isBubbleElevatorDown(world, x, y, z)) {
+      if (canOccupyBubbleNode(world, x, y - 1, z)) {
+        out.add(new Neighbor(x, y - 1, z, CLIMB_DOWN * 0.8, MoveType.ELEVATOR_DOWN));
+      }
+      if (canOccupyBubbleNode(world, x, y - 2, z)) {
+        out.add(new Neighbor(x, y - 2, z, CLIMB_DOWN * 1.4, MoveType.ELEVATOR_DOWN));
       }
     }
 
@@ -478,8 +474,7 @@ public final class BotPathfinder {
       int z,
       int dx,
       int dz,
-      List<int[]> out,
-      int PK,
+      List<Neighbor> out,
       boolean gap1FeetClear,
       boolean gap1HeadClear) {
 
@@ -508,7 +503,7 @@ public final class BotPathfinder {
             && canPassThrough(world, lx, y + 1, lz)
             && canPassThrough(world, lx, y + 2, lz)) {
           if (!isHazard(world, lx, y + 1, lz)) {
-            out.add(new int[] {lx, y + 1, lz, WALK * dist + PARKOUR_C + ASCEND, PK});
+            out.add(new Neighbor(lx, y + 1, lz, WALK * dist + PARKOUR_C + ASCEND, MoveType.PARKOUR));
           }
         }
         break;
@@ -516,7 +511,7 @@ public final class BotPathfinder {
 
       if (canStandOn(world, lx, y - 1, lz)) {
         if (!isHazard(world, lx, y, lz) && !isHazard(world, lx, y - 1, lz)) {
-          out.add(new int[] {lx, y, lz, WALK * dist + PARKOUR_C, PK});
+          out.add(new Neighbor(lx, y, lz, WALK * dist + PARKOUR_C, MoveType.PARKOUR));
         }
       }
     }
@@ -532,6 +527,7 @@ public final class BotPathfinder {
       Material mat = block.getType();
 
       if (mat.isAir()) return true;
+      if (Tag.CLIMBABLE.isTagged(mat)) return true;
 
       if (mat == Material.WATER) return true;
 
@@ -652,8 +648,10 @@ public final class BotPathfinder {
   }
 
   public static boolean isClimbablePosition(World world, int x, int y, int z) {
-    if (!inBounds(world, y) || !inBounds(world, y + 1)) return false;
-    return isClimbable(world, x, y, z) || isClimbable(world, x, y + 1, z);
+    if (!inBounds(world, y - 1) || !inBounds(world, y + 1)) return false;
+    return isClimbable(world, x, y - 1, z)
+        || isClimbable(world, x, y, z)
+        || isClimbable(world, x, y + 1, z);
   }
 
   private static boolean isSafeStandPosition(World world, int x, int y, int z) {
@@ -689,6 +687,30 @@ public final class BotPathfinder {
     }
   }
 
+  private static boolean isBubbleColumn(World world, int x, int y, int z) {
+    if (y < world.getMinHeight() || y > world.getMaxHeight()) return false;
+    try {
+      if (!world.isChunkLoaded(x >> 4, z >> 4)) {
+        return false;
+      }
+      return world.getBlockAt(x, y, z).getType() == Material.BUBBLE_COLUMN;
+    } catch (Exception e) {
+      return false;
+    }
+  }
+
+  private static boolean isBubbleElevatorUp(World world, int x, int y, int z) {
+    if (!isBubbleColumn(world, x, y, z)) return false;
+    return world.getBlockAt(x, y - 1, z).getType() == Material.SOUL_SAND
+        || isBubbleColumn(world, x, y - 1, z);
+  }
+
+  private static boolean isBubbleElevatorDown(World world, int x, int y, int z) {
+    if (!isBubbleColumn(world, x, y, z)) return false;
+    return world.getBlockAt(x, y - 1, z).getType() == Material.MAGMA_BLOCK
+        || isBubbleColumn(world, x, y - 1, z);
+  }
+
   private static boolean isLava(World world, int x, int y, int z) {
     if (y < world.getMinHeight() || y > world.getMaxHeight()) return false;
     try {
@@ -704,7 +726,9 @@ public final class BotPathfinder {
   private static boolean isNearWater(World world, int x, int y, int z) {
     for (int dx = -1; dx <= 1; dx++) {
       for (int dz = -1; dz <= 1; dz++) {
-        if (isWater(world, x + dx, y, z + dz) || isWater(world, x + dx, y - 1, z + dz)) return true;
+        for (int dy = -1; dy <= 2; dy++) {
+          if (isWater(world, x + dx, y + dy, z + dz)) return true;
+        }
       }
     }
     return false;
@@ -735,6 +759,12 @@ public final class BotPathfinder {
     if (!inBounds(world, y) || !inBounds(world, y + 1)) return false;
     if (walkable(world, x, y, z)) return true;
     return isClimbablePosition(world, x, y, z);
+  }
+
+  private static boolean canOccupyBubbleNode(World world, int x, int y, int z) {
+    if (!inBounds(world, y) || !inBounds(world, y + 1)) return false;
+    return isBubbleColumn(world, x, y, z)
+        || (canPassThrough(world, x, y, z) && (isBubbleColumn(world, x, y + 1, z) || isWater(world, x, y, z)));
   }
 
   private static boolean blocksDiagonal(World world, int x, int y, int z) {
@@ -824,13 +854,132 @@ public final class BotPathfinder {
     return null;
   }
 
-  private static int heuristic(Pos a, Pos b) {
+  private static List<Pos> prioritizedGoals(World world, int x, int y, int z, PathOptions opts) {
+    LinkedHashMap<Long, Pos> ordered = new LinkedHashMap<>();
+
+    addPreferredGoal(ordered, snapExactGoal(world, x, y, z, opts));
+
+    for (int radius = 1; radius <= 2; radius++) {
+      for (int[] off : offsetsForRadius(radius)) {
+        addPreferredGoal(ordered, snapExactGoal(world, x + off[0], y, z + off[1], opts));
+      }
+    }
+
+    addPreferredGoal(ordered, snap(world, x, y, z, opts, false));
+
+    return new ArrayList<>(ordered.values());
+  }
+
+  private static int[][] offsetsForRadius(int radius) {
+    if (radius == 1) {
+      return new int[][] {
+        {1, 0}, {-1, 0}, {0, 1}, {0, -1},
+        {1, 1}, {1, -1}, {-1, 1}, {-1, -1}
+      };
+    }
+    return new int[][] {
+      {2, 0}, {-2, 0}, {0, 2}, {0, -2},
+      {2, 1}, {2, -1}, {-2, 1}, {-2, -1},
+      {1, 2}, {-1, 2}, {1, -2}, {-1, -2},
+      {2, 2}, {2, -2}, {-2, 2}, {-2, -2}
+    };
+  }
+
+  private static void addPreferredGoal(LinkedHashMap<Long, Pos> ordered, Pos pos) {
+    if (pos == null) return;
+    ordered.putIfAbsent(posKey(pos.x(), pos.y(), pos.z()), pos);
+  }
+
+  private static Pos snapExactGoal(World world, int x, int y, int z, PathOptions opts) {
+    if (walkable(world, x, y, z) || isClimbablePosition(world, x, y, z)) {
+      return new Pos(x, y, z);
+    }
+    if (isWater(world, x, y, z) && !opts.avoidWater()) {
+      return new Pos(x, y, z);
+    }
+    if (isLava(world, x, y, z) && !opts.avoidLava()) {
+      return new Pos(x, y, z);
+    }
+    return null;
+  }
+
+  private static List<Move> findPathMovesInternal(
+      World world, Pos start, Pos goal, PathOptions opts, int nodeLimit) {
+    PriorityQueue<Node> open = new PriorityQueue<>(Comparator.comparingDouble(Node::f));
+    Map<Long, Double> best = new HashMap<>(nodeLimit);
+
+    open.add(new Node(start, null, 0, heuristic(start, goal), MoveType.WALK));
+    best.put(posKey(start.x(), start.y(), start.z()), 0.0);
+
+    int explored = 0;
+    while (!open.isEmpty() && explored++ < nodeLimit) {
+      Node cur = open.poll();
+
+      long curKey = posKey(cur.pos().x(), cur.pos().y(), cur.pos().z());
+      Double bestG = best.get(curKey);
+      if (bestG != null && cur.g() > bestG) continue;
+
+      if (Math.abs(cur.pos().x() - goal.x()) <= 1
+          && cur.pos().y() == goal.y()
+          && Math.abs(cur.pos().z() - goal.z()) <= 1) {
+        return buildPathMoves(cur);
+      }
+
+      for (Neighbor nb : neighbors(world, cur.pos().x(), cur.pos().y(), cur.pos().z(), opts)) {
+        Pos np = new Pos(nb.x(), nb.y(), nb.z());
+        long npKey = posKey(nb.x(), nb.y(), nb.z());
+        double newG = cur.g() + nb.cost();
+        MoveType mt = nb.type();
+
+        Double existing = best.get(npKey);
+        if (existing == null || newG < existing) {
+          best.put(npKey, newG);
+          open.add(new Node(np, cur, newG, heuristic(np, goal), mt));
+        }
+      }
+    }
+
+    return null;
+  }
+
+  private static double heuristic(Pos a, Pos b) {
     int dx = Math.abs(a.x() - b.x());
     int dy = Math.abs(a.y() - b.y());
     int dz = Math.abs(a.z() - b.z());
-    int maxXZ = Math.max(dx, dz), minXZ = Math.min(dx, dz);
+    double xz = octileHeuristic(dx, dz);
+    double vertical =
+        a.y() > b.y()
+            ? (FALL_1_25_BLOCKS_COST / 2.0) * dy
+            : ASCEND * dy;
+    return xz + vertical;
+  }
 
-    return (WALK * maxXZ) + ((DIAGONAL - WALK) * minXZ) + dy * ASCEND;
+  private static double octileHeuristic(int dx, int dz) {
+    int straight = Math.abs(dx - dz);
+    int diagonal = Math.min(dx, dz);
+    return straight * WALK + diagonal * DIAGONAL;
+  }
+
+  private static double distanceToTicks(double distance) {
+    if (distance <= 0.0) return 0.0;
+    double remaining = distance;
+    int tickCount = 0;
+    while (true) {
+      double fallDistance = velocity(tickCount);
+      if (remaining <= fallDistance) {
+        return tickCount + remaining / fallDistance;
+      }
+      remaining -= fallDistance;
+      tickCount++;
+    }
+  }
+
+  private static double velocity(int ticks) {
+    return (Math.pow(0.98, ticks) - 1.0) * -3.92;
+  }
+
+  private static double fallCost(int drop) {
+    return WALK_OFF_BLOCK_COST + distanceToTicks(drop) + CENTER_AFTER_FALL_COST;
   }
 
   private static boolean inBounds(World world, int y) {

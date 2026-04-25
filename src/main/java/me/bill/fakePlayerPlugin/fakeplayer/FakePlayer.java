@@ -98,6 +98,8 @@ public final class FakePlayer {
 
   private boolean navAvoidLava = false;
 
+  private boolean defaultWaterPathAvoidanceEnabled = true;
+
   private boolean swimAiEnabled = Config.swimAiEnabled();
 
   private int chunkLoadRadius = -1;
@@ -430,6 +432,14 @@ public final class FakePlayer {
 
   public void setNavAvoidLava(boolean v) {
     this.navAvoidLava = v;
+  }
+
+  public boolean isDefaultWaterPathAvoidanceEnabled() {
+    return defaultWaterPathAvoidanceEnabled;
+  }
+
+  public void setDefaultWaterPathAvoidanceEnabled(boolean v) {
+    this.defaultWaterPathAvoidanceEnabled = v;
   }
 
   public boolean isSwimAiEnabled() {

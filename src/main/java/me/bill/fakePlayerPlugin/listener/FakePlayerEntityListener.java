@@ -113,12 +113,10 @@ public class FakePlayerEntityListener implements Listener {
 
   @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
   public void onEntityDamageConfirmed(EntityDamageEvent event) {
-    if (!isFakeBotBody(event.getEntity())) return;
-    if (!Config.hurtSound()) return;
-    Location loc = event.getEntity().getLocation();
-    if (loc.getWorld() != null) {
-      loc.getWorld().playSound(loc, Sound.ENTITY_PLAYER_HURT, SoundCategory.PLAYERS, 1.0f, 1.0f);
-    }
+    if (!(event.getEntity() instanceof Player bot)) return;
+    FakePlayer fp = manager.getByEntity(bot);
+    if (fp == null) return;
+    manager.playHurtFeedback(fp, bot);
   }
 
   @EventHandler(priority = EventPriority.NORMAL, ignoreCancelled = true)

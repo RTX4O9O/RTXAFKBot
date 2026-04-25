@@ -412,10 +412,15 @@ public final class PlaceCommand implements FppCommand {
 
   private void startNavigation(FakePlayer fp, Location dest, Runnable onArrive) {
     // Force placeBlocks=true so the bot can bridge gaps en-route to its target.
+    me.bill.fakePlayerPlugin.fakeplayer.BotPathfinder.PathOptions baseOpts =
+        me.bill.fakePlayerPlugin.fakeplayer.PathfindingService.resolvePathOptions(fp);
     me.bill.fakePlayerPlugin.fakeplayer.BotPathfinder.PathOptions opts =
         new me.bill.fakePlayerPlugin.fakeplayer.BotPathfinder.PathOptions(
-            fp.isNavParkour(), fp.isNavBreakBlocks(), true,
-            fp.isNavAvoidWater(), fp.isNavAvoidLava());
+            fp.isNavParkour(),
+            fp.isNavBreakBlocks(),
+            true,
+            baseOpts.avoidWater(),
+            baseOpts.avoidLava());
     pathfinding.navigate(
         fp,
         new PathfindingService.NavigationRequest(
@@ -1084,10 +1089,15 @@ public final class PlaceCommand implements FppCommand {
       @org.jetbrains.annotations.Nullable Location lockOnArrival,
       Runnable onArrive) {
     // Force placeBlocks=true so the bot can bridge gaps en-route to its target.
+    me.bill.fakePlayerPlugin.fakeplayer.BotPathfinder.PathOptions baseOpts =
+        me.bill.fakePlayerPlugin.fakeplayer.PathfindingService.resolvePathOptions(fp);
     me.bill.fakePlayerPlugin.fakeplayer.BotPathfinder.PathOptions opts =
         new me.bill.fakePlayerPlugin.fakeplayer.BotPathfinder.PathOptions(
-            fp.isNavParkour(), fp.isNavBreakBlocks(), true,
-            fp.isNavAvoidWater(), fp.isNavAvoidLava());
+            fp.isNavParkour(),
+            fp.isNavBreakBlocks(),
+            true,
+            baseOpts.avoidWater(),
+            baseOpts.avoidLava());
     pathfinding.navigate(
         fp,
         new PathfindingService.NavigationRequest(

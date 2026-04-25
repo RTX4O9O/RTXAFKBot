@@ -3,6 +3,7 @@ package me.bill.fakePlayerPlugin.command;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import me.bill.fakePlayerPlugin.FakePlayerPlugin;
+import me.bill.fakePlayerPlugin.config.Config;
 import me.bill.fakePlayerPlugin.fakeplayer.FakePlayer;
 import me.bill.fakePlayerPlugin.fakeplayer.FakePlayerManager;
 import me.bill.fakePlayerPlugin.fakeplayer.PathfindingService;
@@ -18,8 +19,6 @@ import me.bill.fakePlayerPlugin.api.impl.FppApiImpl;
 public final class FollowCommand implements FppCommand {
 
   private static final double FOLLOW_DISTANCE = 2.0;
-
-  private static final double RECALC_DISTANCE = 3.5;
 
   private final FakePlayerPlugin plugin;
   private final FakePlayerManager manager;
@@ -212,7 +211,7 @@ public final class FollowCommand implements FppCommand {
               return liveTarget.getLocation();
             },
             FOLLOW_DISTANCE,
-            RECALC_DISTANCE,
+            Config.pathfindingFollowRecalcDistance(),
             Integer.MAX_VALUE,
             null,
             () -> cleanupFollow(botUuid),

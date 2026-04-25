@@ -203,7 +203,7 @@ head-ai:
 # ── Swim AI ───────────────────────────────────────────────────────────────────
 # Bots automatically swim upward when submerged, mimicking a player holding Jump.
 swim-ai:
-  enabled: false  # false = bots avoid water/lava by default and do not swim up automatically
+  enabled: false  # controls passive upward swimming only; pathfinding water avoidance is enforced by default
 
 # ── Collision & Push ──────────────────────────────────────────────────────────
 # Controls how hard players push bots on contact and how bots separate from each other.
@@ -233,6 +233,7 @@ pathfinding:
   waypoint-arrival-distance: 0.65 # Active path waypoint snap radius
   sprint-distance: 6.0           # Start sprinting when farther than this many blocks
   follow-recalc-distance: 3.5    # Moving targets force a recalc after moving this far
+  follow-recalc-interval: 100    # Follow heartbeat recalc interval in ticks
   recalc-interval: 60            # Heartbeat recalc interval in ticks
 
   # ── Stuck Detection ────────────────────────────────────────────────────────

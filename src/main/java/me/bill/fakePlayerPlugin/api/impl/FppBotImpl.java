@@ -256,6 +256,12 @@ public final class FppBotImpl implements FppBot {
   @Override public void setNavAvoidWater(boolean enabled) { fp.setNavAvoidWater(enabled); }
   @Override public boolean isNavAvoidLava() { return fp.isNavAvoidLava(); }
   @Override public void setNavAvoidLava(boolean enabled) { fp.setNavAvoidLava(enabled); }
+  @Override public boolean isDefaultWaterPathAvoidanceEnabled() {
+    return fp.isDefaultWaterPathAvoidanceEnabled();
+  }
+  @Override public void setDefaultWaterPathAvoidanceEnabled(boolean enabled) {
+    fp.setDefaultWaterPathAvoidanceEnabled(enabled);
+  }
 
   // ── Bot type / metadata ──────────────────────────────────────────────────
   @Override public @NotNull String getBotTypeName() {

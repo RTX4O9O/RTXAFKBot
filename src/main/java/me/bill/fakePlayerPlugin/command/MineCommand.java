@@ -437,10 +437,15 @@ public final class MineCommand implements FppCommand {
       @org.jetbrains.annotations.Nullable Location lockOnArrival,
       Runnable onArrive) {
     // Force breakBlocks=true so the bot can punch through obstructions en-route to its target.
+    me.bill.fakePlayerPlugin.fakeplayer.BotPathfinder.PathOptions baseOpts =
+        me.bill.fakePlayerPlugin.fakeplayer.PathfindingService.resolvePathOptions(fp);
     me.bill.fakePlayerPlugin.fakeplayer.BotPathfinder.PathOptions opts =
         new me.bill.fakePlayerPlugin.fakeplayer.BotPathfinder.PathOptions(
-            fp.isNavParkour(), true, fp.isNavPlaceBlocks(),
-            fp.isNavAvoidWater(), fp.isNavAvoidLava());
+            fp.isNavParkour(),
+            true,
+            fp.isNavPlaceBlocks(),
+            baseOpts.avoidWater(),
+            baseOpts.avoidLava());
     pathfinding.navigate(
         fp,
         new PathfindingService.NavigationRequest(

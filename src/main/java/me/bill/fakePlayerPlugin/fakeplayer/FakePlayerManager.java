@@ -20,6 +20,9 @@ import org.bukkit.GameMode;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
+import org.bukkit.Sound;
+import org.bukkit.SoundCategory;
+import org.bukkit.Tag;
 import org.bukkit.World;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.ExperienceOrb;
@@ -463,20 +466,67 @@ public class FakePlayerManager {
       else wasOnGround.remove(uuid);
       return;
     }
+    if (isFallDamageCancelledByLandingBlock(bot)) {
+      trackedFallDistance.remove(uuid);
+      if (onGround) wasOnGround.add(uuid);
+      else wasOnGround.remove(uuid);
+      return;
+    }
     double dy = before.getY() - after.getY();
     if (!onGround && dy > 0.0) {
-      trackedFallDistance.merge(uuid, dy, Double::sum);
+      trackedFallDistance.put(
+          uuid,
+          Math.max(trackedFallDistance.getOrDefault(uuid, 0.0), Math.max(dy, bot.getFallDistance())));
     }
     if (onGround) {
       double distance = trackedFallDistance.getOrDefault(uuid, 0.0);
       if (!wasOnGround.contains(uuid) && distance > 3.0) {
         double damage = Math.floor(distance - 3.0);
-        if (damage > 0.0) bot.damage(damage);
+        if (damage > 0.0) {
+          double beforeHealth = bot.getHealth();
+          bot.damage(damage);
+          if (!bot.isDead() && Math.abs(bot.getHealth() - beforeHealth) < 0.001) {
+            bot.setHealth(Math.max(0.0, beforeHealth - damage));
+            playHurtFeedback(fp, bot);
+          }
+        }
       }
       trackedFallDistance.remove(uuid);
       wasOnGround.add(uuid);
     } else {
       wasOnGround.remove(uuid);
+    }
+  }
+
+  private boolean isFallDamageCancelledByLandingBlock(Player bot) {
+    if (bot.isInWater() || bot.isInLava()) return true;
+    Material feet = bot.getLocation().getBlock().getType();
+    Material below = bot.getLocation().clone().subtract(0, 1, 0).getBlock().getType();
+    if (Tag.CLIMBABLE.isTagged(feet) || Tag.CLIMBABLE.isTagged(below)) return true;
+    return feet == Material.BUBBLE_COLUMN
+        || below == Material.BUBBLE_COLUMN
+        || below == Material.HAY_BLOCK
+        || below == Material.SLIME_BLOCK;
+  }
+
+  public void playHurtFeedback(FakePlayer fp, Player bot) {
+    for (Player viewer : cachedOnlinePlayers) {
+      if (viewer == null
+          || !viewer.isOnline()
+          || viewer.getWorld() != bot.getWorld()
+          || viewer.getLocation().distanceSquared(bot.getLocation()) > 256 * 256) {
+        continue;
+      }
+      PacketHelper.sendHurtAnimation(viewer, fp);
+    }
+
+    if (!Config.hurtSound()) {
+      return;
+    }
+
+    Location loc = bot.getLocation();
+    if (loc.getWorld() != null) {
+      loc.getWorld().playSound(loc, Sound.ENTITY_PLAYER_HURT, SoundCategory.PLAYERS, 1.0f, 1.0f);
     }
   }
 

@@ -114,6 +114,10 @@ public interface FppBot {
   void setNavAvoidWater(boolean enabled);
   boolean isNavAvoidLava();
   void setNavAvoidLava(boolean enabled);
+  default boolean isDefaultWaterPathAvoidanceEnabled() {
+    return true;
+  }
+  default void setDefaultWaterPathAvoidanceEnabled(boolean enabled) {}
 
   // ── Bot type / metadata ───────────────────────────────────────────────────
   @NotNull String getBotTypeName();

@@ -14,10 +14,15 @@ import me.bill.fakePlayerPlugin.util.FppScheduler;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
+import org.bukkit.Sound;
+import org.bukkit.SoundCategory;
 import org.bukkit.Tag;
 import org.bukkit.World;
 import org.bukkit.block.Block;
+import org.bukkit.block.BlockFace;
 import org.bukkit.block.data.Bisected;
+import org.bukkit.block.data.Directional;
+import org.bukkit.block.data.MultipleFacing;
 import org.bukkit.block.data.Openable;
 import org.bukkit.block.data.type.Door;
 import org.bukkit.block.data.type.Gate;
@@ -211,7 +216,9 @@ public final class PathfindingService {
     final List<BotPathfinder.Move>[] pathRef = (List<BotPathfinder.Move>[]) new List<?>[] {null};
     final int[] wpIdx = {0};
     final Location[] lastCalc = {initialDest.clone()};
-    int startOffset = Math.floorMod(NAV_START_SEQUENCE.getAndIncrement(), 10);
+    final int recalcInterval = recalcIntervalTicks(request.owner());
+    int startOffset =
+        Math.floorMod(NAV_START_SEQUENCE.getAndIncrement(), Math.min(recalcInterval, 10));
     final int[] recalcIn = {startOffset};
     final int[] stuckFor = {0};
     final int[] hardWallStuckFor = {0};
@@ -317,11 +324,14 @@ public final class PathfindingService {
 
             double distToTarget = Math.sqrt(distToTargetSq);
 
-            boolean targetMoved =
+            boolean targetMovedFromLastCalc =
                 request.recalcDistance() > 0
                     && lastCalc[0] != null
                     && lastCalc[0].distanceSquared(dest)
                         > request.recalcDistance() * request.recalcDistance();
+            boolean targetMoved =
+                targetMovedFromLastCalc
+                    && shouldRecalculateForTargetShift(request, pathRef[0], wpIdx[0], dest);
             if (nullPathRetryIn[0] > 0) {
               nullPathRetryIn[0]--;
             }
@@ -331,7 +341,7 @@ public final class PathfindingService {
             boolean heartbeat = request.recalcDistance() > 0 && --recalcIn[0] <= 0;
 
             if (targetMoved || pathExhausted || heartbeat) {
-              recalcIn[0] = Config.pathfindingRecalcInterval();
+              recalcIn[0] = recalcInterval;
               var navRecalcEvt = new me.bill.fakePlayerPlugin.api.event.FppBotNavigationEvent(
                   new me.bill.fakePlayerPlugin.api.impl.FppBotImpl(fp),
                   me.bill.fakePlayerPlugin.api.event.FppBotNavigationEvent.Action.RECALC,
@@ -350,15 +360,7 @@ public final class PathfindingService {
               breakLoc[0] = null;
               isPlacing[0] = false;
 
-              BotPathfinder.PathOptions opts =
-                  request.overrideOpts() != null
-                      ? request.overrideOpts()
-                      : new BotPathfinder.PathOptions(
-                          fp.isNavParkour(),
-                          fp.isNavBreakBlocks(),
-                          fp.isNavPlaceBlocks(),
-                          fp.isNavAvoidWater() || !fp.isSwimAiEnabled(),
-                          fp.isNavAvoidLava() || !fp.isSwimAiEnabled());
+              BotPathfinder.PathOptions opts = resolvePathOptions(fp, request.overrideOpts());
 
               List<BotPathfinder.Move> newPath =
                   BotPathfinder.findPathMoves(
@@ -376,31 +378,22 @@ public final class PathfindingService {
                   cleanup(bot, false, true);
                   return;
                 }
-                nullPathRetryIn[0] = Math.max(10, Config.pathfindingRecalcInterval());
+                nullPathRetryIn[0] = Math.max(10, recalcInterval);
                 NmsPlayerSpawner.setMovementForward(bot, 0f);
                 bot.setSprinting(false);
                 // Direct path failed — try to compute a detour around the obstacle.
-                BotPathfinder.PathOptions detourOpts =
-                    request.overrideOpts() != null
-                        ? request.overrideOpts()
-                        : new BotPathfinder.PathOptions(
-                            fp.isNavParkour(),
-                            fp.isNavBreakBlocks(),
-                            fp.isNavPlaceBlocks(),
-                            fp.isNavAvoidWater() || !fp.isSwimAiEnabled(),
-                            fp.isNavAvoidLava() || !fp.isSwimAiEnabled());
                 int[] dg = BotPathfinder.findDetourGoal(
                     botLoc.getWorld(),
                     botLoc.getBlockX(), botLoc.getBlockY(), botLoc.getBlockZ(),
                     dest.getBlockX(), dest.getBlockY(), dest.getBlockZ(),
                     Config.pathfindingDetourAttempts(),
                     Config.pathfindingDetourRadius() / (double) Config.pathfindingDetourAttempts(),
-                    detourOpts);
+                    opts);
                 if (dg != null) {
                   detourPath[0] = BotPathfinder.findPathMoves(
                       botLoc.getWorld(),
                       botLoc.getBlockX(), botLoc.getBlockY(), botLoc.getBlockZ(),
-                      dg[0], dg[1], dg[2], detourOpts);
+                      dg[0], dg[1], dg[2], opts);
                   detourWpIdx[0] = (detourPath[0] != null && detourPath[0].size() > 1) ? 1 : 0;
                 } else {
                   detourPath[0] = null;
@@ -644,6 +637,22 @@ public final class PathfindingService {
                 stuckFor[0] = 0;
               }
 
+              prevX[0] = botLoc.getX();
+              prevZ[0] = botLoc.getZ();
+              return;
+            }
+
+            if (wp.type() == BotPathfinder.MoveType.ELEVATOR_UP
+                || wp.type() == BotPathfinder.MoveType.ELEVATOR_DOWN) {
+              double elevYDist = Math.abs(botLoc.getY() - wp.y());
+              if (wpXZDist < 0.38 && elevYDist < 0.7) {
+                wpIdx[0]++;
+                prevX[0] = botLoc.getX();
+                prevZ[0] = botLoc.getZ();
+                return;
+              }
+
+              applyBubbleElevatorMovement(bot, botLoc, wpCX, wpCZ, wp.y(), wp.type());
               prevX[0] = botLoc.getX();
               prevZ[0] = botLoc.getZ();
               return;
@@ -1061,6 +1070,7 @@ public final class PathfindingService {
       if (gateData.isOpen() != open) {
         gateData.setOpen(open);
         base.setBlockData(gateData, true);
+        playOpenableSound(base, open);
       }
       return;
     }
@@ -1068,6 +1078,7 @@ public final class PathfindingService {
     if (lowerData.isOpen() != open) {
       lowerData.setOpen(open);
       base.setBlockData(lowerData, true);
+      playOpenableSound(base, open);
     }
     Block upper = base.getRelative(0, 1, 0);
     if (upper.getBlockData() instanceof Door upperData && upperData.isOpen() != open) {
@@ -1121,37 +1132,110 @@ public final class PathfindingService {
 
   private static void applyClimbMovement(
       Player bot, Location botLoc, double targetX, double targetZ, int targetBlockY) {
-    double dx = targetX - botLoc.getX();
-    double dz = targetZ - botLoc.getZ();
-    double xzDist = xzDistRaw(botLoc.getX(), botLoc.getZ(), targetX, targetZ);
-    float yaw =
-        xzDist < 0.08
-            ? botLoc.getYaw()
-            : (float) Math.toDegrees(Math.atan2(-dx, dz));
+    ClimbAnchor anchor = resolveClimbAnchor(botLoc, targetX, targetZ);
+    double dx = anchor.x() - botLoc.getX();
+    double dz = anchor.z() - botLoc.getZ();
+    double xzDist = xzDistRaw(botLoc.getX(), botLoc.getZ(), anchor.x(), anchor.z());
+    float yaw = anchor.yaw();
 
     bot.setRotation(yaw, 0f);
     NmsPlayerSpawner.setHeadYaw(bot, yaw);
     bot.setSprinting(false);
-    NmsPlayerSpawner.setMovementForward(bot, 0.75f);
+    NmsPlayerSpawner.setMovementForward(bot, xzDist > 0.12 ? 1.0f : 0.7f);
     NmsPlayerSpawner.setMovementStrafe(bot, 0f);
 
     Vector vel = bot.getVelocity();
-    vel.setX(clamp(dx * 0.45, -0.18, 0.18));
-    vel.setZ(clamp(dz * 0.45, -0.18, 0.18));
+    vel.setX(clamp(dx * 0.72, -0.18, 0.18));
+    vel.setZ(clamp(dz * 0.72, -0.18, 0.18));
 
     double currentY = botLoc.getY();
     if (targetBlockY > currentY + 0.2) {
-      vel.setY(Math.max(vel.getY(), 0.22));
+      vel.setY(Math.max(vel.getY(), 0.28));
       NmsPlayerSpawner.setJumping(bot, true);
     } else if (targetBlockY < currentY - 0.2) {
       vel.setY(Math.min(vel.getY(), -0.18));
       NmsPlayerSpawner.setJumping(bot, false);
     } else {
-      vel.setY(Math.max(vel.getY(), 0.08));
-      NmsPlayerSpawner.setJumping(bot, false);
+      vel.setY(Math.max(vel.getY(), 0.10));
+      NmsPlayerSpawner.setJumping(bot, xzDist > 0.14);
     }
 
     bot.setVelocity(vel);
+  }
+
+  private static void applyBubbleElevatorMovement(
+      Player bot,
+      Location botLoc,
+      double targetX,
+      double targetZ,
+      int targetBlockY,
+      BotPathfinder.MoveType type) {
+    double dx = targetX - botLoc.getX();
+    double dz = targetZ - botLoc.getZ();
+    float yaw =
+        (float) Math.toDegrees(Math.atan2(-dx, dz));
+    bot.setRotation(yaw, type == BotPathfinder.MoveType.ELEVATOR_UP ? -18f : 22f);
+    NmsPlayerSpawner.setHeadYaw(bot, yaw);
+    bot.setSprinting(false);
+    NmsPlayerSpawner.setMovementForward(bot, 0f);
+    NmsPlayerSpawner.setMovementStrafe(bot, 0f);
+
+    Vector vel = bot.getVelocity();
+    vel.setX(clamp(dx * 0.60, -0.12, 0.12));
+    vel.setZ(clamp(dz * 0.60, -0.12, 0.12));
+    if (type == BotPathfinder.MoveType.ELEVATOR_UP) {
+      vel.setY(Math.max(vel.getY(), botLoc.getY() < targetBlockY ? 0.26 : 0.12));
+      NmsPlayerSpawner.setJumping(bot, false);
+    } else {
+      vel.setY(Math.min(vel.getY(), botLoc.getY() > targetBlockY ? -0.30 : -0.10));
+      NmsPlayerSpawner.setJumping(bot, false);
+    }
+    bot.setVelocity(vel);
+  }
+
+  public static BotPathfinder.PathOptions resolvePathOptions(@NotNull FakePlayer fp) {
+    return resolvePathOptions(fp, null);
+  }
+
+  public static BotPathfinder.PathOptions resolvePathOptions(
+      @NotNull FakePlayer fp, @Nullable BotPathfinder.PathOptions overrideOpts) {
+    if (overrideOpts != null) {
+      return overrideOpts;
+    }
+    return new BotPathfinder.PathOptions(
+        fp.isNavParkour(),
+        fp.isNavBreakBlocks(),
+        fp.isNavPlaceBlocks(),
+        fp.isNavAvoidWater() || fp.isDefaultWaterPathAvoidanceEnabled(),
+        fp.isNavAvoidLava() || !fp.isSwimAiEnabled());
+  }
+
+  private static int recalcIntervalTicks(@NotNull Owner owner) {
+    return owner == Owner.FOLLOW
+        ? Config.pathfindingFollowRecalcInterval()
+        : Config.pathfindingRecalcInterval();
+  }
+
+  private static boolean shouldRecalculateForTargetShift(
+      @NotNull NavigationRequest request,
+      @Nullable List<BotPathfinder.Move> currentPath,
+      int waypointIndex,
+      @NotNull Location dest) {
+    if (request.owner() != Owner.FOLLOW
+        || currentPath == null
+        || currentPath.isEmpty()
+        || waypointIndex >= currentPath.size()) {
+      return true;
+    }
+
+    BotPathfinder.Move finalMove = currentPath.get(currentPath.size() - 1);
+    double endX = finalMove.x() + 0.5;
+    double endZ = finalMove.z() + 0.5;
+    double toleratedShift =
+        Math.max(request.arrivalDistance() + 0.75, request.recalcDistance() * 0.5);
+    double dx = endX - dest.getX();
+    double dz = endZ - dest.getZ();
+    return dx * dx + dz * dz > toleratedShift * toleratedShift;
   }
 
   private static boolean isInClimbableColumn(Location loc) {
@@ -1168,6 +1252,117 @@ public final class PathfindingService {
   private static boolean isClimbable(World world, int x, int y, int z) {
     if (y < world.getMinHeight() || y > world.getMaxHeight()) return false;
     return Tag.CLIMBABLE.isTagged(world.getBlockAt(x, y, z).getType());
+  }
+
+  private record ClimbAnchor(double x, double z, float yaw) {}
+
+  private static ClimbAnchor resolveClimbAnchor(Location botLoc, double fallbackX, double fallbackZ) {
+    World world = botLoc.getWorld();
+    if (world == null) {
+      float yaw =
+          (float) Math.toDegrees(Math.atan2(-(fallbackX - botLoc.getX()), fallbackZ - botLoc.getZ()));
+      return new ClimbAnchor(fallbackX, fallbackZ, yaw);
+    }
+
+    Block climbBlock = findNearestClimbBlock(world, botLoc.getBlockX(), botLoc.getBlockY(), botLoc.getBlockZ());
+    if (climbBlock == null) {
+      float yaw =
+          (float) Math.toDegrees(Math.atan2(-(fallbackX - botLoc.getX()), fallbackZ - botLoc.getZ()));
+      return new ClimbAnchor(fallbackX, fallbackZ, yaw);
+    }
+
+    double anchorX = climbBlock.getX() + 0.5;
+    double anchorZ = climbBlock.getZ() + 0.5;
+    BlockFace supportFace = findClimbSupportFace(climbBlock);
+    float yaw;
+    if (supportFace != null) {
+      anchorX += supportFace.getModX() * 0.31;
+      anchorZ += supportFace.getModZ() * 0.31;
+      yaw =
+          (float)
+              Math.toDegrees(
+                  Math.atan2(
+                      -supportFace.getModX(),
+                      -supportFace.getModZ()));
+    } else {
+      yaw = (float) Math.toDegrees(Math.atan2(-(anchorX - botLoc.getX()), anchorZ - botLoc.getZ()));
+    }
+    return new ClimbAnchor(anchorX, anchorZ, yaw);
+  }
+
+  @Nullable
+  private static Block findNearestClimbBlock(World world, int x, int y, int z) {
+    Block best = null;
+    double bestScore = Double.MAX_VALUE;
+    for (int dy = -1; dy <= 2; dy++) {
+      for (int dx = -1; dx <= 2; dx++) {
+        for (int dz = -1; dz <= 2; dz++) {
+          Block block = world.getBlockAt(x + dx, y + dy, z + dz);
+          if (!Tag.CLIMBABLE.isTagged(block.getType())) {
+            continue;
+          }
+          double score = Math.abs(dx) * Math.abs(dx) + Math.abs(dz) * Math.abs(dz) + (Math.abs(dy) * 0.18);
+          if (score < bestScore) {
+            bestScore = score;
+            best = block;
+          }
+        }
+      }
+    }
+    return best;
+  }
+
+  @Nullable
+  private static BlockFace findClimbSupportFace(Block climbBlock) {
+    if (climbBlock.getBlockData() instanceof Directional directional) {
+      BlockFace facing = directional.getFacing();
+      if (facing == BlockFace.NORTH
+          || facing == BlockFace.SOUTH
+          || facing == BlockFace.EAST
+          || facing == BlockFace.WEST) {
+        return facing.getOppositeFace();
+      }
+    }
+    if (climbBlock.getBlockData() instanceof MultipleFacing multipleFacing) {
+      for (BlockFace face : new BlockFace[] {BlockFace.NORTH, BlockFace.SOUTH, BlockFace.EAST, BlockFace.WEST}) {
+        if (multipleFacing.hasFace(face)) {
+          return face;
+        }
+      }
+    }
+    BlockFace best = null;
+    double bestScore = Double.MAX_VALUE;
+    for (BlockFace face : new BlockFace[] {BlockFace.NORTH, BlockFace.SOUTH, BlockFace.EAST, BlockFace.WEST}) {
+      Block adjacent = climbBlock.getRelative(face);
+      if (!adjacent.getType().isSolid()) {
+        continue;
+      }
+      double score = adjacent.getType().isOccluding() ? 0.0 : 1.0;
+      if (score < bestScore) {
+        bestScore = score;
+        best = face;
+      }
+    }
+    return best;
+  }
+
+  private static void playOpenableSound(Block base, boolean open) {
+    World world = base.getWorld();
+    Location soundLoc = base.getLocation().add(0.5, 0.5, 0.5);
+    Material type = base.getType();
+
+    Sound sound;
+    if (type.name().contains("FENCE_GATE")) {
+      sound = open ? Sound.BLOCK_FENCE_GATE_OPEN : Sound.BLOCK_FENCE_GATE_CLOSE;
+    } else if (type == Material.IRON_DOOR) {
+      sound = open ? Sound.BLOCK_IRON_DOOR_OPEN : Sound.BLOCK_IRON_DOOR_CLOSE;
+    } else if (type.name().contains("COPPER_DOOR")) {
+      sound = open ? Sound.BLOCK_COPPER_DOOR_OPEN : Sound.BLOCK_COPPER_DOOR_CLOSE;
+    } else {
+      sound = open ? Sound.BLOCK_WOODEN_DOOR_OPEN : Sound.BLOCK_WOODEN_DOOR_CLOSE;
+    }
+
+    world.playSound(soundLoc, sound, SoundCategory.BLOCKS, 1.0f, 1.0f);
   }
 
   private static double clamp(double value, double min, double max) {

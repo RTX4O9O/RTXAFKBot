@@ -212,8 +212,6 @@ public final class BotSettingGui implements Listener {
 
   private final Set<UUID> inMobSelector = new HashSet<>();
 
-  private final Map<UUID, Boolean> pausedFrozenState = new HashMap<>();
-
   private final Map<UUID, Integer> editPauseCounts = new HashMap<>();
 
   private final List<BotCategory> categories;
@@ -227,6 +225,7 @@ public final class BotSettingGui implements Listener {
   }
 
   public void registerExtensionTab(FppSettingsTab tab) {
+    if (isPvpExtensionTab(tab)) return;
     extensionTabs.addIfAbsent(tab);
   }
 
@@ -238,6 +237,7 @@ public final class BotSettingGui implements Listener {
     if (extensionTabs.isEmpty()) return categories;
     List<BotCategory> all = new ArrayList<>(categories);
     for (FppSettingsTab tab : extensionTabs) {
+      if (isPvpExtensionTab(tab)) continue;
       if (!tab.isVisible(viewer)) continue;
       List<BotEntry> entries = new ArrayList<>();
       int idx = 0;
@@ -289,7 +289,7 @@ public final class BotSettingGui implements Listener {
   }
 
   public void shutdown() {
-    for (UUID botUuid : new ArrayList<>(pausedFrozenState.keySet())) resumeBotAfterEditing(botUuid);
+    for (UUID botUuid : new ArrayList<>(editPauseCounts.keySet())) resumeBotAfterEditing(botUuid);
     sessions.clear();
     botSessions.clear();
     botLocks.clear();
@@ -301,7 +301,6 @@ public final class BotSettingGui implements Listener {
     pendingResetConfirm.clear();
     mobSelectorPage.clear();
     inMobSelector.clear();
-    pausedFrozenState.clear();
     editPauseCounts.clear();
   }
 
@@ -716,12 +715,6 @@ public final class BotSettingGui implements Listener {
         bot.setSwimAiEnabled(!old);
         fireSettingChange(bot, "swim_ai_enabled", old, bot.isSwimAiEnabled());
         yield bot.isSwimAiEnabled();
-      }
-      case "nav_sprint_jump" -> {
-        boolean old = bot.isNavSprintJump();
-        bot.setNavSprintJump(!old);
-        fireSettingChange(bot, "nav_sprint_jump", old, bot.isNavSprintJump());
-        yield bot.isNavSprintJump();
       }
       case "pickup_items" -> {
         boolean old = bot.isPickUpItemsEnabled();
@@ -1421,8 +1414,6 @@ public final class BotSettingGui implements Listener {
     bot.setNavParkour(Config.pathfindingParkour());
     bot.setNavBreakBlocks(Config.pathfindingBreakBlocks());
     bot.setNavPlaceBlocks(Config.pathfindingPlaceBlocks());
-    bot.setNavSprintJump(Config.pathfindingSprintJump());
-
     if (isOp) bot.setRightClickCommand(null);
 
     manager.persistBotSettings(bot);
@@ -1895,8 +1886,6 @@ public final class BotSettingGui implements Listener {
   private void pauseBotForEditing(FakePlayer bot) {
     UUID botUuid = bot.getUuid();
     editPauseCounts.merge(botUuid, 1, Integer::sum);
-    pausedFrozenState.putIfAbsent(botUuid, bot.isFrozen());
-    bot.setFrozen(true);
     Player player = bot.getPlayer();
     if (player != null && player.isOnline()) {
       manager.lockForAction(botUuid, player.getLocation());
@@ -1913,11 +1902,13 @@ public final class BotSettingGui implements Listener {
       return;
     }
     editPauseCounts.remove(botUuid);
-    Boolean wasFrozen = pausedFrozenState.remove(botUuid);
-    if (wasFrozen == null) return;
     manager.unlockAction(botUuid);
-    FakePlayer bot = manager.getByUuid(botUuid);
-    if (bot != null) bot.setFrozen(wasFrozen);
+  }
+
+  private static boolean isPvpExtensionTab(FppSettingsTab tab) {
+    String id = tab.getId().toLowerCase(Locale.ROOT);
+    String label = tab.getLabel().toLowerCase(Locale.ROOT);
+    return id.contains("pvp") || label.contains("pvp");
   }
 
   private boolean isOp(Player player) {
