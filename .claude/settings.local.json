@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mvn compile *)",
+      "Bash(javac -d /tmp/compiled -sourcepath /var/home/admin/IdeaProjects/fake-player-plugin/src/main/java /var/home/admin/IdeaProjects/fake-player-plugin/src/main/java/me/bill/fakePlayerPlugin/command/InventoryCommand.java)",
+      "Bash(java -version)"
+    ]
+  }
+}
