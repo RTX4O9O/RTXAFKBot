@@ -338,12 +338,14 @@ public final class BotPathfinder {
       if (feetClear && headClear && floorSolid) {
         if (opts.avoidWater() && destInWater && !srcInWater) continue;
         if (opts.avoidLava() && destInLava && !srcInLava) continue;
+        if (opts.avoidWater() && isNearWater(world, nx, y, nz) && !srcInWater) continue;
+        if (opts.avoidLava() && isNearLava(world, nx, y, nz) && !srcInLava) continue;
         int cost = base;
 
         if (isWater(world, nx, y, nz)) cost += WATER_PEN;
         else if (isSlowBlock(world, nx, y, nz)) cost += WATER_PEN;
 
-        if (!isHazard(world, nx, y, nz) && !isHazard(world, nx, y - 1, nz)) {
+        if (isSafeStandPosition(world, nx, y, nz)) {
           out.add(new int[] {nx, y, nz, cost, WK});
         }
       } else if (!isDiag && opts.breakBlocks() && floorSolid) {
@@ -360,7 +362,7 @@ public final class BotPathfinder {
       if (!isDiag && opts.placeBlocks() && !floorSolid && feetClear && headClear) {
 
         if (hasAdjacentSolid(world, nx, y - 1, nz)) {
-          if (!isHazard(world, nx, y, nz)) {
+          if (isSafeStandPosition(world, nx, y, nz)) {
             out.add(new int[] {nx, y, nz, base + PLACE_C, PL});
           }
         }
@@ -372,7 +374,7 @@ public final class BotPathfinder {
       boolean tgtFloorSolid = canStandOn(world, nx, y, nz);
 
       if (srcHeadClear && tgtFeetClear && tgtHeadClear && tgtFloorSolid) {
-        if (!isHazard(world, nx, y + 1, nz)) {
+        if (isSafeStandPosition(world, nx, y + 1, nz)) {
           int cost = base + ASCEND;
           if (isSlowBlock(world, x, y, z)) cost += 4;
           out.add(new int[] {nx, y + 1, nz, cost, AS});
@@ -394,7 +396,7 @@ public final class BotPathfinder {
           if (canStandOn(world, nx, ny - 1, nz)
               && canPassThrough(world, nx, ny, nz)
               && canPassThrough(world, nx, ny + 1, nz)) {
-            if (!isHazard(world, nx, ny, nz) && !isHazard(world, nx, ny - 1, nz)) {
+            if (isSafeStandPosition(world, nx, ny, nz)) {
               int fallCost = base + drop * FALL_PER;
 
               if (drop >= 4) fallCost += (drop - 3) * 8;
@@ -526,7 +528,7 @@ public final class BotPathfinder {
       }
 
       if (block.getBlockData() instanceof Slab slab) {
-        return slab.getType() == Slab.Type.BOTTOM;
+        return false;
       }
 
       if (mat == Material.COBWEB) return false;
@@ -553,6 +555,8 @@ public final class BotPathfinder {
       if (block.getBlockData() instanceof Slab slab) {
         return true;
       }
+
+      if (mat.name().contains("CARPET")) return true;
 
       if (mat.name().contains("STAIRS")) return true;
 
@@ -596,7 +600,8 @@ public final class BotPathfinder {
     if (!inBounds(world, y) || !inBounds(world, y + 1)) return false;
     return canStandOn(world, x, y - 1, z)
         && canPassThrough(world, x, y, z)
-        && canPassThrough(world, x, y + 1, z);
+        && canPassThrough(world, x, y + 1, z)
+        && isSafeStandPosition(world, x, y, z);
   }
 
   public static boolean passable(World world, int x, int y, int z) {
@@ -613,6 +618,21 @@ public final class BotPathfinder {
     } catch (Exception e) {
       return true;
     }
+  }
+
+  private static boolean isSafeStandPosition(World world, int x, int y, int z) {
+    if (isHazard(world, x, y, z) || isHazard(world, x, y + 1, z) || isHazard(world, x, y - 1, z)) {
+      return false;
+    }
+    for (int dx = -1; dx <= 1; dx++) {
+      for (int dz = -1; dz <= 1; dz++) {
+        if (dx == 0 && dz == 0) continue;
+        if (isHazard(world, x + dx, y, z + dz) || isHazard(world, x + dx, y + 1, z + dz)) {
+          return false;
+        }
+      }
+    }
+    return true;
   }
 
   private static boolean isWater(World world, int x, int y, int z) {
@@ -643,6 +663,24 @@ public final class BotPathfinder {
     } catch (Exception e) {
       return false;
     }
+  }
+
+  private static boolean isNearWater(World world, int x, int y, int z) {
+    for (int dx = -1; dx <= 1; dx++) {
+      for (int dz = -1; dz <= 1; dz++) {
+        if (isWater(world, x + dx, y, z + dz) || isWater(world, x + dx, y - 1, z + dz)) return true;
+      }
+    }
+    return false;
+  }
+
+  private static boolean isNearLava(World world, int x, int y, int z) {
+    for (int dx = -1; dx <= 1; dx++) {
+      for (int dz = -1; dz <= 1; dz++) {
+        if (isLava(world, x + dx, y, z + dz) || isLava(world, x + dx, y - 1, z + dz)) return true;
+      }
+    }
+    return false;
   }
 
   private static boolean isSlowBlock(World world, int x, int y, int z) {

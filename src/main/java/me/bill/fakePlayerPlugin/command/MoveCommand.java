@@ -12,12 +12,12 @@ import me.bill.fakePlayerPlugin.fakeplayer.NmsPlayerSpawner;
 import me.bill.fakePlayerPlugin.fakeplayer.PathfindingService;
 import me.bill.fakePlayerPlugin.lang.Lang;
 import me.bill.fakePlayerPlugin.permission.Perm;
+import me.bill.fakePlayerPlugin.util.FppScheduler;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
-import org.bukkit.scheduler.BukkitTask;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -37,9 +37,13 @@ public final class MoveCommand implements FppCommand {
 
   private final Map<UUID, Double> roamRadii = new ConcurrentHashMap<>();
 
-  private final Map<UUID, BukkitTask> roamPauseTasks = new ConcurrentHashMap<>();
+  private final Set<UUID> infiniteRoam = ConcurrentHashMap.newKeySet();
 
-  private final Map<UUID, BukkitTask> roamLookTasks = new ConcurrentHashMap<>();
+  private final Map<UUID, Integer> roamPauseTasks = new ConcurrentHashMap<>();
+
+  private final Map<UUID, Integer> roamLookTasks = new ConcurrentHashMap<>();
+
+  private final Map<UUID, Integer> roamFailureCounts = new ConcurrentHashMap<>();
 
   private WaypointStore waypointStore;
 
@@ -61,8 +65,8 @@ public final class MoveCommand implements FppCommand {
 
   @Override
   public String getUsage() {
-    return "<bot|all> --to <player>  |  <bot|all> --wp <route> [--random]  |  <bot|all> --roam"
-               + " [x,y,z] [radius]  |  <bot|all> --stop";
+    return "<bot|all> --to <player>  |  <bot|all> --pos <x> <y> <z>  |  <bot|all> --wp"
+        + " <route> [--random]  |  <bot|all> --roam [x,y,z] [radius]  |  <bot|all> --stop";
   }
 
   @Override
@@ -196,6 +200,34 @@ public final class MoveCommand implements FppCommand {
         return true;
       }
 
+      if (flag.equals("--coords") || flag.equals("--pos")) {
+        if (args.length < 5) {
+          sender.sendMessage(Lang.get("move-coords-usage"));
+          return true;
+        }
+        try {
+          double bx = bot.getLocation().getX();
+          double by = bot.getLocation().getY();
+          double bz = bot.getLocation().getZ();
+          double cx = parseCoord(args[2], bx);
+          double cy = parseCoord(args[3], by);
+          double cz = parseCoord(args[4], bz);
+          Location dest = new Location(bot.getWorld(), cx, cy, cz);
+          cancelNavigation(bot.getUniqueId());
+          startNavigationToLocation(bot, dest);
+          sender.sendMessage(
+              Lang.get(
+                  "move-coords-navigating",
+                  "name", fp.getDisplayName(),
+                  "x", String.valueOf((int) cx),
+                  "y", String.valueOf((int) cy),
+                  "z", String.valueOf((int) cz)));
+        } catch (NumberFormatException e) {
+          sender.sendMessage(Lang.get("move-coords-invalid"));
+        }
+        return true;
+      }
+
       sender.sendMessage(Lang.get("move-usage"));
       return true;
     }
@@ -229,10 +261,23 @@ public final class MoveCommand implements FppCommand {
   private boolean handleRoam(CommandSender sender, FakePlayer fp, Player bot, String[] args) {
     Location center = bot.getLocation().clone();
     double radius = 20.0;
+    boolean infinite = false;
 
     if (args.length > 2) {
       String token = args[2];
-      if (token.contains(",") || token.contains(" ")) {
+      if (token.equalsIgnoreCase("infinite") || token.equalsIgnoreCase("forever") || token.equalsIgnoreCase("unbounded")) {
+        infinite = true;
+        if (args.length > 3) {
+          try {
+            radius = Double.parseDouble(args[3]);
+          } catch (NumberFormatException e) {
+            sender.sendMessage(Lang.get("move-roam-invalid-radius"));
+            return true;
+          }
+        } else {
+          radius = 80.0;
+        }
+      } else if (token.contains(",") || token.contains(" ")) {
 
         String[] parts = token.contains(",") ? token.split(",") : token.split(" ");
         if (parts.length != 3) {
@@ -274,7 +319,7 @@ public final class MoveCommand implements FppCommand {
     }
 
     cancelNavigation(bot.getUniqueId());
-    startRoaming(fp, center, radius);
+    startRoaming(fp, center, radius, infinite);
     sender.sendMessage(
         Lang.get(
             "move-roam-started",
@@ -328,9 +373,19 @@ public final class MoveCommand implements FppCommand {
 
       Location center = null;
       double radius = 20.0;
+      boolean infinite = false;
       if (args.length > 2) {
         String token = args[2];
-        if (token.contains(",") || token.contains(" ")) {
+        if (token.equalsIgnoreCase("infinite") || token.equalsIgnoreCase("forever") || token.equalsIgnoreCase("unbounded")) {
+          infinite = true;
+          radius = 80.0;
+          if (args.length > 3) {
+            try {
+              radius = Double.parseDouble(args[3]);
+            } catch (NumberFormatException ignored) {
+            }
+          }
+        } else if (token.contains(",") || token.contains(" ")) {
           String[] parts = token.contains(",") ? token.split(",") : token.split(" ");
           if (parts.length == 3) {
             try {
@@ -377,7 +432,7 @@ public final class MoveCommand implements FppCommand {
         cancelNavigation(bot.getUniqueId());
         Location c = center != null ? center.clone() : bot.getLocation().clone();
         if (center != null) c.setWorld(bot.getWorld());
-        startRoaming(fp, c, radius);
+        startRoaming(fp, c, radius, infinite);
         started++;
       }
       sender.sendMessage(
@@ -390,6 +445,55 @@ public final class MoveCommand implements FppCommand {
               "skipped",
               String.valueOf(skipped)));
       return true;
+    }
+
+    if (flag.equals("--coords") || flag.equals("--pos")) {
+      if (args.length < 5) {
+        sender.sendMessage(Lang.get("move-coords-usage"));
+        return true;
+      }
+      Location base = sender instanceof Player p ? p.getLocation() : null;
+      try {
+        double cx = parseCoord(args[2], base != null ? base.getX() : 0);
+        double cy = parseCoord(args[3], base != null ? base.getY() : 64);
+        double cz = parseCoord(args[4], base != null ? base.getZ() : 0);
+        int started = 0, skipped = 0;
+        for (FakePlayer fp : manager.getActivePlayers()) {
+          Player bot = fp.getPlayer();
+          if (bot == null || !bot.isOnline()) {
+            skipped++;
+            continue;
+          }
+          Location dest = new Location(bot.getWorld(), cx, cy, cz);
+          cancelNavigation(bot.getUniqueId());
+          startNavigationToLocation(bot, dest);
+          started++;
+        }
+        sender.sendMessage(
+            Lang.get(
+                "move-all-navigating-coords",
+                "count",
+                String.valueOf(started),
+                "skipped",
+                String.valueOf(skipped),
+                "x",
+                String.valueOf((int) cx),
+                "y",
+                String.valueOf((int) cy),
+                "z",
+                String.valueOf((int) cz)));
+      } catch (NumberFormatException e) {
+        sender.sendMessage(Lang.get("move-coords-invalid"));
+      }
+      return true;
+    }
+
+    if (flag.equals("--to")) {
+      if (args.length < 3) {
+        sender.sendMessage(Lang.get("move-usage"));
+        return true;
+      }
+      return moveAllToPlayer(sender, args[2]);
     }
 
     if (flag.equals("--wp")) {
@@ -450,9 +554,13 @@ public final class MoveCommand implements FppCommand {
       return true;
     }
 
-    Player target = Bukkit.getPlayer(args[1]);
+    return moveAllToPlayer(sender, args[1]);
+  }
+
+  private boolean moveAllToPlayer(CommandSender sender, String playerName) {
+    Player target = Bukkit.getPlayer(playerName);
     if (target == null) {
-      sender.sendMessage(Lang.get("player-not-found", "player", args[1]));
+      sender.sendMessage(Lang.get("player-not-found", "player", playerName));
       return true;
     }
 
@@ -500,7 +608,25 @@ public final class MoveCommand implements FppCommand {
             Config.pathfindingArrivalDistance(),
             Config.pathfindingFollowRecalcDistance(),
             Integer.MAX_VALUE,
-            null,
+            () -> clearMoveState(botUuid),
+            () -> clearMoveState(botUuid),
+            null));
+  }
+
+  private void startNavigationToLocation(@NotNull Player bot, @NotNull Location dest) {
+    final UUID botUuid = bot.getUniqueId();
+    FakePlayer fp = manager.getByUuid(botUuid);
+    if (fp == null) return;
+    final Location fixedDest = dest.clone();
+    pathfinding.navigate(
+        fp,
+            new PathfindingService.NavigationRequest(
+            PathfindingService.Owner.MOVE,
+            () -> fixedDest,
+            Config.pathfindingArrivalDistance(),
+            0.0,
+            20,
+            () -> clearMoveState(botUuid),
             () -> clearMoveState(botUuid),
             null));
   }
@@ -607,10 +733,31 @@ public final class MoveCommand implements FppCommand {
   }
 
   private void startRoaming(@NotNull FakePlayer fp, @NotNull Location center, double radius) {
+    startRoaming(fp, center, radius, false);
+  }
+
+  private void startRoaming(@NotNull FakePlayer fp, @NotNull Location center, double radius, boolean infinite) {
     UUID uid = fp.getUuid();
     roamCenters.put(uid, center.clone());
     roamRadii.put(uid, radius);
-    navigateRoamStep(uid);
+    if (infinite) infiniteRoam.add(uid);
+    else infiniteRoam.remove(uid);
+    Player bot = fp.getPlayer();
+    if (bot == null) {
+      clearRoamState(uid);
+      return;
+    }
+    int delay = Math.floorMod(uid.hashCode(), 40);
+    int pause =
+        FppScheduler.runAtEntityLaterWithId(
+            plugin,
+            bot,
+            () -> {
+              roamPauseTasks.remove(uid);
+              navigateRoamStep(uid);
+            },
+            delay);
+    roamPauseTasks.put(uid, pause);
   }
 
   private void navigateRoamStep(@NotNull UUID botUuid) {
@@ -627,7 +774,7 @@ public final class MoveCommand implements FppCommand {
       return;
     }
 
-    Location center = roamCenters.get(botUuid);
+    Location center = infiniteRoam.contains(botUuid) ? bot.getLocation().clone() : roamCenters.get(botUuid);
     Double radius = roamRadii.get(botUuid);
     if (center == null || radius == null) {
       clearRoamState(botUuid);
@@ -637,15 +784,15 @@ public final class MoveCommand implements FppCommand {
     Location dest = findRandomWalkableLocation(bot.getWorld(), center, radius);
     if (dest == null) {
 
-      BukkitTask pause =
-          Bukkit.getScheduler()
-              .runTaskLater(
-                  plugin,
-                  () -> {
-                    roamPauseTasks.remove(botUuid);
-                    navigateRoamStep(botUuid);
-                  },
-                  40L);
+      int pause =
+          FppScheduler.runAtEntityLaterWithId(
+              plugin,
+              bot,
+              () -> {
+                roamPauseTasks.remove(botUuid);
+                navigateRoamStep(botUuid);
+              },
+              40L);
       roamPauseTasks.put(botUuid, pause);
       return;
     }
@@ -657,10 +804,38 @@ public final class MoveCommand implements FppCommand {
             () -> dest,
             Config.pathfindingPatrolArrivalDistance(),
             0.0,
-            10,
+            3,
             () -> onRoamArrival(botUuid),
             () -> clearRoamState(botUuid),
-            () -> onRoamArrival(botUuid)));
+            () -> onRoamPathFailure(botUuid)));
+  }
+
+  private void onRoamPathFailure(@NotNull UUID botUuid) {
+    if (!roamCenters.containsKey(botUuid)) return;
+    FakePlayer fp = manager.getByUuid(botUuid);
+    if (fp == null) {
+      clearRoamState(botUuid);
+      return;
+    }
+    Player bot = fp.getPlayer();
+    if (bot == null || !bot.isOnline()) {
+      clearRoamState(botUuid);
+      return;
+    }
+    NmsPlayerSpawner.setMovementForward(bot, 0f);
+    bot.setSprinting(false);
+    int failures = roamFailureCounts.merge(botUuid, 1, Integer::sum);
+    long delay = Math.min(80L, 10L + failures * 10L);
+    int pause =
+        FppScheduler.runAtEntityLaterWithId(
+            plugin,
+            bot,
+            () -> {
+              roamPauseTasks.remove(botUuid);
+              navigateRoamStep(botUuid);
+            },
+            delay);
+    roamPauseTasks.put(botUuid, pause);
   }
 
   private void onRoamArrival(@NotNull UUID botUuid) {
@@ -679,6 +854,7 @@ public final class MoveCommand implements FppCommand {
 
     NmsPlayerSpawner.setMovementForward(bot, 0f);
     bot.setSprinting(false);
+    roamFailureCounts.remove(botUuid);
 
     ThreadLocalRandom rng = ThreadLocalRandom.current();
 
@@ -687,44 +863,44 @@ public final class MoveCommand implements FppCommand {
     int lookCount = rng.nextInt(1, 4);
     int lookInterval = Math.max(10, pauseTicks / (lookCount + 1));
 
-    BukkitTask lookTask =
-        Bukkit.getScheduler()
-            .runTaskTimer(
-                plugin,
-                new Runnable() {
-                  int ticks = 0;
-                  int looksDone = 0;
-                  float baseYaw = bot.getLocation().getYaw();
+    int lookTask =
+        FppScheduler.runAtEntityRepeatingWithId(
+            plugin,
+            bot,
+            new Runnable() {
+              int ticks = 0;
+              int looksDone = 0;
+              float baseYaw = bot.getLocation().getYaw();
 
-                  @Override
-                  public void run() {
-                    ticks++;
-                    Player b = fp.getPlayer();
-                    if (b == null || !b.isOnline() || !roamCenters.containsKey(botUuid)) return;
+              @Override
+              public void run() {
+                ticks++;
+                Player b = fp.getPlayer();
+                if (b == null || !b.isOnline() || !roamCenters.containsKey(botUuid)) return;
 
-                    if (looksDone < lookCount && ticks % lookInterval == 0) {
+                if (looksDone < lookCount && ticks % lookInterval == 0) {
 
-                      float newYaw = baseYaw + rng.nextFloat(-60f, 61f);
-                      float newPitch = rng.nextFloat(-15f, 26f);
-                      b.setRotation(newYaw, newPitch);
-                      NmsPlayerSpawner.setHeadYaw(b, newYaw);
-                      looksDone++;
-                    }
-                  }
-                },
-                5L,
-                1L);
+                  float newYaw = baseYaw + rng.nextFloat(-60f, 61f);
+                  float newPitch = rng.nextFloat(-15f, 26f);
+                  b.setRotation(newYaw, newPitch);
+                  NmsPlayerSpawner.setHeadYaw(b, newYaw);
+                  looksDone++;
+                }
+              }
+            },
+            5L,
+            1L);
     roamLookTasks.put(botUuid, lookTask);
 
-    BukkitTask pause =
-        Bukkit.getScheduler()
-            .runTaskLater(
-                plugin,
-                () -> {
-                  cancelRoamPauseTasks(botUuid);
-                  navigateRoamStep(botUuid);
-                },
-                pauseTicks);
+    int pause =
+        FppScheduler.runAtEntityLaterWithId(
+            plugin,
+            bot,
+            () -> {
+              cancelRoamPauseTasks(botUuid);
+              navigateRoamStep(botUuid);
+            },
+            pauseTicks);
     roamPauseTasks.put(botUuid, pause);
   }
 
@@ -736,7 +912,7 @@ public final class MoveCommand implements FppCommand {
     int cz = center.getBlockZ();
     int r = (int) radius;
 
-    for (int attempt = 0; attempt < 30; attempt++) {
+    for (int attempt = 0; attempt < 80; attempt++) {
 
       double angle = rng.nextDouble(Math.PI * 2);
       double dist = Math.sqrt(rng.nextDouble()) * r;
@@ -744,11 +920,29 @@ public final class MoveCommand implements FppCommand {
       int tz = cz + (int) Math.round(Math.sin(angle) * dist);
 
       int ty = findWalkableY(world, tx, tz, center.getBlockY());
-      if (ty >= world.getMinHeight() && BotPathfinder.walkable(world, tx, ty, tz)) {
+      if (ty >= world.getMinHeight()
+          && BotPathfinder.walkable(world, tx, ty, tz)
+          && hasRoamClearance(world, tx, ty, tz)) {
         return new Location(world, tx + 0.5, ty, tz + 0.5);
       }
     }
     return null;
+  }
+
+  private boolean hasRoamClearance(@NotNull World world, int x, int y, int z) {
+    int open = 0;
+    int blocked = 0;
+    int[][] dirs = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+    for (int[] dir : dirs) {
+      int nx = x + dir[0];
+      int nz = z + dir[1];
+      boolean clear =
+          BotPathfinder.canPassThrough(world, nx, y, nz)
+              && BotPathfinder.canPassThrough(world, nx, y + 1, nz);
+      if (clear) open++;
+      else blocked++;
+    }
+    return open >= 3 && blocked <= 1;
   }
 
   private int findWalkableY(@NotNull World world, int x, int z, int refY) {
@@ -770,15 +964,17 @@ public final class MoveCommand implements FppCommand {
   }
 
   private void cancelRoamPauseTasks(@NotNull UUID botUuid) {
-    BukkitTask look = roamLookTasks.remove(botUuid);
-    if (look != null && !look.isCancelled()) look.cancel();
-    BukkitTask pause = roamPauseTasks.remove(botUuid);
-    if (pause != null && !pause.isCancelled()) pause.cancel();
+    Integer look = roamLookTasks.remove(botUuid);
+    if (look != null) FppScheduler.cancelTask(look);
+    Integer pause = roamPauseTasks.remove(botUuid);
+    if (pause != null) FppScheduler.cancelTask(pause);
   }
 
   private void clearRoamState(@NotNull UUID botUuid) {
     roamCenters.remove(botUuid);
     roamRadii.remove(botUuid);
+    infiniteRoam.remove(botUuid);
+    roamFailureCounts.remove(botUuid);
     cancelRoamPauseTasks(botUuid);
   }
 
@@ -787,6 +983,14 @@ public final class MoveCommand implements FppCommand {
     activeRouteNames.remove(botUuid);
     activeRandomFlags.remove(botUuid);
     clearRoamState(botUuid);
+    FakePlayer fp = manager.getByUuid(botUuid);
+    Player bot = fp != null ? fp.getPlayer() : null;
+    if (bot != null && bot.isOnline()) {
+      NmsPlayerSpawner.setMovementForward(bot, 0f);
+      NmsPlayerSpawner.setMovementStrafe(bot, 0f);
+      NmsPlayerSpawner.setJumping(bot, false);
+      bot.setSprinting(false);
+    }
   }
 
   private void cancelNavigation(@NotNull UUID botUuid) {
@@ -837,18 +1041,29 @@ public final class MoveCommand implements FppCommand {
     } else if (args.length == 2) {
       String in = args[1].toLowerCase();
 
-      for (String flag : List.of("--to", "--wp", "--roam", "--stop"))
+      for (String flag : List.of("--to", "--coords", "--pos", "--wp", "--roam", "--stop"))
         if (flag.startsWith(in)) out.add(flag);
 
-      for (Player p : Bukkit.getOnlinePlayers()) {
-        if (manager.getByName(p.getName()) == null && p.getName().toLowerCase().startsWith(in))
-          out.add(p.getName());
+      if (!args[0].equalsIgnoreCase("all")) {
+        for (Player p : Bukkit.getOnlinePlayers()) {
+          if (manager.getByName(p.getName()) == null && p.getName().toLowerCase().startsWith(in))
+            out.add(p.getName());
+        }
       }
     } else if (args.length == 3 && args[1].equalsIgnoreCase("--to")) {
       String in = args[2].toLowerCase();
       for (Player p : Bukkit.getOnlinePlayers()) {
         if (manager.getByName(p.getName()) == null && p.getName().toLowerCase().startsWith(in))
           out.add(p.getName());
+      }
+    } else if (args.length >= 3
+        && args.length <= 5
+        && (args[1].equalsIgnoreCase("--coords") || args[1].equalsIgnoreCase("--pos"))) {
+      if (sender instanceof Player p) {
+        Location loc = p.getLocation();
+        if (args.length == 3) out.add(String.valueOf(loc.getBlockX()));
+        else if (args.length == 4) out.add(String.valueOf(loc.getBlockY()));
+        else out.add(String.valueOf(loc.getBlockZ()));
       }
     } else if (args.length == 3 && args[1].equalsIgnoreCase("--wp")) {
 
@@ -866,6 +1081,7 @@ public final class MoveCommand implements FppCommand {
         Location loc = p.getLocation();
         out.add(loc.getBlockX() + " " + loc.getBlockY() + " " + loc.getBlockZ());
       }
+      out.add("infinite");
       out.add("10");
       out.add("20");
       out.add("30");

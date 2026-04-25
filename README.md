@@ -106,6 +106,7 @@ All commands are under `/fpp` (aliases: `/fakeplayer`, `/fp`).
 | `/fpp freeze <name\|all> [on\|off]` | Freeze or unfreeze bots — frozen bots are immovable |
 | `/fpp inventory <bot>` | Open the bot's full 54-slot inventory GUI (alias: `/fpp inv`) |
 | `/fpp move <bot> <player>` | Navigate a bot to an online player using A* pathfinding |
+| `/fpp move <bot> --coords <x> <y> <z>` | Navigate a bot to exact world coordinates (supports `~` relative offsets) |
 | `/fpp move <bot> --wp <route>` | Patrol a named waypoint route on a loop |
 | `/fpp move <bot> --stop` | Stop the bot's current navigation |
 | `/fpp mine <bot> [once\|stop]` | Continuous or one-shot block mining |
@@ -120,9 +121,12 @@ All commands are under `/fpp` (aliases: `/fakeplayer`, `/fp`).
 | `/fpp personality <bot> set\|reset\|show` | Assign or clear AI personality per bot |
 | `/fpp personality list\|reload` | List available personality files or reload them |
 | `/fpp ping [<bot>] [--ping <ms>\|--random] [--count <n>]` | Set simulated tab-list ping for one or all bots |
-| `/fpp attack <bot> [--stop]` | Bot walks to sender and attacks nearby entities (PvE); `--mob` for stationary mob-targeting mode |
+| `/fpp attack <bot> [--stop]` | Bot walks to sender and attacks nearby entities (PvE); `--mob` for stationary mob-targeting mode; `--mob --move` to pursue targets |
 | `/fpp follow <bot\|all> <player>` | Bot continuously follows an online player; path recalculates as target moves |
 | `/fpp follow <bot\|all> --stop` | Stop the bot's current follow loop |
+| `/fpp sleep <bot\|all> <x y z> <radius>` | Set a sleep-origin so the bot auto-sleeps at night near that location |
+| `/fpp sleep <bot\|all> --stop` | Clear the bot's sleep-origin |
+| `/fpp stop [<bot>\|all]` | Cancel all active tasks for a bot (move, mine, place, use, attack, follow, sleep) |
 | `/fpp badword add\|remove\|list\|reload` | Manage the runtime badword list |
 | `/fpp chat [on\|off\|status]` | Toggle the fake chat system |
 | `/fpp swap [on\|off\|status\|now <bot>\|list\|info <bot>]` | Toggle / manage the bot swap/rotation system |
@@ -343,6 +347,27 @@ Identical feature set for BungeeCord/Waterfall networks.
 ---
 
 ## Changelog
+
+### v1.6.6.3 *(2026-04-23)*
+
+**New Commands**
+
+- **`/fpp stop [<bot>|all]`** — instantly cancels all active tasks for a bot (navigation, mining, placing, using, attacking, following, sleeping). Permission: `fpp.stop`.
+- **`/fpp sleep <bot|all> <x y z> <radius>`** — registers a sleep-origin; the bot automatically walks to the nearest free bed within the radius and sleeps at night. `/fpp sleep <bot|all> --stop` clears the origin. Permission: `fpp.sleep`.
+- **`/fpp move <bot> --coords <x> <y> <z>`** — navigates a bot to exact world coordinates; supports `~` relative notation (e.g. `~ ~5 ~`). Permission: `fpp.move`.
+
+**Pathfinding Improvements**
+
+- **PvE `--move` flag** — `/fpp attack <bot> --mob --move` makes the bot pursue its target instead of standing still; chases when distance > reach, stops to attack when in melee range.
+- **Sprint-jump naturalness fix** — jump now fires on the first airborne→ground transition instead of on a fixed 6-tick timer, eliminating premature bunny-hops on flat ground.
+- **Organic walk wobble** — bots apply a subtle sine-wave yaw drift (±5°) on straight `WALK` segments, making navigation look more human and less robotic.
+
+**Technical**
+
+- `StopCommand`, `SleepCommand` (NMS rewrite), and `MoveCommand --coords` wired through `FakePlayerPlugin.onEnable`
+- `MobFlags` record extended with `moveToTarget` boolean (4th component); persistence-resume path hardcodes `false`
+
+---
 
 ### v1.6.6.2 *(2026-04-21)*
 
@@ -896,4 +921,4 @@ Thank you for using Fake Player Plugin. Without you, it wouldn't be where it is 
 
 ---
 
-*Built for Paper 1.21.x · Java 21 · FPP v1.6.6.2 · [Modrinth](https://modrinth.com/plugin/fake-player-plugin-(fpp)) · [SpigotMC](https://www.spigotmc.org/resources/fake-player-plugin-fpp.133572/) · [PaperMC](https://hangar.papermc.io/Pepe-tf/FakePlayerPlugin) · [BuiltByBit](https://builtbybit.com/resources/fake-player-plugin.98704/) · [Wiki](https://fakeplayerplugin.xyz) · [GitHub](https://github.com/Pepe-tf/fake-player-plugin)*
+*Built for Paper 1.21.x · Java 21 · FPP v1.6.6.3 · [Modrinth](https://modrinth.com/plugin/fake-player-plugin-(fpp)) · [SpigotMC](https://www.spigotmc.org/resources/fake-player-plugin-fpp.133572/) · [PaperMC](https://hangar.papermc.io/Pepe-tf/FakePlayerPlugin) · [BuiltByBit](https://builtbybit.com/resources/fake-player-plugin.98704/) · [Wiki](https://fakeplayerplugin.xyz) · [GitHub](https://github.com/Pepe-tf/fake-player-plugin)*

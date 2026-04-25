@@ -39,13 +39,12 @@ public final class UpdateChecker {
       Config.debug("Update checker disabled in config.");
       return;
     }
-    Bukkit.getScheduler()
-        .runTaskAsynchronously(
-            plugin,
-            () -> {
-              UpdateInfo info = fetchOrCached(plugin);
-              Bukkit.getScheduler().runTask(plugin, () -> handleResultOnMainThread(plugin, info));
-            });
+    FppScheduler.runAsync(
+        plugin,
+        () -> {
+          UpdateInfo info = fetchOrCached(plugin);
+          FppScheduler.runSync(plugin, () -> handleResultOnMainThread(plugin, info));
+        });
   }
 
   public static UpdateInfo checkBlocking(Plugin plugin, long timeoutMs) {
@@ -55,13 +54,12 @@ public final class UpdateChecker {
     }
     final UpdateInfo[] out = {null};
     CountDownLatch latch = new CountDownLatch(1);
-    Bukkit.getScheduler()
-        .runTaskAsynchronously(
-            plugin,
-            () -> {
-              out[0] = fetchOrCached(plugin);
-              latch.countDown();
-            });
+    FppScheduler.runAsync(
+        plugin,
+        () -> {
+          out[0] = fetchOrCached(plugin);
+          latch.countDown();
+        });
     try {
       if (latch.await(Math.max(100, timeoutMs), TimeUnit.MILLISECONDS)) return out[0];
     } catch (InterruptedException e) {

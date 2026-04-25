@@ -15,6 +15,7 @@ import me.bill.fakePlayerPlugin.util.BadwordFilter;
 import me.bill.fakePlayerPlugin.util.BotTabTeam;
 import me.bill.fakePlayerPlugin.util.ConfigValidator;
 import me.bill.fakePlayerPlugin.util.FppLogger;
+import me.bill.fakePlayerPlugin.util.FppScheduler;
 import me.bill.fakePlayerPlugin.util.UpdateChecker;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
@@ -148,19 +149,17 @@ public class ReloadCommand implements FppCommand {
     if (Config.configSyncMode().equalsIgnoreCase("AUTO_PUSH")
         && plugin.getConfigSyncManager() != null) {
       var csm = plugin.getConfigSyncManager();
-      org.bukkit.Bukkit.getScheduler()
-          .runTaskAsynchronously(
-              plugin,
-              () -> {
-                int pushed = csm.pushAll(sender.getName());
-                org.bukkit.Bukkit.getScheduler()
-                    .runTask(
-                        plugin,
-                        () ->
-                            sendStep(
-                                sender,
-                                "AUTO_PUSH: " + pushed + " config file(s) pushed" + " to network"));
-              });
+      FppScheduler.runAsync(
+          plugin,
+          () -> {
+            int pushed = csm.pushAll(sender.getName());
+            FppScheduler.runSync(
+                plugin,
+                () ->
+                    sendStep(
+                        sender,
+                        "AUTO_PUSH: " + pushed + " config file(s) pushed" + " to network"));
+          });
     }
   }
 
@@ -349,19 +348,17 @@ public class ReloadCommand implements FppCommand {
     if (Config.configSyncMode().equalsIgnoreCase("AUTO_PUSH")
         && plugin.getConfigSyncManager() != null) {
       var csm = plugin.getConfigSyncManager();
-      org.bukkit.Bukkit.getScheduler()
-          .runTaskAsynchronously(
-              plugin,
-              () -> {
-                int pushed = csm.pushAll(sender.getName());
-                org.bukkit.Bukkit.getScheduler()
-                    .runTask(
-                        plugin,
-                        () ->
-                            sendStep(
-                                sender,
-                                "AUTO_PUSH: " + pushed + " config file(s) pushed" + " to network"));
-              });
+      FppScheduler.runAsync(
+          plugin,
+          () -> {
+            int pushed = csm.pushAll(sender.getName());
+            FppScheduler.runSync(
+                plugin,
+                () ->
+                    sendStep(
+                        sender,
+                        "AUTO_PUSH: " + pushed + " config file(s) pushed" + " to network"));
+          });
     }
 
     if (plugin.getTabListManager() != null) plugin.getTabListManager().reload();

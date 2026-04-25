@@ -11,6 +11,7 @@ import me.bill.fakePlayerPlugin.database.DatabaseManager;
 import me.bill.fakePlayerPlugin.lang.Lang;
 import me.bill.fakePlayerPlugin.permission.Perm;
 import me.bill.fakePlayerPlugin.util.FppLogger;
+import me.bill.fakePlayerPlugin.util.FppScheduler;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.World;
@@ -43,7 +44,7 @@ public final class PeakHoursManager {
 
   public void start() {
     if (tickTaskId != -1) return;
-    tickTaskId = Bukkit.getScheduler().runTaskTimer(plugin, this::tick, 40L, 1200L).getTaskId();
+    tickTaskId = FppScheduler.runSyncRepeatingWithId(plugin, this::tick, 40L, 1200L);
     Config.debugChat("[PeakHours] Scheduler started (60-second tick).");
   }
 
@@ -64,8 +65,7 @@ public final class PeakHoursManager {
     }
     if (Config.peakHoursEnabled() && Config.swapEnabled()) {
       start();
-
-      Bukkit.getScheduler().runTaskLater(plugin, this::tick, 20L);
+      FppScheduler.runSyncLater(plugin, this::tick, 20L);
     }
   }
 
@@ -330,14 +330,13 @@ public final class PeakHoursManager {
       long base = n == 1 ? 20L : (long) (((double) idx / (n - 1)) * totalTicks) + 20L;
       long jitter = ThreadLocalRandom.current().nextInt(9) - 4L;
       long delay = Math.max(20L, base + jitter);
-      Bukkit.getScheduler()
-          .runTaskLater(
-              plugin,
-              () -> {
-                action.run();
-                if (idx == n - 1 && onDone != null) onDone.run();
-              },
-              delay);
+      FppScheduler.runSyncLater(
+          plugin,
+          () -> {
+            action.run();
+            if (idx == n - 1 && onDone != null) onDone.run();
+          },
+          delay);
     }
   }
 
@@ -512,7 +511,7 @@ public final class PeakHoursManager {
 
   private void stopTick() {
     if (tickTaskId != -1) {
-      Bukkit.getScheduler().cancelTask(tickTaskId);
+      FppScheduler.cancelTask(tickTaskId);
       tickTaskId = -1;
     }
   }

@@ -1,0 +1,6 @@
+name: FPP Hello Addon
+version: 1.0.0
+main: me.bill.fpphelloaddon.HelloWorldAddon
+api-version: '1.21'
+depend: [ FakePlayerPlugin ]
+description: Minimal hello-world sample addon for FakePlayerPlugin.

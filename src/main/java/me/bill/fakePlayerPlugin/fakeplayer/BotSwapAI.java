@@ -7,6 +7,7 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicInteger;
 import me.bill.fakePlayerPlugin.FakePlayerPlugin;
 import me.bill.fakePlayerPlugin.config.Config;
+import me.bill.fakePlayerPlugin.util.FppScheduler;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -179,7 +180,7 @@ public final class BotSwapAI {
     this.plugin = plugin;
     this.manager = manager;
 
-    Bukkit.getScheduler().runTaskTimer(plugin, this::syncBotSchedules, 40L, 20L);
+    FppScheduler.runSyncRepeating(plugin, this::syncBotSchedules, 40L, 20L);
   }
 
   private void syncBotSchedules() {
@@ -200,7 +201,7 @@ public final class BotSwapAI {
         .removeIf(
             e -> {
               if (manager.getByUuid(e.getKey()) == null) {
-                Bukkit.getScheduler().cancelTask(e.getValue());
+                FppScheduler.cancelTask(e.getValue());
                 cleanupState(e.getKey());
                 return true;
               }
@@ -211,7 +212,7 @@ public final class BotSwapAI {
         .removeIf(
             e -> {
               if (manager.getByUuid(e.getKey()) == null) {
-                Bukkit.getScheduler().cancelTask(e.getValue());
+                FppScheduler.cancelTask(e.getValue());
                 return true;
               }
               return false;
@@ -225,23 +226,21 @@ public final class BotSwapAI {
     UUID id = fp.getUuid();
 
     Integer prev = sessionTimers.remove(id);
-    if (prev != null) Bukkit.getScheduler().cancelTask(prev);
+    if (prev != null) FppScheduler.cancelTask(prev);
 
     assignPersonality(id);
     long delay = sessionDurationTicks(id);
     sessionExpiry.put(id, System.currentTimeMillis() + (delay * 50L));
 
     int taskId =
-        Bukkit.getScheduler()
-            .runTaskLater(
-                plugin,
-                () -> {
-                  sessionTimers.remove(id);
-                  FakePlayer current = manager.getByUuid(id);
-                  if (current != null) doLeave(current);
-                },
-                delay)
-            .getTaskId();
+        FppScheduler.runSyncLaterWithId(
+            plugin,
+            () -> {
+              sessionTimers.remove(id);
+              FakePlayer current = manager.getByUuid(id);
+              if (current != null) doLeave(current);
+            },
+            delay);
 
     sessionTimers.put(id, taskId);
     Config.debugSwap(
@@ -256,21 +255,21 @@ public final class BotSwapAI {
 
   public void cancel(UUID uuid) {
     Integer tid = sessionTimers.remove(uuid);
-    if (tid != null) Bukkit.getScheduler().cancelTask(tid);
+    if (tid != null) FppScheduler.cancelTask(tid);
     Integer ptid = packingTimers.remove(uuid);
-    if (ptid != null) Bukkit.getScheduler().cancelTask(ptid);
+    if (ptid != null) FppScheduler.cancelTask(ptid);
     Integer rid = rejoinTimers.remove(uuid);
     if (rid != null) {
-      Bukkit.getScheduler().cancelTask(rid);
+      FppScheduler.cancelTask(rid);
       swappedOut.decrementAndGet();
     }
     cleanupState(uuid);
   }
 
   public void cancelAll() {
-    sessionTimers.values().forEach(Bukkit.getScheduler()::cancelTask);
-    packingTimers.values().forEach(Bukkit.getScheduler()::cancelTask);
-    rejoinTimers.values().forEach(Bukkit.getScheduler()::cancelTask);
+    sessionTimers.values().forEach(FppScheduler::cancelTask);
+    packingTimers.values().forEach(FppScheduler::cancelTask);
+    rejoinTimers.values().forEach(FppScheduler::cancelTask);
     sessionTimers.clear();
     packingTimers.clear();
     rejoinTimers.clear();
@@ -286,10 +285,10 @@ public final class BotSwapAI {
     if (fp == null) return false;
     UUID id = fp.getUuid();
     Integer tid = sessionTimers.remove(id);
-    if (tid != null) Bukkit.getScheduler().cancelTask(tid);
+    if (tid != null) FppScheduler.cancelTask(tid);
 
     Integer ptid = packingTimers.remove(id);
-    if (ptid != null) Bukkit.getScheduler().cancelTask(ptid);
+    if (ptid != null) FppScheduler.cancelTask(ptid);
     doLeave(fp);
     return true;
   }
@@ -388,76 +387,67 @@ public final class BotSwapAI {
     long preDeleteDelay = 20L + ThreadLocalRandom.current().nextInt(80) + leaveDelayTicks;
 
     int packingId =
-        Bukkit.getScheduler()
-            .runTaskLater(
-                plugin,
-                () -> {
-                  packingTimers.remove(leavingUuid);
+        FppScheduler.runSyncLaterWithId(
+            plugin,
+            () -> {
+              packingTimers.remove(leavingUuid);
 
-                  if (!Config.swapEnabled()) return;
-                  if (manager.getByName(oldName) == null) return;
+              if (!Config.swapEnabled()) return;
+              if (manager.getByName(oldName) == null) return;
 
-                  sessionTimers.remove(leavingUuid);
-                  sessionExpiry.remove(leavingUuid);
-                  swappedOut.incrementAndGet();
+              sessionTimers.remove(leavingUuid);
+              sessionExpiry.remove(leavingUuid);
+              swappedOut.incrementAndGet();
 
-                  int absMin = Config.swapAbsenceMin();
-                  int absMax = Math.max(absMin, Config.swapAbsenceMax());
-                  int absSec =
-                      absMin
-                          + (absMax > absMin
-                              ? ThreadLocalRandom.current().nextInt(absMax - absMin + 1)
-                              : 0);
-                  long absenceTicks = Math.max(40L, (long) absSec * 20L);
-                  long leaveBuffer =
-                      (long) Math.max(Config.leaveDelayMin(), Config.leaveDelayMax()) + 10L;
-                  long totalRejoinDelay = absenceTicks + leaveBuffer;
+              int absMin = Config.swapAbsenceMin();
+              int absMax = Math.max(absMin, Config.swapAbsenceMax());
+              int absSec =
+                  absMin
+                      + (absMax > absMin ? ThreadLocalRandom.current().nextInt(absMax - absMin + 1) : 0);
+              long absenceTicks = Math.max(40L, (long) absSec * 20L);
+              long leaveBuffer = (long) Math.max(Config.leaveDelayMin(), Config.leaveDelayMax()) + 10L;
+              long totalRejoinDelay = absenceTicks + leaveBuffer;
 
-                  int rid =
-                      Bukkit.getScheduler()
-                          .runTaskLater(
-                              plugin,
-                              () -> {
-                                rejoinTimers.remove(leavingUuid);
-                                doRejoin(leavingUuid, lastLoc, oldName, newCount, p);
-                              },
-                              totalRejoinDelay)
-                          .getTaskId();
+              int rid =
+                  FppScheduler.runSyncLaterWithId(
+                      plugin,
+                      () -> {
+                        rejoinTimers.remove(leavingUuid);
+                        doRejoin(leavingUuid, lastLoc, oldName, newCount, p);
+                      },
+                      totalRejoinDelay);
 
+              Config.debugSwap(
+                  "[SwapAI] "
+                      + oldName
+                      + " offline for ~"
+                      + absSec
+                      + "s - rejoining in "
+                      + (totalRejoinDelay / 20)
+                      + "s.");
+
+              // Snapshot inventory + XP before the entity is deleted so we can
+              // restore them when the bot rejoins.
+              FakePlayer leavingBot = manager.getByName(oldName);
+              if (leavingBot != null) {
+                Player leavingPlayer = leavingBot.getPlayer();
+                if (leavingPlayer != null && leavingPlayer.isValid()) {
+                  swapSnapshots.put(
+                      leavingUuid,
+                      new SwapSnapshot(
+                          serializeInventory(leavingPlayer.getInventory()),
+                          leavingPlayer.getTotalExperience(),
+                          leavingPlayer.getLevel(),
+                          leavingPlayer.getExp()));
                   Config.debugSwap(
-                      "[SwapAI] "
-                          + oldName
-                          + " offline for ~"
-                          + absSec
-                          + "s - rejoining in "
-                          + (totalRejoinDelay / 20)
-                          + "s.");
+                      "[SwapAI] Snapshotted inventory+XP for '" + oldName + "' before swap-leave.");
+                }
+              }
 
-                  // Snapshot inventory + XP before the entity is deleted so we can
-                  // restore them when the bot rejoins.
-                  FakePlayer leavingBot = manager.getByName(oldName);
-                  if (leavingBot != null) {
-                    Player leavingPlayer = leavingBot.getPlayer();
-                    if (leavingPlayer != null && leavingPlayer.isValid()) {
-                      swapSnapshots.put(
-                          leavingUuid,
-                          new SwapSnapshot(
-                              serializeInventory(leavingPlayer.getInventory()),
-                              leavingPlayer.getTotalExperience(),
-                              leavingPlayer.getLevel(),
-                              leavingPlayer.getExp()));
-                      Config.debugSwap(
-                          "[SwapAI] Snapshotted inventory+XP for '"
-                              + oldName
-                              + "' before swap-leave.");
-                    }
-                  }
-
-                  manager.delete(oldName);
-                  rejoinTimers.put(leavingUuid, rid);
-                },
-                preDeleteDelay)
-            .getTaskId();
+              manager.delete(oldName);
+              rejoinTimers.put(leavingUuid, rid);
+            },
+            preDeleteDelay);
 
     packingTimers.put(leavingUuid, packingId);
   }
@@ -486,15 +476,13 @@ public final class BotSwapAI {
         Config.debugSwap("[SwapAI] Will retry '" + oldName + "' in " + (retryTicks / 20) + "s.");
         swappedOut.incrementAndGet();
         int retryId =
-            Bukkit.getScheduler()
-                .runTaskLater(
-                    plugin,
-                    () -> {
-                      rejoinTimers.remove(leavingUuid);
-                      doRejoin(leavingUuid, loc, oldName, newSwapCount, p);
-                    },
-                    retryTicks)
-                .getTaskId();
+            FppScheduler.runSyncLaterWithId(
+                plugin,
+                () -> {
+                  rejoinTimers.remove(leavingUuid);
+                  doRejoin(leavingUuid, loc, oldName, newSwapCount, p);
+                },
+                retryTicks);
         rejoinTimers.put(leavingUuid, retryId);
       }
       return;
@@ -525,29 +513,27 @@ public final class BotSwapAI {
     SwapSnapshot snapshot = swapSnapshots.remove(leavingUuid);
     if (snapshot != null) {
       final UUID newBotUuid = newBot.getUuid();
-      Bukkit.getScheduler()
-          .runTaskLater(
-              plugin,
-              () -> {
-                FakePlayer restored = manager.getByUuid(newBotUuid);
-                if (restored == null) return;
-                Player bot = restored.getPlayer();
-                if (bot == null || !bot.isValid()) return;
-                if (!snapshot.inventorySlots().isEmpty()) {
-                  applyInventory(bot.getInventory(), snapshot.inventorySlots());
-                }
-                if (snapshot.xpTotal() > 0 || snapshot.xpLevel() > 0 || snapshot.xpProgress() > 0f) {
-                  bot.setTotalExperience(0);
-                  bot.setLevel(0);
-                  bot.setExp(0f);
-                  bot.setLevel(snapshot.xpLevel());
-                  bot.setExp(snapshot.xpProgress());
-                  bot.setTotalExperience(snapshot.xpTotal());
-                }
-                Config.debugSwap(
-                    "[SwapAI] Restored inventory+XP to '" + restored.getName() + "' on rejoin.");
-              },
-              10L);
+      FppScheduler.runSyncLater(
+          plugin,
+          () -> {
+            FakePlayer restored = manager.getByUuid(newBotUuid);
+            if (restored == null) return;
+            Player bot = restored.getPlayer();
+            if (bot == null || !bot.isValid()) return;
+            if (!snapshot.inventorySlots().isEmpty()) {
+              applyInventory(bot.getInventory(), snapshot.inventorySlots());
+            }
+            if (snapshot.xpTotal() > 0 || snapshot.xpLevel() > 0 || snapshot.xpProgress() > 0f) {
+              bot.setTotalExperience(0);
+              bot.setLevel(0);
+              bot.setExp(0f);
+              bot.setLevel(snapshot.xpLevel());
+              bot.setExp(snapshot.xpProgress());
+              bot.setTotalExperience(snapshot.xpTotal());
+            }
+            Config.debugSwap("[SwapAI] Restored inventory+XP to '" + restored.getName() + "' on rejoin.");
+          },
+          10L);
     }
 
     Config.debugSwap(
@@ -562,14 +548,13 @@ public final class BotSwapAI {
     if (Config.swapGreetingChat() && shouldChat()) {
       UUID newId = newBot.getUuid();
       long greetDelay = 20L + ThreadLocalRandom.current().nextInt(60);
-      Bukkit.getScheduler()
-          .runTaskLater(
-              plugin,
-              () -> {
-                FakePlayer b = manager.getByUuid(newId);
-                if (b != null) sendBotChat(b, randomFrom(GREETINGS));
-              },
-              greetDelay);
+      FppScheduler.runSyncLater(
+          plugin,
+          () -> {
+            FakePlayer b = manager.getByUuid(newId);
+            if (b != null) sendBotChat(b, randomFrom(GREETINGS));
+          },
+          greetDelay);
     }
 
     schedule(newBot);

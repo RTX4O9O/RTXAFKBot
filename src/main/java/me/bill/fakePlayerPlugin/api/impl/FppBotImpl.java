@@ -1,6 +1,7 @@
 package me.bill.fakePlayerPlugin.api.impl;
 
 import java.time.Duration;
+import java.util.Set;
 import java.util.UUID;
 import me.bill.fakePlayerPlugin.api.FppBot;
 import me.bill.fakePlayerPlugin.fakeplayer.FakePlayer;
@@ -89,6 +90,26 @@ public final class FppBotImpl implements FppBot {
   @Override public @NotNull UUID getSpawnedByUuid() {
     UUID u = fp.getSpawnedByUuid();
     return u != null ? u : new UUID(0, 0);
+  }
+
+  @Override public boolean isOwnedBy(@NotNull UUID playerUuid) {
+    return playerUuid.equals(getSpawnedByUuid());
+  }
+
+  @Override public boolean hasControllerAccess(@NotNull UUID playerUuid) {
+    return isOwnedBy(playerUuid) || fp.hasSharedController(playerUuid);
+  }
+
+  @Override public @NotNull Set<UUID> getSharedControllerUuids() {
+    return fp.getSharedControllers();
+  }
+
+  @Override public boolean grantControllerAccess(@NotNull UUID playerUuid) {
+    return fp.addSharedController(playerUuid);
+  }
+
+  @Override public boolean revokeControllerAccess(@NotNull UUID playerUuid) {
+    return fp.removeSharedController(playerUuid);
   }
 
   @Override public @NotNull Duration getUptime()       { return fp.getUptime(); }

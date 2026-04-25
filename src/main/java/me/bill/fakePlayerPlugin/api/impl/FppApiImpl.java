@@ -10,13 +10,19 @@ import me.bill.fakePlayerPlugin.FakePlayerPlugin;
 import me.bill.fakePlayerPlugin.api.FppAddonCommand;
 import me.bill.fakePlayerPlugin.api.FppApi;
 import me.bill.fakePlayerPlugin.api.FppBot;
+import me.bill.fakePlayerPlugin.api.FppBotBlockBreakEvent;
+import me.bill.fakePlayerPlugin.api.FppBotBlockPlaceEvent;
+import me.bill.fakePlayerPlugin.api.FppBotSaveEvent;
+import me.bill.fakePlayerPlugin.api.FppCommandExtension;
 import me.bill.fakePlayerPlugin.api.FppBotTickHandler;
+import me.bill.fakePlayerPlugin.api.FppSettingsTab;
 import me.bill.fakePlayerPlugin.fakeplayer.FakePlayer;
 import java.util.function.Supplier;
 import me.bill.fakePlayerPlugin.fakeplayer.FakePlayerManager;
 import me.bill.fakePlayerPlugin.fakeplayer.PathfindingService;
 import me.bill.fakePlayerPlugin.fakeplayer.PathfindingService.NavigationRequest;
 import me.bill.fakePlayerPlugin.fakeplayer.PathfindingService.Owner;
+import me.bill.fakePlayerPlugin.util.BotAccess;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
@@ -38,6 +44,12 @@ public final class FppApiImpl implements FppApi {
   /** Registered addon commands — iterated by CommandManager. */
   private final CopyOnWriteArrayList<FppAddonCommand> addonCommands = new CopyOnWriteArrayList<>();
 
+  /** Registered addon command extensions for built-in /fpp subcommands. */
+  private final CopyOnWriteArrayList<FppCommandExtension> commandExtensions = new CopyOnWriteArrayList<>();
+
+  /** Registered addon settings tabs for /fpp settings. */
+  private final CopyOnWriteArrayList<FppSettingsTab> settingsTabs = new CopyOnWriteArrayList<>();
+
   public FppApiImpl(@NotNull FakePlayerPlugin plugin, @NotNull FakePlayerManager manager) {
     this.plugin  = plugin;
     this.manager = manager;
@@ -50,6 +62,16 @@ public final class FppApiImpl implements FppApi {
     Collection<FakePlayer> raw = manager.getActivePlayers();
     List<FppBot> result = new ArrayList<>(raw.size());
     for (FakePlayer fp : raw) result.add(new FppBotImpl(fp));
+    return result;
+  }
+
+  @Override
+  public @NotNull Collection<FppBot> getBotsControllableBy(@NotNull Player player) {
+    Collection<FakePlayer> raw = manager.getActivePlayers();
+    List<FppBot> result = new ArrayList<>(raw.size());
+    for (FakePlayer fp : raw) {
+      if (BotAccess.canAdminister(player, fp)) result.add(new FppBotImpl(fp));
+    }
     return result;
   }
 
@@ -73,6 +95,12 @@ public final class FppApiImpl implements FppApi {
   @Override
   public @NotNull Optional<FppBot> asBot(@NotNull Player player) {
     return getBot(player.getUniqueId());
+  }
+
+  @Override
+  public boolean canControlBot(@NotNull Player player, @NotNull FppBot bot) {
+    FakePlayer fp = manager.getByUuid(bot.getUuid());
+    return fp != null && BotAccess.canAdminister(player, fp);
   }
 
   @Override
@@ -135,6 +163,41 @@ public final class FppApiImpl implements FppApi {
     // Tell CommandManager to include this command (if already initialised).
     var cmdManager = plugin.getCommandManager();
     if (cmdManager != null) cmdManager.registerAddonCommand(command);
+  }
+
+  @Override
+  public void unregisterCommand(@NotNull FppAddonCommand command) {
+    addonCommands.removeIf(existing -> existing.getName().equalsIgnoreCase(command.getName()));
+    var cmdManager = plugin.getCommandManager();
+    if (cmdManager != null) cmdManager.unregisterAddonCommand(command);
+  }
+
+  @Override
+  public void registerCommandExtension(@NotNull FppCommandExtension extension) {
+    commandExtensions.addIfAbsent(extension);
+    var cmdManager = plugin.getCommandManager();
+    if (cmdManager != null) cmdManager.registerCommandExtension(extension);
+  }
+
+  @Override
+  public void unregisterCommandExtension(@NotNull FppCommandExtension extension) {
+    commandExtensions.remove(extension);
+    var cmdManager = plugin.getCommandManager();
+    if (cmdManager != null) cmdManager.unregisterCommandExtension(extension);
+  }
+
+  @Override
+  public void registerSettingsTab(@NotNull FppSettingsTab tab) {
+    settingsTabs.addIfAbsent(tab);
+    var gui = plugin.getSettingGui();
+    if (gui != null) gui.registerExtensionTab(tab);
+  }
+
+  @Override
+  public void unregisterSettingsTab(@NotNull FppSettingsTab tab) {
+    settingsTabs.remove(tab);
+    var gui = plugin.getSettingGui();
+    if (gui != null) gui.unregisterExtensionTab(tab);
   }
 
   /** Returns all registered addon commands (used by CommandManager). */
@@ -210,6 +273,19 @@ public final class FppApiImpl implements FppApi {
   public boolean isNavigating(@NotNull FppBot bot) {
     PathfindingService svc = plugin.getPathfindingService();
     return svc != null && svc.isNavigating(bot.getUuid());
+  }
+
+  @Override
+  public void sayAsBot(@NotNull FppBot bot, @NotNull String message) {
+    FakePlayer fp = manager.getByUuid(bot.getUuid());
+    if (fp == null) return;
+    Player entity = fp.getPlayer();
+    if (entity != null && entity.isOnline() && !fp.isBodyless()) {
+      entity.chat(message);
+      return;
+    }
+    me.bill.fakePlayerPlugin.fakeplayer.BotChatAI.broadcastRemote(
+        fp.getName(), fp.getDisplayName(), message, "", "");
   }
 
   // ── Plugin info ───────────────────────────────────────────────────────────

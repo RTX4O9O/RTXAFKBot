@@ -13,17 +13,21 @@ import me.bill.fakePlayerPlugin.fakeplayer.FakePlayerManager;
 import me.bill.fakePlayerPlugin.fakeplayer.PathfindingService;
 import me.bill.fakePlayerPlugin.lang.Lang;
 import me.bill.fakePlayerPlugin.permission.Perm;
+import me.bill.fakePlayerPlugin.util.FppScheduler;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerPlayer;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
+import org.bukkit.Material;
 import org.bukkit.Tag;
 import org.bukkit.World;
 import org.bukkit.block.Block;
+import org.bukkit.block.BlockFace;
+import org.bukkit.block.data.type.Bed;
 import org.bukkit.command.CommandSender;
 import org.bukkit.craftbukkit.entity.CraftPlayer;
 import org.bukkit.entity.Player;
-import org.bukkit.scheduler.BukkitTask;
+import org.bukkit.inventory.ItemStack;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -90,8 +94,10 @@ public final class SleepCommand implements FppCommand {
    */
   private final Map<UUID, Location> cachedBeds = new ConcurrentHashMap<>();
 
+  private final Map<UUID, Location> temporaryBeds = new ConcurrentHashMap<>();
+
   /** The single global repeating task that checks all configured bots. null = not running. */
-  @Nullable private BukkitTask nightWatchTask = null;
+  @Nullable private Integer nightWatchTaskId = null;
 
   // ── Constructor ──────────────────────────────────────────────────────────
 
@@ -263,6 +269,7 @@ public final class SleepCommand implements FppCommand {
     if (fp.isSleeping()) {
       wakeBot(fp, /* resumeTask= */ false);
     }
+    breakTemporaryBed(uuid);
 
     checkNightWatchNeeded();
   }
@@ -271,18 +278,18 @@ public final class SleepCommand implements FppCommand {
 
   private void ensureNightWatchRunning() {
     if (!plugin.isEnabled()) return;
-    if (nightWatchTask != null && !nightWatchTask.isCancelled()) return;
-    nightWatchTask = Bukkit.getScheduler().runTaskTimer(
-        plugin, this::nightWatchTick, 40L, CHECK_INTERVAL_TICKS);
+    if (nightWatchTaskId != null) return;
+    nightWatchTaskId =
+        FppScheduler.runSyncRepeatingWithId(plugin, this::nightWatchTick, 40L, CHECK_INTERVAL_TICKS);
   }
 
   private void checkNightWatchNeeded() {
-    if (nightWatchTask == null || nightWatchTask.isCancelled()) return;
+    if (nightWatchTaskId == null) return;
     boolean anyConfigured = manager.getActivePlayers().stream()
         .anyMatch(fp -> fp.getSleepRadius() > 0);
     if (!anyConfigured) {
-      nightWatchTask.cancel();
-      nightWatchTask = null;
+      FppScheduler.cancelTask(nightWatchTaskId);
+      nightWatchTaskId = null;
     }
   }
 
@@ -305,6 +312,20 @@ public final class SleepCommand implements FppCommand {
         startSleepNavigation(fp);
       } else if (!isNight && fp.isSleeping()) {
         wakeBot(fp, /* resumeTask= */ true);
+      } else if (isNight && fp.isSleeping()) {
+        // FakePlayerManager clears fp.sleeping the same tick NMS wakes the bot,
+        // so this branch is a safety-net for edge cases where that sync is missed
+        // (e.g. the bot was woken by a plugin event outside our control).
+        try {
+          ServerPlayer nmsPlayer = ((CraftPlayer) bot).getHandle();
+          if (!nmsPlayer.isSleeping()) {
+            Config.debugChat("[Sleep] NMS woke " + fp.getName()
+                + " mid-night (monsters/plugin) — clearing sleep flag and re-queueing");
+            fp.setSleeping(false);
+            manager.unlockAction(uuid);
+            // previousActivity is still captured; next nightWatchTick will re-navigate.
+          }
+        } catch (Exception ignored) {}
       }
     }
   }
@@ -325,12 +346,15 @@ public final class SleepCommand implements FppCommand {
 
     // Use cached bed if still valid; otherwise scan for a new one.
     Location bedLoc = cachedBeds.get(uuid);
-    if (bedLoc == null || !isBedBlock(bedLoc)) {
-      bedLoc = findBed(bot.getWorld(), origin, radius);
+      if (bedLoc == null || !isBedBlock(bedLoc) || isBedOccupied(bedLoc, uuid)) {
+        bedLoc = findBed(bot.getWorld(), origin, radius);
       if (bedLoc == null) {
-        // No bed in range — restore the paused task immediately.
-        resumePreviousTask(fp);
-        return;
+        bedLoc = tryPlaceTemporaryBed(fp, bot);
+        if (bedLoc == null) {
+          // No bed in range — restore the paused task immediately.
+          resumePreviousTask(fp);
+          return;
+        }
       }
       cachedBeds.put(uuid, bedLoc);
     }
@@ -427,7 +451,7 @@ public final class SleepCommand implements FppCommand {
 
     Config.debugChat("[Sleep] resuming " + act + " for " + fp.getName());
 
-    Bukkit.getScheduler().runTaskLater(plugin, () -> {
+    FppScheduler.runSyncLater(plugin, () -> {
       switch (act) {
         case MINE    -> { if (mineCommand   != null) mineCommand.resumeMining(fp); }
         case USE     -> { if (useCommand    != null) useCommand.resumeUsing(fp); }
@@ -473,11 +497,16 @@ public final class SleepCommand implements FppCommand {
     long time = bot.getWorld().getTime();
     if (time < NIGHT_START || time > NIGHT_END) { resumePreviousTask(fp); return; }
 
-    if (!isBedBlock(bedLoc)) {
+    bedLoc = normalizeBedFoot(bedLoc);
+    if (!isBedBlock(bedLoc) || isBedOccupied(bedLoc, uuid)) {
       cachedBeds.remove(uuid);
       resumePreviousTask(fp);
       return;
     }
+
+    // Zero any residual navigation momentum so the bot lies flat on the bed
+    // rather than appearing to slide or crouch when startSleepInBed fires.
+    bot.setVelocity(new org.bukkit.util.Vector(0, 0, 0));
 
     // Try NMS first (bypasses vanilla distance/monster checks).
     boolean slept = false;
@@ -501,7 +530,11 @@ public final class SleepCommand implements FppCommand {
 
     if (slept) {
       fp.setSleeping(true);
-      manager.lockForAction(uuid, bot.getLocation());
+      // Do NOT call lockForAction here. The action lock records the navigation
+      // arrival location (≈1.5 blocks from the bed) and then teleports the bot
+      // back to that standing spot every tick, overriding the NMS sleep pose.
+      // Instead, FakePlayerManager suppresses physics/head-AI for sleeping bots
+      // and zeroes their velocity directly.
       cachedBeds.remove(uuid);
       Config.debugChat("[Sleep] Bot " + fp.getName() + " is now SLEEPING");
     } else {
@@ -537,6 +570,8 @@ public final class SleepCommand implements FppCommand {
         }
       }
     }
+
+    breakTemporaryBed(uuid);
 
     Config.debugChat("[Sleep] Bot " + fp.getName() + " woke up, resumeTask=" + resumeTask);
 
@@ -577,9 +612,11 @@ public final class SleepCommand implements FppCommand {
         for (int dy = -2; dy <= 2; dy++) {
           Block block = world.getBlockAt(ox + dx, oy + dy, oz + dz);
           if (Tag.BEDS.isTagged(block.getType())) {
+            Location foot = normalizeBedFoot(block.getLocation());
+            if (isBedOccupiedStatic(foot, null)) break;
             if (distSq < closestDistSq) {
               closestDistSq = distSq;
-              closest = new Location(world, ox + dx, oy + dy, oz + dz);
+              closest = foot;
             }
             break;
           }
@@ -594,6 +631,106 @@ public final class SleepCommand implements FppCommand {
     World world = loc.getWorld();
     if (world == null) return false;
     return Tag.BEDS.isTagged(world.getBlockAt(loc).getType());
+  }
+
+  private static Location normalizeBedFoot(@NotNull Location loc) {
+    World world = loc.getWorld();
+    if (world == null) return loc;
+    Block block = world.getBlockAt(loc);
+    if (!Tag.BEDS.isTagged(block.getType())) return loc;
+    Bed bed = (Bed) block.getBlockData();
+    if (bed.getPart() == Bed.Part.FOOT) return block.getLocation();
+    return block.getRelative(bed.getFacing().getOppositeFace()).getLocation();
+  }
+
+  private boolean isBedOccupied(@NotNull Location bedLoc, UUID allowedUuid) {
+    return isBedOccupiedStatic(bedLoc, allowedUuid);
+  }
+
+  private static boolean isBedOccupiedStatic(@NotNull Location bedLoc, @Nullable UUID allowedUuid) {
+    Location foot = normalizeBedFoot(bedLoc);
+    World world = foot.getWorld();
+    if (world == null) return false;
+    Block footBlock = foot.getBlock();
+    if (!Tag.BEDS.isTagged(footBlock.getType())) return false;
+    Bed bed = (Bed) footBlock.getBlockData();
+    Block head = footBlock.getRelative(bed.getFacing());
+    for (Player player : world.getPlayers()) {
+      if (allowedUuid != null && allowedUuid.equals(player.getUniqueId())) continue;
+      if (!player.isSleeping()) continue;
+      Location loc = player.getLocation();
+      if (loc.getBlock().equals(footBlock) || loc.getBlock().equals(head)) return true;
+      if (loc.distanceSquared(foot.clone().add(0.5, 0.0, 0.5)) < 4.0) return true;
+    }
+    return false;
+  }
+
+  @Nullable
+  private Location tryPlaceTemporaryBed(@NotNull FakePlayer fp, @NotNull Player bot) {
+    if (!fp.isAutoPlaceBedEnabled()) return null;
+    int bedSlot = findBedItemSlot(bot);
+    if (bedSlot < 0) return null;
+    Block foot = findTemporaryBedFoot(bot);
+    if (foot == null) return null;
+    BlockFace facing = BlockFace.NORTH;
+    Block head = foot.getRelative(facing);
+    if (!head.getType().isAir()) return null;
+
+    Material bedType = bot.getInventory().getItem(bedSlot).getType();
+    foot.setType(bedType, false);
+    head.setType(bedType, false);
+    Bed footData = (Bed) foot.getBlockData();
+    footData.setPart(Bed.Part.FOOT);
+    footData.setFacing(facing);
+    foot.setBlockData(footData, false);
+    Bed headData = (Bed) head.getBlockData();
+    headData.setPart(Bed.Part.HEAD);
+    headData.setFacing(facing);
+    head.setBlockData(headData, false);
+
+    ItemStack item = bot.getInventory().getItem(bedSlot);
+    item.setAmount(item.getAmount() - 1);
+    if (item.getAmount() <= 0) bot.getInventory().setItem(bedSlot, null);
+    else bot.getInventory().setItem(bedSlot, item);
+    temporaryBeds.put(fp.getUuid(), foot.getLocation());
+    return foot.getLocation();
+  }
+
+  private int findBedItemSlot(Player bot) {
+    for (int i = 0; i < bot.getInventory().getSize(); i++) {
+      ItemStack item = bot.getInventory().getItem(i);
+      if (item != null && Tag.BEDS.isTagged(item.getType())) return i;
+    }
+    return -1;
+  }
+
+  @Nullable
+  private Block findTemporaryBedFoot(Player bot) {
+    Location base = bot.getLocation();
+    World world = bot.getWorld();
+    for (int dx = -2; dx <= 2; dx++) {
+      for (int dz = -2; dz <= 2; dz++) {
+        Block foot = world.getBlockAt(base.getBlockX() + dx, base.getBlockY(), base.getBlockZ() + dz);
+        Block head = foot.getRelative(BlockFace.NORTH);
+        if (foot.getType().isAir()
+            && head.getType().isAir()
+            && foot.getRelative(BlockFace.DOWN).getType().isSolid()
+            && head.getRelative(BlockFace.DOWN).getType().isSolid()) return foot;
+      }
+    }
+    return null;
+  }
+
+  private void breakTemporaryBed(UUID uuid) {
+    Location loc = temporaryBeds.remove(uuid);
+    if (loc == null || loc.getWorld() == null) return;
+    Block foot = loc.getBlock();
+    if (Tag.BEDS.isTagged(foot.getType())) {
+      Bed bed = (Bed) foot.getBlockData();
+      Block other = foot.getRelative(bed.getPart() == Bed.Part.FOOT ? bed.getFacing() : bed.getFacing().getOppositeFace());
+      foot.setType(Material.AIR, false);
+      if (Tag.BEDS.isTagged(other.getType())) other.setType(Material.AIR, false);
+    }
   }
 
   // ── Public API ────────────────────────────────────────────────────────────
@@ -615,6 +752,7 @@ public final class SleepCommand implements FppCommand {
     }
 
     cachedBeds.remove(botUuid);
+    temporaryBeds.remove(botUuid);
     previousActivity.remove(botUuid);
     previousWaypointRoute.remove(botUuid);
     previousRoamCenter.remove(botUuid);
@@ -627,9 +765,9 @@ public final class SleepCommand implements FppCommand {
     for (FakePlayer fp : new ArrayList<>(manager.getActivePlayers())) {
       disableSleep(fp);
     }
-    if (nightWatchTask != null && !nightWatchTask.isCancelled()) {
-      nightWatchTask.cancel();
-      nightWatchTask = null;
+    if (nightWatchTaskId != null) {
+      FppScheduler.cancelTask(nightWatchTaskId);
+      nightWatchTaskId = null;
     }
   }
 

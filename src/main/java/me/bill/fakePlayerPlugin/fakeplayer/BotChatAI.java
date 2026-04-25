@@ -11,6 +11,7 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicLong;
 import me.bill.fakePlayerPlugin.FakePlayerPlugin;
 import me.bill.fakePlayerPlugin.config.Config;
+import me.bill.fakePlayerPlugin.util.FppScheduler;
 import me.bill.fakePlayerPlugin.util.TextUtil;
 import net.kyori.adventure.audience.Audience;
 import net.kyori.adventure.text.Component;
@@ -60,11 +61,31 @@ public final class BotChatAI implements Listener {
 
     me.bill.fakePlayerPlugin.util.AttributionManager.quickAuthorCheck();
 
-    Bukkit.getScheduler().runTaskTimer(plugin, this::syncBotLoops, 20L, 20L);
+    FppScheduler.runSyncRepeating(plugin, this::syncBotLoops, 20L, 20L);
     Bukkit.getPluginManager().registerEvents(this, plugin);
   }
 
   private void syncBotLoops() {
+    if (!Config.fakeChatEnabled()) {
+      for (Integer taskId : taskIds.values()) {
+        FppScheduler.cancelTask(taskId);
+      }
+      taskIds.clear();
+      for (Integer taskId : pendingReplyTasks.values()) {
+        FppScheduler.cancelTask(taskId);
+      }
+      pendingReplyTasks.clear();
+      for (Integer taskId : pendingEventTasks.values()) {
+        FppScheduler.cancelTask(taskId);
+      }
+      pendingEventTasks.clear();
+      for (Integer taskId : muteTaskIds.values()) {
+        FppScheduler.cancelTask(taskId);
+      }
+      muteTaskIds.clear();
+      return;
+    }
+
     for (FakePlayer fp : manager.getActivePlayers()) {
       if (!taskIds.containsKey(fp.getUuid())) {
         assignActivityMultiplier(fp.getUuid());
@@ -76,7 +97,7 @@ public final class BotChatAI implements Listener {
         .removeIf(
             e -> {
               if (manager.getByUuid(e.getKey()) == null) {
-                Bukkit.getScheduler().cancelTask(e.getValue());
+                FppScheduler.cancelTask(e.getValue());
                 messageHistory.remove(e.getKey());
                 activityMultipliers.remove(e.getKey());
                 cancelPendingReply(e.getKey());
@@ -143,10 +164,7 @@ public final class BotChatAI implements Listener {
       cancelPendingReply(botUuid);
       cancelPendingEvent(botUuid);
       Integer oldTask = taskIds.remove(botUuid);
-      if (oldTask != null) Bukkit.getScheduler().cancelTask(oldTask);
-      int id =
-          Bukkit.getScheduler().runTaskLater(plugin, () -> scheduleNext(botUuid), 40L).getTaskId();
-      taskIds.put(botUuid, id);
+      if (oldTask != null) FppScheduler.cancelTask(oldTask);
       return;
     }
 
@@ -160,21 +178,19 @@ public final class BotChatAI implements Listener {
             : minTicks + ThreadLocalRandom.current().nextInt(maxTicks - minTicks + 1);
 
     int id =
-        Bukkit.getScheduler()
-            .runTaskLater(
-                plugin,
-                () -> {
-                  fireChat(botUuid);
-                  if (manager.getByUuid(botUuid) != null) {
-                    scheduleNext(botUuid);
-                  } else {
-                    taskIds.remove(botUuid);
-                    messageHistory.remove(botUuid);
-                    activityMultipliers.remove(botUuid);
-                  }
-                },
-                delay)
-            .getTaskId();
+        FppScheduler.runSyncLaterWithId(
+            plugin,
+            () -> {
+              fireChat(botUuid);
+              if (manager.getByUuid(botUuid) != null) {
+                scheduleNext(botUuid);
+              } else {
+                taskIds.remove(botUuid);
+                messageHistory.remove(botUuid);
+                activityMultipliers.remove(botUuid);
+              }
+            },
+            delay);
 
     taskIds.put(botUuid, id);
   }
@@ -195,15 +211,14 @@ public final class BotChatAI implements Listener {
 
     int delayTicks = computePreSendDelay();
     if (delayTicks > 0) {
-      Bukkit.getScheduler()
-          .runTaskLater(
-              plugin,
-              () -> {
-                sendMessage(bot, message, true);
+      FppScheduler.runSyncLater(
+          plugin,
+          () -> {
+            sendMessage(bot, message, true);
 
-                triggerBotToBotReaction(bot, 0);
-              },
-              delayTicks);
+            triggerBotToBotReaction(bot, 0);
+          },
+          delayTicks);
     } else {
       sendMessage(bot, message, true);
       triggerBotToBotReaction(bot, 0);
@@ -248,41 +263,40 @@ public final class BotChatAI implements Listener {
     final UUID replierUuid = replier.getUuid();
     final int nextDepth = chainDepth + 1;
 
-    Bukkit.getScheduler()
-        .runTaskLater(
-            plugin,
-            () -> {
-              if (!Config.fakeChatEnabled() || !Config.fakeChatBotToBotEnabled()) return;
-              FakePlayer s = manager.getByUuid(speakerUuid);
-              FakePlayer b = manager.getByUuid(replierUuid);
-              if (b == null || !b.isChatEnabled()) return;
-              if (Config.fakeChatRequirePlayer() && !hasRealPlayerOnline()) return;
+    FppScheduler.runSyncLater(
+        plugin,
+        () -> {
+          if (!Config.fakeChatEnabled() || !Config.fakeChatBotToBotEnabled()) return;
+          FakePlayer s = manager.getByUuid(speakerUuid);
+          FakePlayer b = manager.getByUuid(replierUuid);
+          if (b == null || !b.isChatEnabled()) return;
+          if (Config.fakeChatRequirePlayer() && !hasRealPlayerOnline()) return;
 
-              List<String> pool = Config.chatBotToBotReplyMessages();
-              if (pool.isEmpty()) pool = Config.chatReplyMessages();
-              if (pool.isEmpty()) pool = Config.fakeChatMessages();
-              if (pool.isEmpty()) return;
+          List<String> pool = Config.chatBotToBotReplyMessages();
+          if (pool.isEmpty()) pool = Config.chatReplyMessages();
+          if (pool.isEmpty()) pool = Config.fakeChatMessages();
+          if (pool.isEmpty()) return;
 
-              String speakerName = (s != null) ? s.getName() : b.getName();
-              String raw = pool.get(ThreadLocalRandom.current().nextInt(pool.size()));
+          String speakerName = (s != null) ? s.getName() : b.getName();
+          String raw = pool.get(ThreadLocalRandom.current().nextInt(pool.size()));
 
-              String msg = resolvePlaceholders(raw.replace("{random_player}", speakerName), b);
+          String msg = resolvePlaceholders(raw.replace("{random_player}", speakerName), b);
 
-              lastBotToBotMs.set(System.currentTimeMillis());
-              sendMessage(b, msg, false);
-              Config.debugChat(
-                  "[b2b chain="
-                      + nextDepth
-                      + "] "
-                      + b.getName()
-                      + " → "
-                      + speakerName
-                      + ": "
-                      + msg);
+          lastBotToBotMs.set(System.currentTimeMillis());
+          sendMessage(b, msg, false);
+          Config.debugChat(
+              "[b2b chain="
+                  + nextDepth
+                  + "] "
+                  + b.getName()
+                  + " → "
+                  + speakerName
+                  + ": "
+                  + msg);
 
-              triggerBotToBotReaction(b, nextDepth);
-            },
-            delay);
+          triggerBotToBotReaction(b, nextDepth);
+        },
+        delay);
   }
 
   private String pickMessage(UUID botUuid, List<String> pool, FakePlayer bot) {
@@ -451,7 +465,7 @@ public final class BotChatAI implements Listener {
     String raw = pool.get(ThreadLocalRandom.current().nextInt(pool.size()));
     String msg = resolvePlaceholders(raw, bot);
 
-    Bukkit.getScheduler().runTaskLater(plugin, () -> sendMessage(bot, msg, false), delay);
+    FppScheduler.runSyncLater(plugin, () -> sendMessage(bot, msg, false), delay);
   }
 
   @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -478,16 +492,15 @@ public final class BotChatAI implements Listener {
         }
       }
       if (!candidates.isEmpty()) {
-        Bukkit.getScheduler()
-            .runTask(
-                plugin,
-                () -> {
-                  for (UUID uuid : candidates) {
-                    if (!pendingReplyTasks.containsKey(uuid)) {
-                      scheduleMentionReply(uuid);
-                    }
-                  }
-                });
+        FppScheduler.runSync(
+            plugin,
+            () -> {
+              for (UUID uuid : candidates) {
+                if (!pendingReplyTasks.containsKey(uuid)) {
+                  scheduleMentionReply(uuid);
+                }
+              }
+            });
       }
     }
 
@@ -501,7 +514,7 @@ public final class BotChatAI implements Listener {
         if (!matchedPools.isEmpty()) {
           String poolKey =
               matchedPools.get(ThreadLocalRandom.current().nextInt(matchedPools.size()));
-          Bukkit.getScheduler().runTask(plugin, () -> scheduleKeywordReaction(poolKey));
+          FppScheduler.runSync(plugin, () -> scheduleKeywordReaction(poolKey));
         }
       }
     }
@@ -521,8 +534,7 @@ public final class BotChatAI implements Listener {
         return;
       }
 
-      Bukkit.getScheduler()
-          .runTask(plugin, () -> schedulePlayerChatReaction(senderName, originalMessage));
+      FppScheduler.runSync(plugin, () -> schedulePlayerChatReaction(senderName, originalMessage));
     }
   }
 
@@ -539,25 +551,23 @@ public final class BotChatAI implements Listener {
             : minTicks + ThreadLocalRandom.current().nextInt(maxTicks - minTicks + 1);
 
     int taskId =
-        Bukkit.getScheduler()
-            .runTaskLater(
-                plugin,
-                () -> {
-                  pendingReplyTasks.remove(botUuid);
-                  FakePlayer b = manager.getByUuid(botUuid);
-                  if (b == null || !b.isChatEnabled() || !hasRealPlayerOnline()) return;
+        FppScheduler.runSyncLaterWithId(
+            plugin,
+            () -> {
+              pendingReplyTasks.remove(botUuid);
+              FakePlayer b = manager.getByUuid(botUuid);
+              if (b == null || !b.isChatEnabled() || !hasRealPlayerOnline()) return;
 
-                  List<String> pool = Config.chatReplyMessages();
-                  if (pool.isEmpty()) pool = Config.fakeChatMessages();
-                  if (pool.isEmpty()) return;
+              List<String> pool = Config.chatReplyMessages();
+              if (pool.isEmpty()) pool = Config.fakeChatMessages();
+              if (pool.isEmpty()) return;
 
-                  String raw = pool.get(ThreadLocalRandom.current().nextInt(pool.size()));
-                  String reply = resolvePlaceholders(raw, b);
-                  sendMessage(b, reply, false);
-                  Config.debugChat(b.getName() + " replied to mention → " + reply);
-                },
-                delay)
-            .getTaskId();
+              String raw = pool.get(ThreadLocalRandom.current().nextInt(pool.size()));
+              String reply = resolvePlaceholders(raw, b);
+              sendMessage(b, reply, false);
+              Config.debugChat(b.getName() + " replied to mention → " + reply);
+            },
+            delay);
 
     pendingReplyTasks.put(botUuid, taskId);
   }
@@ -576,17 +586,16 @@ public final class BotChatAI implements Listener {
 
     FakePlayer bot = eligible.get(ThreadLocalRandom.current().nextInt(eligible.size()));
     int delayTicks = ThreadLocalRandom.current().nextInt(60) + 20;
-    Bukkit.getScheduler()
-        .runTaskLater(
-            plugin,
-            () -> {
-              FakePlayer b = manager.getByUuid(bot.getUuid());
-              if (b == null || !b.isChatEnabled()) return;
-              String raw = pool.get(ThreadLocalRandom.current().nextInt(pool.size()));
-              sendMessage(b, resolvePlaceholders(raw, b), false);
-              Config.debugChat(b.getName() + " keyword-reaction [" + poolKey + "]");
-            },
-            delayTicks);
+    FppScheduler.runSyncLater(
+        plugin,
+        () -> {
+          FakePlayer b = manager.getByUuid(bot.getUuid());
+          if (b == null || !b.isChatEnabled()) return;
+          String raw = pool.get(ThreadLocalRandom.current().nextInt(pool.size()));
+          sendMessage(b, resolvePlaceholders(raw, b), false);
+          Config.debugChat(b.getName() + " keyword-reaction [" + poolKey + "]");
+        },
+        delayTicks);
   }
 
   private void schedulePlayerChatReaction(String senderName, String originalMessage) {
@@ -630,10 +639,9 @@ public final class BotChatAI implements Listener {
 
         final me.bill.fakePlayerPlugin.ai.BotConversationManager mgr = convMgr;
         final FakePlayer capturedBot = bot;
-        Bukkit.getScheduler()
-            .runTaskLater(
-                plugin,
-                () -> {
+        FppScheduler.runSyncLater(
+            plugin,
+            () -> {
                   if (!Config.fakeChatEnabled()) return;
                   FakePlayer b = manager.getByUuid(botUuid);
                   if (b == null || !b.isChatEnabled()) return;
@@ -650,21 +658,20 @@ public final class BotChatAI implements Listener {
                                     .trim();
                             if (clean.isEmpty()) return;
 
-                            Bukkit.getScheduler()
-                                .runTask(
-                                    plugin,
-                                    () -> {
-                                      FakePlayer finalBot = manager.getByUuid(botUuid);
-                                      if (finalBot == null || !finalBot.isChatEnabled()) return;
-                                      sendMessage(finalBot, clean, false);
-                                      Config.debugChat(
-                                          finalBot.getName()
-                                              + " ai-player-chat-reaction"
-                                              + " → "
-                                              + senderName
-                                              + ": "
-                                              + clean);
-                                    });
+                            FppScheduler.runSync(
+                                plugin,
+                                () -> {
+                                  FakePlayer finalBot = manager.getByUuid(botUuid);
+                                  if (finalBot == null || !finalBot.isChatEnabled()) return;
+                                  sendMessage(finalBot, clean, false);
+                                  Config.debugChat(
+                                      finalBot.getName()
+                                          + " ai-player-chat-reaction"
+                                          + " → "
+                                          + senderName
+                                          + ": "
+                                          + clean);
+                                });
                           })
                       .exceptionally(
                           err -> {
@@ -674,24 +681,22 @@ public final class BotChatAI implements Listener {
                                     + err.getMessage()
                                     + ") — falling back to"
                                     + " static pool");
-                            Bukkit.getScheduler()
-                                .runTask(
-                                    plugin,
-                                    () ->
-                                        sendStaticPlayerChatReaction(
-                                            botUuid, senderName, mentionChance));
+                            FppScheduler.runSync(
+                                plugin,
+                                () ->
+                                    sendStaticPlayerChatReaction(
+                                        botUuid, senderName, mentionChance));
                             return null;
                           });
                 },
-                delay);
+            delay);
       } else {
 
         final boolean doMention = ThreadLocalRandom.current().nextDouble() < mentionChance;
-        Bukkit.getScheduler()
-            .runTaskLater(
-                plugin,
-                () -> sendStaticPlayerChatReaction(botUuid, senderName, doMention ? 1.0 : 0.0),
-                delay);
+        FppScheduler.runSyncLater(
+            plugin,
+            () -> sendStaticPlayerChatReaction(botUuid, senderName, doMention ? 1.0 : 0.0),
+            delay);
       }
 
       scheduled++;
@@ -759,10 +764,9 @@ public final class BotChatAI implements Listener {
         minTicks + ThreadLocalRandom.current().nextInt(Math.max(1, maxTicks - minTicks + 1));
 
     int taskId =
-        Bukkit.getScheduler()
-            .runTaskLater(
-                plugin,
-                () -> {
+        FppScheduler.runSyncLaterWithId(
+            plugin,
+            () -> {
                   pendingEventTasks.remove(bot.getUuid());
                   FakePlayer b = manager.getByUuid(bot.getUuid());
                   if (b == null || !b.isChatEnabled()) return;
@@ -791,26 +795,23 @@ public final class BotChatAI implements Listener {
                       FakePlayer second =
                           others.get(ThreadLocalRandom.current().nextInt(others.size()));
                       long extraDelay = 20L + ThreadLocalRandom.current().nextInt(60);
-                      Bukkit.getScheduler()
-                          .runTaskLater(
-                              plugin,
-                              () -> {
-                                FakePlayer sb = manager.getByUuid(second.getUuid());
-                                if (sb == null || !sb.isChatEnabled()) return;
-                                List<String> p2 = Config.chatJoinReactionMessages();
-                                if (p2.isEmpty()) return;
-                                String r2 = p2.get(ThreadLocalRandom.current().nextInt(p2.size()));
-                                String m2 =
-                                    resolvePlaceholders(
-                                        r2.replace("{random_player}", joinerName), sb);
-                                sendMessage(sb, m2, false);
-                              },
-                              extraDelay);
+                      FppScheduler.runSyncLater(
+                          plugin,
+                          () -> {
+                            FakePlayer sb = manager.getByUuid(second.getUuid());
+                            if (sb == null || !sb.isChatEnabled()) return;
+                            List<String> p2 = Config.chatJoinReactionMessages();
+                            if (p2.isEmpty()) return;
+                            String r2 = p2.get(ThreadLocalRandom.current().nextInt(p2.size()));
+                            String m2 =
+                                resolvePlaceholders(r2.replace("{random_player}", joinerName), sb);
+                            sendMessage(sb, m2, false);
+                          },
+                          extraDelay);
                     }
                   }
                 },
-                delay)
-            .getTaskId();
+            delay);
 
     pendingEventTasks.put(bot.getUuid(), taskId);
   }
@@ -845,10 +846,9 @@ public final class BotChatAI implements Listener {
         minTicks + ThreadLocalRandom.current().nextInt(Math.max(1, maxTicks - minTicks + 1));
 
     int taskId =
-        Bukkit.getScheduler()
-            .runTaskLater(
-                plugin,
-                () -> {
+        FppScheduler.runSyncLaterWithId(
+            plugin,
+            () -> {
                   pendingEventTasks.remove(bot.getUuid());
                   FakePlayer b = manager.getByUuid(bot.getUuid());
                   if (b == null || !b.isChatEnabled()) return;
@@ -862,8 +862,7 @@ public final class BotChatAI implements Listener {
                   Config.debugChat(
                       b.getName() + " death-reaction for " + deceasedName + ": " + msg);
                 },
-                delay)
-            .getTaskId();
+            delay);
 
     pendingEventTasks.put(bot.getUuid(), taskId);
   }
@@ -902,10 +901,9 @@ public final class BotChatAI implements Listener {
         minTicks + ThreadLocalRandom.current().nextInt(Math.max(1, maxTicks - minTicks + 1));
 
     int taskId =
-        Bukkit.getScheduler()
-            .runTaskLater(
-                plugin,
-                () -> {
+        FppScheduler.runSyncLaterWithId(
+            plugin,
+            () -> {
                   pendingEventTasks.remove(bot.getUuid());
                   FakePlayer b = manager.getByUuid(bot.getUuid());
                   if (b == null || !b.isChatEnabled()) return;
@@ -927,8 +925,7 @@ public final class BotChatAI implements Listener {
                           + ": "
                           + msg);
                 },
-                delay)
-            .getTaskId();
+            delay);
 
     pendingEventTasks.put(bot.getUuid(), taskId);
   }
@@ -970,10 +967,9 @@ public final class BotChatAI implements Listener {
         minTicks + ThreadLocalRandom.current().nextInt(Math.max(1, maxTicks - minTicks + 1));
 
     int taskId =
-        Bukkit.getScheduler()
-            .runTaskLater(
-                plugin,
-                () -> {
+        FppScheduler.runSyncLaterWithId(
+            plugin,
+            () -> {
                   pendingEventTasks.remove(bot.getUuid());
                   FakePlayer b = manager.getByUuid(bot.getUuid());
                   if (b == null || !b.isChatEnabled()) return;
@@ -994,8 +990,7 @@ public final class BotChatAI implements Listener {
                           + ": "
                           + msg);
                 },
-                delay)
-            .getTaskId();
+            delay);
 
     pendingEventTasks.put(bot.getUuid(), taskId);
   }
@@ -1036,10 +1031,9 @@ public final class BotChatAI implements Listener {
         minTicks + ThreadLocalRandom.current().nextInt(Math.max(1, maxTicks - minTicks + 1));
 
     int taskId =
-        Bukkit.getScheduler()
-            .runTaskLater(
-                plugin,
-                () -> {
+        FppScheduler.runSyncLaterWithId(
+            plugin,
+            () -> {
                   pendingEventTasks.remove(bot.getUuid());
                   FakePlayer b = manager.getByUuid(bot.getUuid());
                   if (b == null || !b.isChatEnabled()) return;
@@ -1059,8 +1053,7 @@ public final class BotChatAI implements Listener {
                           + ": "
                           + msg);
                 },
-                delay)
-            .getTaskId();
+            delay);
 
     pendingEventTasks.put(bot.getUuid(), taskId);
   }
@@ -1089,42 +1082,40 @@ public final class BotChatAI implements Listener {
         minTicks + ThreadLocalRandom.current().nextInt(Math.max(1, maxTicks - minTicks + 1));
 
     int taskId =
-        Bukkit.getScheduler()
-            .runTaskLater(
-                plugin,
-                () -> {
-                  pendingEventTasks.remove(bot.getUuid());
-                  FakePlayer b = manager.getByUuid(bot.getUuid());
-                  if (b == null || !b.isChatEnabled()) return;
-                  if (Config.fakeChatRequirePlayer() && !hasRealPlayerOnline()) return;
-                  String raw = pool.get(ThreadLocalRandom.current().nextInt(pool.size()));
-                  String msg = resolvePlaceholders(raw.replace("{random_player}", leaverName), b);
-                  sendMessage(b, msg, false);
-                  Config.debugChat(b.getName() + " leave-reaction for " + leaverName + ": " + msg);
-                },
-                delay)
-            .getTaskId();
+        FppScheduler.runSyncLaterWithId(
+            plugin,
+            () -> {
+              pendingEventTasks.remove(bot.getUuid());
+              FakePlayer b = manager.getByUuid(bot.getUuid());
+              if (b == null || !b.isChatEnabled()) return;
+              if (Config.fakeChatRequirePlayer() && !hasRealPlayerOnline()) return;
+              String raw = pool.get(ThreadLocalRandom.current().nextInt(pool.size()));
+              String msg = resolvePlaceholders(raw.replace("{random_player}", leaverName), b);
+              sendMessage(b, msg, false);
+              Config.debugChat(b.getName() + " leave-reaction for " + leaverName + ": " + msg);
+            },
+            delay);
 
     pendingEventTasks.put(bot.getUuid(), taskId);
   }
 
   private void cancelPendingReply(UUID botUuid) {
     Integer taskId = pendingReplyTasks.remove(botUuid);
-    if (taskId != null) Bukkit.getScheduler().cancelTask(taskId);
+    if (taskId != null) FppScheduler.cancelTask(taskId);
   }
 
   private void cancelPendingEvent(UUID botUuid) {
     Integer taskId = pendingEventTasks.remove(botUuid);
-    if (taskId != null) Bukkit.getScheduler().cancelTask(taskId);
+    if (taskId != null) FppScheduler.cancelTask(taskId);
   }
 
   private void cancelMuteTask(UUID botUuid) {
     Integer taskId = muteTaskIds.remove(botUuid);
-    if (taskId != null) Bukkit.getScheduler().cancelTask(taskId);
+    if (taskId != null) FppScheduler.cancelTask(taskId);
   }
 
   public void restartLoops() {
-    taskIds.values().forEach(Bukkit.getScheduler()::cancelTask);
+    taskIds.values().forEach(FppScheduler::cancelTask);
     taskIds.clear();
     for (FakePlayer fp : manager.getActivePlayers()) {
       assignActivityMultiplier(fp.getUuid());
@@ -1144,10 +1135,10 @@ public final class BotChatAI implements Listener {
   }
 
   public void cancelAll() {
-    taskIds.values().forEach(Bukkit.getScheduler()::cancelTask);
-    pendingReplyTasks.values().forEach(Bukkit.getScheduler()::cancelTask);
-    pendingEventTasks.values().forEach(Bukkit.getScheduler()::cancelTask);
-    muteTaskIds.values().forEach(Bukkit.getScheduler()::cancelTask);
+    taskIds.values().forEach(FppScheduler::cancelTask);
+    pendingReplyTasks.values().forEach(FppScheduler::cancelTask);
+    pendingEventTasks.values().forEach(FppScheduler::cancelTask);
+    muteTaskIds.values().forEach(FppScheduler::cancelTask);
     taskIds.clear();
     messageHistory.clear();
     activityMultipliers.clear();
@@ -1157,9 +1148,9 @@ public final class BotChatAI implements Listener {
   }
 
   public void stopAllLoopsNow() {
-    taskIds.values().forEach(Bukkit.getScheduler()::cancelTask);
-    pendingReplyTasks.values().forEach(Bukkit.getScheduler()::cancelTask);
-    pendingEventTasks.values().forEach(Bukkit.getScheduler()::cancelTask);
+    taskIds.values().forEach(FppScheduler::cancelTask);
+    pendingReplyTasks.values().forEach(FppScheduler::cancelTask);
+    pendingEventTasks.values().forEach(FppScheduler::cancelTask);
     taskIds.clear();
     pendingReplyTasks.clear();
     pendingEventTasks.clear();
@@ -1187,7 +1178,7 @@ public final class BotChatAI implements Listener {
     if (fp == null) return;
 
     Integer prev = muteTaskIds.remove(botUuid);
-    if (prev != null) Bukkit.getScheduler().cancelTask(prev);
+    if (prev != null) FppScheduler.cancelTask(prev);
 
     fp.setChatEnabled(false);
     Config.debugChat(
@@ -1195,19 +1186,17 @@ public final class BotChatAI implements Listener {
 
     if (seconds > 0) {
       int taskId =
-          Bukkit.getScheduler()
-              .runTaskLater(
-                  plugin,
-                  () -> {
-                    muteTaskIds.remove(botUuid);
-                    FakePlayer b = manager.getByUuid(botUuid);
-                    if (b != null) {
-                      b.setChatEnabled(true);
-                      Config.debugChat(b.getName() + " mute expired - chat re-enabled");
-                    }
-                  },
-                  (long) seconds * 20L)
-              .getTaskId();
+          FppScheduler.runSyncLaterWithId(
+              plugin,
+              () -> {
+                muteTaskIds.remove(botUuid);
+                FakePlayer b = manager.getByUuid(botUuid);
+                if (b != null) {
+                  b.setChatEnabled(true);
+                  Config.debugChat(b.getName() + " mute expired - chat re-enabled");
+                }
+              },
+              (long) seconds * 20L);
       muteTaskIds.put(botUuid, taskId);
     }
   }

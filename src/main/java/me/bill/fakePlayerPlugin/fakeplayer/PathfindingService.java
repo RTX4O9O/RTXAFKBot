@@ -5,9 +5,12 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 import me.bill.fakePlayerPlugin.FakePlayerPlugin;
 import me.bill.fakePlayerPlugin.config.Config;
+import me.bill.fakePlayerPlugin.util.FppScheduler;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -17,8 +20,6 @@ import org.bukkit.block.data.Bisected;
 import org.bukkit.block.data.Openable;
 import org.bukkit.block.data.type.Door;
 import org.bukkit.entity.Player;
-import org.bukkit.scheduler.BukkitRunnable;
-import org.bukkit.scheduler.BukkitTask;
 import org.bukkit.util.Vector;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -29,6 +30,7 @@ public final class PathfindingService {
   private static final int SWIM_CEILING_SCAN = 3;
   private static final int SWIM_NEAR_SURFACE_THRESHOLD = 2;
   private static final double MIN_TURN_XZ_DIST = 0.2;
+  private static final AtomicInteger NAV_START_SEQUENCE = new AtomicInteger();
 
   public enum Owner {
     MOVE,
@@ -50,8 +52,34 @@ public final class PathfindingService {
       @Nullable Runnable onArrive,
       @Nullable Runnable onCancel,
       @Nullable Runnable onPathFailure,
-      @Nullable Location lockOnArrival) {
+      @Nullable Location lockOnArrival,
+      @Nullable BotPathfinder.PathOptions overrideOpts) {
 
+    /** Backward-compatible 9-arg constructor (no overrideOpts). */
+    public NavigationRequest(
+        @NotNull Owner owner,
+        @NotNull Supplier<@Nullable Location> destinationSupplier,
+        double arrivalDistance,
+        double recalcDistance,
+        int maxNullPathRecalculations,
+        @Nullable Runnable onArrive,
+        @Nullable Runnable onCancel,
+        @Nullable Runnable onPathFailure,
+        @Nullable Location lockOnArrival) {
+      this(
+          owner,
+          destinationSupplier,
+          arrivalDistance,
+          recalcDistance,
+          maxNullPathRecalculations,
+          onArrive,
+          onCancel,
+          onPathFailure,
+          lockOnArrival,
+          null);
+    }
+
+    /** Backward-compatible 8-arg constructor (no lockOnArrival, no overrideOpts). */
     public NavigationRequest(
         @NotNull Owner owner,
         @NotNull Supplier<@Nullable Location> destinationSupplier,
@@ -70,34 +98,12 @@ public final class PathfindingService {
           onArrive,
           onCancel,
           onPathFailure,
-          null);
-    }
-
-    public NavigationRequest(
-        @NotNull Owner owner,
-        @NotNull Supplier<@Nullable Location> destinationSupplier,
-        double arrivalDistance,
-        double recalcDistance,
-        int maxNullPathRecalculations) {
-      this(
-          owner,
-          destinationSupplier,
-          arrivalDistance,
-          recalcDistance,
-          maxNullPathRecalculations,
-          null,
-          null,
           null,
           null);
-      if (owner == null) throw new IllegalArgumentException("owner");
-      if (destinationSupplier == null) throw new IllegalArgumentException("destinationSupplier");
-      if (arrivalDistance <= 0) throw new IllegalArgumentException("arrivalDistance must be > 0");
-      if (recalcDistance < 0) throw new IllegalArgumentException("recalcDistance must be >= 0");
-      if (maxNullPathRecalculations <= 0) maxNullPathRecalculations = Integer.MAX_VALUE;
     }
   }
 
-  private record Session(Owner owner, BukkitTask task) {}
+  private record Session(Owner owner, int taskId) {}
 
   private record DoorRef(UUID worldId, int x, int y, int z) {}
 
@@ -133,8 +139,8 @@ public final class PathfindingService {
 
   public void cancel(@NotNull UUID botUuid) {
     Session session = sessions.remove(botUuid);
-    if (session != null && !session.task().isCancelled()) {
-      session.task().cancel();
+    if (session != null) {
+      FppScheduler.cancelTask(session.taskId());
     }
     Set<DoorRef> opened = openedDoorRefs.remove(botUuid);
     if (opened != null) {
@@ -145,6 +151,7 @@ public final class PathfindingService {
     Player bot = Bukkit.getPlayer(botUuid);
     if (bot != null && bot.isOnline()) {
       NmsPlayerSpawner.setMovementForward(bot, 0f);
+      NmsPlayerSpawner.setMovementStrafe(bot, 0f);
       NmsPlayerSpawner.setJumping(bot, false);
       bot.setSprinting(false);
     }
@@ -166,6 +173,10 @@ public final class PathfindingService {
 
   public void navigate(@NotNull FakePlayer fp, @NotNull NavigationRequest request) {
     UUID botUuid = fp.getUuid();
+    Session existing = sessions.get(botUuid);
+    if (existing != null && existing.owner() != request.owner()) {
+      manager.interruptNavigationOwner(botUuid, existing.owner());
+    }
     cancel(botUuid);
     manager.lockForNavigation(botUuid);
     manager.clearNavJump(botUuid);
@@ -192,13 +203,22 @@ public final class PathfindingService {
     final List<BotPathfinder.Move>[] pathRef = (List<BotPathfinder.Move>[]) new List<?>[] {null};
     final int[] wpIdx = {0};
     final Location[] lastCalc = {initialDest.clone()};
-    final int[] recalcIn = {0};
+    int startOffset = Math.floorMod(NAV_START_SEQUENCE.getAndIncrement(), 10);
+    final int[] recalcIn = {startOffset};
     final int[] stuckFor = {0};
+    final int[] hardWallStuckFor = {0};
+    final int effectiveStuckTicks =
+        request.owner() == Owner.MOVE && request.maxNullPathRecalculations() <= 3
+            ? 1
+            : Config.pathfindingStuckTicks();
+    final int hardWallThreshold =
+        request.owner() == Owner.MOVE && request.maxNullPathRecalculations() <= 3 ? 1 : 3;
     final int[] nullPathRecalcs = {0};
+    final int[] nullPathRetryIn = {0};
     final double[] prevX = {initialBot.getLocation().getX()};
     final double[] prevZ = {initialBot.getLocation().getZ()};
     final boolean[] cleaningUp = {false};
-    final BukkitTask[] taskRef = {null};
+    final int[] taskIdRef = {-1};
 
     final boolean[] isBreaking = {false};
     final int[] breakLeft = {0};
@@ -207,8 +227,11 @@ public final class PathfindingService {
     final boolean[] isPlacing = {false};
     final int[] placeLeft = {0};
 
-    // Sprint-jump counter: fires a jump every 6 ticks while sprint-jumping is enabled.
-    final int[] sprintJumpTick = {0};
+    // Wobble state: slow sine-wave yaw drift that gives bots a slightly
+    // imprecise, human-like movement path instead of laser-straight lines.
+    // Phase advances ~1 radian per second (every ~50 ticks); amplitude ±5°.
+    final double[] wobblePhase = {ThreadLocalRandom.current().nextDouble(Math.PI * 2)};
+    final int[] wobbleTick = {0};
 
     // Detour state: when A* returns null AND a wall is directly ahead, we compute a detour
     // waypoint and path to it first before resuming toward the real target.
@@ -220,8 +243,8 @@ public final class PathfindingService {
     final Set<DoorRef> openedDoors = ConcurrentHashMap.newKeySet();
     openedDoorRefs.put(botUuid, openedDoors);
 
-    BukkitTask task =
-        new BukkitRunnable() {
+    Runnable tick =
+        new Runnable() {
           @Override
           public void run() {
             if (cleaningUp[0]) {
@@ -245,11 +268,33 @@ public final class PathfindingService {
             Location botLoc = bot.getLocation();
             closeOpenedDoors(openedDoors, botLoc, false);
 
+            // Consume nav jump state on the entity's region thread — no cross-thread race.
+            // The velocity impulse fires on tick 1 of the 5-tick window, then the counter
+            // decrements for the remaining 4 ticks. This keeps jump logic entirely
+            // on the same thread as the nav tick that called requestNavJump().
+            Integer navHold = manager.getNavJumpHolding(botUuid);
+            if (navHold != null) {
+              if (navHold == 5 && bot.isOnGround() && !bot.isInWater() && !bot.isInLava()) {
+                org.bukkit.util.Vector v = bot.getVelocity();
+                v.setY(0.42);
+                bot.setVelocity(v);
+              }
+              if (navHold <= 1) manager.clearNavJump(botUuid);
+              else manager.setNavJumpHolding(botUuid, navHold - 1);
+            }
+
             double arrivalSq = request.arrivalDistance() * request.arrivalDistance();
             double dx0 = botLoc.getX() - dest.getX();
             double dz0 = botLoc.getZ() - dest.getZ();
             double distToTargetSq = dx0 * dx0 + dz0 * dz0;
             if (distToTargetSq <= arrivalSq) {
+              if (request.recalcDistance() > 0) {
+                NmsPlayerSpawner.setMovementForward(bot, 0f);
+                NmsPlayerSpawner.setMovementStrafe(bot, 0f);
+                NmsPlayerSpawner.setJumping(bot, false);
+                bot.setSprinting(false);
+                return;
+              }
               cleanup(bot, true, false);
               return;
             }
@@ -261,8 +306,13 @@ public final class PathfindingService {
                     && lastCalc[0] != null
                     && lastCalc[0].distanceSquared(dest)
                         > request.recalcDistance() * request.recalcDistance();
-            boolean pathExhausted = (pathRef[0] == null || wpIdx[0] >= pathRef[0].size());
-            boolean heartbeat = (--recalcIn[0] <= 0);
+            if (nullPathRetryIn[0] > 0) {
+              nullPathRetryIn[0]--;
+            }
+            boolean pathExhausted =
+                (pathRef[0] == null && nullPathRetryIn[0] <= 0)
+                    || (pathRef[0] != null && wpIdx[0] >= pathRef[0].size());
+            boolean heartbeat = request.recalcDistance() > 0 && --recalcIn[0] <= 0;
 
             if (targetMoved || pathExhausted || heartbeat) {
               recalcIn[0] = Config.pathfindingRecalcInterval();
@@ -280,12 +330,14 @@ public final class PathfindingService {
               isPlacing[0] = false;
 
               BotPathfinder.PathOptions opts =
-                  new BotPathfinder.PathOptions(
-                      fp.isNavParkour(),
-                      fp.isNavBreakBlocks(),
-                      fp.isNavPlaceBlocks(),
-                      fp.isNavAvoidWater(),
-                      fp.isNavAvoidLava());
+                  request.overrideOpts() != null
+                      ? request.overrideOpts()
+                      : new BotPathfinder.PathOptions(
+                          fp.isNavParkour(),
+                          fp.isNavBreakBlocks(),
+                          fp.isNavPlaceBlocks(),
+                          fp.isNavAvoidWater() || !fp.isSwimAiEnabled(),
+                          fp.isNavAvoidLava() || !fp.isSwimAiEnabled());
 
               List<BotPathfinder.Move> newPath =
                   BotPathfinder.findPathMoves(
@@ -303,14 +355,19 @@ public final class PathfindingService {
                   cleanup(bot, false, true);
                   return;
                 }
+                nullPathRetryIn[0] = Math.max(10, Config.pathfindingRecalcInterval());
+                NmsPlayerSpawner.setMovementForward(bot, 0f);
+                bot.setSprinting(false);
                 // Direct path failed — try to compute a detour around the obstacle.
                 BotPathfinder.PathOptions detourOpts =
-                    new BotPathfinder.PathOptions(
-                        fp.isNavParkour(),
-                        fp.isNavBreakBlocks(),
-                        fp.isNavPlaceBlocks(),
-                        fp.isNavAvoidWater(),
-                        fp.isNavAvoidLava());
+                    request.overrideOpts() != null
+                        ? request.overrideOpts()
+                        : new BotPathfinder.PathOptions(
+                            fp.isNavParkour(),
+                            fp.isNavBreakBlocks(),
+                            fp.isNavPlaceBlocks(),
+                            fp.isNavAvoidWater() || !fp.isSwimAiEnabled(),
+                            fp.isNavAvoidLava() || !fp.isSwimAiEnabled());
                 int[] dg = BotPathfinder.findDetourGoal(
                     botLoc.getWorld(),
                     botLoc.getBlockX(), botLoc.getBlockY(), botLoc.getBlockZ(),
@@ -330,6 +387,7 @@ public final class PathfindingService {
                 }
               } else {
                 nullPathRecalcs[0] = 0;
+                nullPathRetryIn[0] = 0;
               }
 
               pathRef[0] = newPath;
@@ -530,7 +588,15 @@ public final class PathfindingService {
               } else {
                 // Horizontal swim — pitch near 0, jump to maintain depth.
                 swimPitch = -10f;
-                shouldJump = bot.isInWater() || bot.isInLava();
+                shouldJump =
+                    bot.isInLava()
+                        || (bot.isInWater()
+                            && distanceToSurface(
+                                    bot.getWorld(),
+                                    botLoc.getBlockX(),
+                                    botLoc.getBlockY(),
+                                    botLoc.getBlockZ())
+                                > SWIM_NEAR_SURFACE_THRESHOLD);
               }
 
               bot.setRotation(sYaw, swimPitch);
@@ -591,6 +657,21 @@ public final class PathfindingService {
             double dx = wpCX - botLoc.getX();
             double dz = wpCZ - botLoc.getZ();
             float yaw = stableYaw(bot.getLocation().getYaw(), dx, dz);
+
+            // Humanising wobble: advance the sine phase slowly and add a small
+            // yaw drift (±5°).  Only applied when moving in a straight line
+            // (not during ascend, parkour, or final approach) to avoid throwing
+            // the bot off ledges or making it miss narrow paths.
+            if (wp.type() == BotPathfinder.MoveType.WALK && !finalWaypoint) {
+              wobbleTick[0]++;
+              if (wobbleTick[0] >= 3) {
+                wobbleTick[0] = 0;
+                wobblePhase[0] += 0.06 + ThreadLocalRandom.current().nextDouble(0.04);
+              }
+              float wobble = (float) (Math.sin(wobblePhase[0]) * 5.0);
+              yaw += wobble;
+            }
+
             bot.setRotation(yaw, 0f);
             NmsPlayerSpawner.setHeadYaw(bot, yaw);
             maybeOpenDoorAhead(bot, yaw, openedDoors);
@@ -600,7 +681,12 @@ public final class PathfindingService {
                     || wp.type() == BotPathfinder.MoveType.PARKOUR);
             NmsPlayerSpawner.setMovementForward(bot, 1.0f);
 
-            if (!bot.isInWater() && !bot.isInLava()) {
+            if (bot.isInWater() || bot.isInLava()) {
+              // When the next waypoint is on land, keep holding jump while pushing forward.
+              // Without this, bots reach the shoreline but fail to climb out of the fluid.
+              boolean exitingFluid = applyShorelineExitAssist(bot, yaw, botLoc, wp.y());
+              NmsPlayerSpawner.setJumping(bot, exitingFluid || wp.y() >= botLoc.getBlockY());
+            } else {
               if (wp.y() > botLoc.getBlockY()) {
                 // Fire jump whenever the next waypoint is above us and we're within 2.5 blocks XZ,
                 // not just when we're at the waypoint — the bot needs to be jumping on approach.
@@ -611,23 +697,12 @@ public final class PathfindingService {
                   && wpXZDist >= 1.0
                   && wpXZDist <= 3.5) {
                 manager.requestNavJump(botUuid);
-              } else if (fp.isNavSprintJump() && bot.isSprinting()) {
-                // Sprint-jump: fire a jump every 6 ticks while on flat ground and sprinting.
-                // Only jump when the next waypoint is at the same Y (not already ascending).
-                if (wp.y() == botLoc.getBlockY() && bot.isOnGround()) {
-                  if (++sprintJumpTick[0] >= 6) {
-                    sprintJumpTick[0] = 0;
-                    manager.requestNavJump(botUuid);
-                  }
-                } else {
-                  sprintJumpTick[0] = 0;
-                }
               }
             }
 
             double moved = xzDistRaw(botLoc.getX(), botLoc.getZ(), prevX[0], prevZ[0]);
             if (moved < Config.pathfindingStuckThreshold()) {
-              if (++stuckFor[0] >= Config.pathfindingStuckTicks()) {
+              if (++stuckFor[0] >= effectiveStuckTicks) {
                 if (!bot.isInWater() && !bot.isInLava()) {
                   // Only jump if the block ahead is a single-block step (not a full wall).
                   // A full wall means jumping won't help — trigger a replan/detour instead.
@@ -639,9 +714,17 @@ public final class PathfindingService {
                   boolean feetBlocked = !BotPathfinder.canPassThrough(w, fx, fy, fz);
                   boolean headBlocked = !BotPathfinder.canPassThrough(w, fx, fy + 1, fz);
                   boolean aboveClear = BotPathfinder.canPassThrough(w, fx, fy + 2, fz);
-                  if (feetBlocked && !headBlocked && aboveClear) {
+                  if (feetBlocked && headBlocked) {
+                    if (++hardWallStuckFor[0] >= hardWallThreshold) {
+                      cleanup(bot, false, true);
+                      return;
+                    }
+                  } else if (feetBlocked && !headBlocked && aboveClear) {
                     // Single-block step — jump over it.
                     manager.requestNavJump(botUuid);
+                    hardWallStuckFor[0] = 0;
+                  } else {
+                    hardWallStuckFor[0] = 0;
                   }
                   // Whether or not we jumped, force an immediate replan so the detour
                   // logic gets a chance to route around the obstacle.
@@ -651,6 +734,7 @@ public final class PathfindingService {
               }
             } else {
               stuckFor[0] = 0;
+              hardWallStuckFor[0] = 0;
             }
 
             prevX[0] = botLoc.getX();
@@ -670,20 +754,15 @@ public final class PathfindingService {
             }
             if (bot != null) {
               NmsPlayerSpawner.setMovementForward(bot, 0f);
+              NmsPlayerSpawner.setMovementStrafe(bot, 0f);
               NmsPlayerSpawner.setJumping(bot, false);
               bot.setSprinting(false);
             }
             sessions.remove(botUuid);
-            BukkitTask currentTask = taskRef[0];
-            if (currentTask != null) {
-              Bukkit.getScheduler()
-                  .runTask(
-                      plugin,
-                      () -> {
-                        if (!currentTask.isCancelled()) {
-                          currentTask.cancel();
-                        }
-                      });
+            int currentTaskId = taskIdRef[0];
+            if (currentTaskId != -1) {
+              FppScheduler.cancelTask(currentTaskId);
+              taskIdRef[0] = -1;
             }
             if (arrived) {
 
@@ -727,13 +806,26 @@ public final class PathfindingService {
               }
             }
           }
-        }.runTaskTimer(plugin, 0L, 1L);
+        };
 
-    taskRef[0] = task;
-    sessions.put(botUuid, new Session(request.owner(), task));
+    int taskId = FppScheduler.runAtEntityRepeatingWithId(plugin, initialBot, tick, startOffset, 1L);
+    taskIdRef[0] = taskId;
+    sessions.put(botUuid, new Session(request.owner(), taskId));
   }
 
   public static void tickSwimAi(Player bot, boolean navJump, boolean isNavigating) {
+    try {
+      tickSwimAiUnsafe(bot, navJump, isNavigating);
+    } catch (NullPointerException e) {
+      if (isFoliaWorldDataNotReady(e)) {
+        NmsPlayerSpawner.setJumping(bot, bot.isInWater() || bot.isInLava());
+        return;
+      }
+      throw e;
+    }
+  }
+
+  private static void tickSwimAiUnsafe(Player bot, boolean navJump, boolean isNavigating) {
     if (!bot.isInWater() && !bot.isInLava()) return;
 
     if (isNavigating) {
@@ -798,6 +890,11 @@ public final class PathfindingService {
       NmsPlayerSpawner.setHeadYaw(bot, current.getYaw());
       NmsPlayerSpawner.setMovementForward(bot, 1.0f);
     }
+  }
+
+  private static boolean isFoliaWorldDataNotReady(NullPointerException e) {
+    String msg = e.getMessage();
+    return msg != null && msg.contains("getCurrentWorldData()");
   }
 
   private void primeInitialMovement(Player bot, Location dest, double arrivalDistance) {
@@ -923,6 +1020,31 @@ public final class PathfindingService {
       vel.setY(0.42);
       bot.setVelocity(vel);
     }
+  }
+
+  private static boolean applyShorelineExitAssist(Player bot, float yaw, Location botLoc, int targetY) {
+    World world = botLoc.getWorld();
+    if (world == null) return false;
+
+    double rad = Math.toRadians(yaw);
+    int fx = (int) Math.floor(botLoc.getX() + Math.sin(-rad) * 0.9);
+    int fz = (int) Math.floor(botLoc.getZ() + Math.cos(rad) * 0.9);
+    int fy = botLoc.getBlockY();
+
+    boolean walkableSameLevel = BotPathfinder.walkable(world, fx, fy, fz);
+    boolean walkableOneUp = BotPathfinder.walkable(world, fx, fy + 1, fz);
+    boolean solidLip = !BotPathfinder.canPassThrough(world, fx, fy, fz)
+        && BotPathfinder.canPassThrough(world, fx, fy + 1, fz)
+        && BotPathfinder.canPassThrough(world, fx, fy + 2, fz);
+
+    if (!walkableSameLevel && !walkableOneUp && !solidLip && targetY <= fy) return false;
+
+    Vector vel = bot.getVelocity();
+    if (vel.getY() < 0.28) {
+      vel.setY(0.36);
+      bot.setVelocity(vel);
+    }
+    return true;
   }
 
   private static boolean isAtWaterExit(World world, int bx, int by, int bz, float yaw) {

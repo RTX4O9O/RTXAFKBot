@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import me.bill.fakePlayerPlugin.util.BotDataYaml;
 import me.bill.fakePlayerPlugin.util.FppLogger;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
@@ -16,6 +17,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 public final class MineSelectionStore {
 
   private static final String FILE_NAME = "mine-selections.yml";
+  private static final String ROOT = "mine-selections.by-bot";
 
   private final JavaPlugin plugin;
 
@@ -28,12 +30,44 @@ public final class MineSelectionStore {
 
   public void load() {
     file = new File(plugin.getDataFolder(), "data/" + FILE_NAME);
-    if (!file.exists()) return;
+    YamlConfiguration unified = BotDataYaml.load(plugin);
+    ConfigurationSection root = unified.getConfigurationSection(ROOT);
+    if (root == null && file.exists()) {
+      YamlConfiguration legacy = YamlConfiguration.loadConfiguration(file);
+      root = legacy;
+      if (!legacy.getKeys(false).isEmpty()) {
+        final YamlConfiguration migrated = legacy;
+        try {
+          BotDataYaml.replaceSection(
+              plugin,
+              ROOT,
+              section -> {
+                for (String botKey : migrated.getKeys(false)) {
+                  ConfigurationSection sec = migrated.getConfigurationSection(botKey);
+                  if (sec == null) continue;
+                  for (String key : sec.getKeys(false)) {
+                    Object val = sec.get(key);
+                    if (val instanceof ConfigurationSection locSec) {
+                      for (String lk : locSec.getKeys(false)) {
+                        section.set(botKey + "." + key + "." + lk, locSec.get(lk));
+                      }
+                    } else {
+                      section.set(botKey + "." + key, val);
+                    }
+                  }
+                }
+              });
+          if (file.exists()) file.delete();
+        } catch (IOException ex) {
+          FppLogger.warn("Failed to migrate " + FILE_NAME + " to " + BotDataYaml.FILE_NAME + ": " + ex.getMessage());
+        }
+      }
+    }
+    if (root == null) return;
 
-    YamlConfiguration yaml = YamlConfiguration.loadConfiguration(file);
     int loaded = 0;
-    for (String botKey : yaml.getKeys(false)) {
-      ConfigurationSection sec = yaml.getConfigurationSection(botKey);
+    for (String botKey : root.getKeys(false)) {
+      ConfigurationSection sec = root.getConfigurationSection(botKey);
       if (sec == null) continue;
 
       Location pos1 = readLoc(sec, "pos1");
@@ -50,19 +84,20 @@ public final class MineSelectionStore {
   }
 
   public void save() {
-    if (file == null) file = new File(plugin.getDataFolder(), "data/" + FILE_NAME);
-    file.getParentFile().mkdirs();
-
-    YamlConfiguration yaml = new YamlConfiguration();
-    for (Map.Entry<String, BotEntry> e : entries.entrySet()) {
-      String k = e.getKey();
-      BotEntry entry = e.getValue();
-      writeLoc(yaml, k + ".pos1", entry.pos1());
-      writeLoc(yaml, k + ".pos2", entry.pos2());
-      yaml.set(k + ".active", entry.active());
-    }
     try {
-      yaml.save(file);
+      BotDataYaml.replaceSection(
+          plugin,
+          ROOT,
+          section -> {
+            for (Map.Entry<String, BotEntry> e : entries.entrySet()) {
+              String k = e.getKey();
+              BotEntry entry = e.getValue();
+              writeLoc(section, k + ".pos1", entry.pos1());
+              writeLoc(section, k + ".pos2", entry.pos2());
+              section.set(k + ".active", entry.active());
+            }
+          });
+      if (file != null && file.exists()) file.delete();
     } catch (IOException ex) {
       FppLogger.warn("Could not save " + FILE_NAME + ": " + ex.getMessage());
     }
@@ -130,7 +165,7 @@ public final class MineSelectionStore {
     return new Location(world, sec.getDouble("x"), sec.getDouble("y"), sec.getDouble("z"));
   }
 
-  private static void writeLoc(YamlConfiguration yaml, String path, Location loc) {
+  private static void writeLoc(ConfigurationSection yaml, String path, Location loc) {
     if (loc == null || loc.getWorld() == null) return;
     yaml.set(path + ".world", loc.getWorld().getName());
     yaml.set(path + ".x", loc.getBlockX());

@@ -8,13 +8,17 @@ import java.util.concurrent.ConcurrentHashMap;
 import me.bill.fakePlayerPlugin.FakePlayerPlugin;
 import me.bill.fakePlayerPlugin.config.Config;
 import me.bill.fakePlayerPlugin.database.DatabaseManager;
+import me.bill.fakePlayerPlugin.util.BotDataYaml;
 import me.bill.fakePlayerPlugin.util.FppLogger;
+import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.YamlConfiguration;
 
 public final class BotIdentityCache {
 
   private static final String YAML_FILE = "bot-identities.yml";
+  private static final String ROOT = "identities.by-name";
 
+  private final FakePlayerPlugin pluginRef;
   private final DatabaseManager db;
   private final File yamlFile;
 
@@ -23,6 +27,7 @@ public final class BotIdentityCache {
   private YamlConfiguration yamlConfig = null;
 
   public BotIdentityCache(FakePlayerPlugin plugin, DatabaseManager db) {
+    this.pluginRef = plugin;
     this.db = db;
     this.yamlFile = new File(new File(plugin.getDataFolder(), "data"), YAML_FILE);
 
@@ -70,15 +75,37 @@ public final class BotIdentityCache {
   }
 
   private void loadYaml() {
-    if (!yamlFile.exists()) {
+    yamlConfig = BotDataYaml.load(pluginRef);
+    ConfigurationSection root = yamlConfig.getConfigurationSection(ROOT);
+    if (root == null && yamlFile.exists()) {
+      YamlConfiguration legacy = YamlConfiguration.loadConfiguration(yamlFile);
+      if (!legacy.getKeys(false).isEmpty()) {
+        root = legacy;
+        try {
+          BotDataYaml.replaceSection(
+              pluginRef,
+              ROOT,
+              section -> {
+                for (String key : legacy.getKeys(false)) {
+                  section.set(key, legacy.getString(key));
+                }
+              });
+          if (yamlFile.exists()) yamlFile.delete();
+          yamlConfig = BotDataYaml.load(pluginRef);
+          root = yamlConfig.getConfigurationSection(ROOT);
+        } catch (IOException e) {
+          FppLogger.warn("BotIdentityCache: failed to migrate " + YAML_FILE + ": " + e.getMessage());
+        }
+      }
+    }
+    if (root == null) {
       yamlConfig = new YamlConfiguration();
-      Config.debugDatabase("BotIdentityCache: no YAML file yet - will create on first spawn.");
+      Config.debugDatabase("BotIdentityCache: no YAML data yet - will create on first spawn.");
       return;
     }
-    yamlConfig = YamlConfiguration.loadConfiguration(yamlFile);
     int loaded = 0;
-    for (String key : yamlConfig.getKeys(false)) {
-      String val = yamlConfig.getString(key);
+    for (String key : root.getKeys(false)) {
+      String val = root.getString(key);
       if (val == null || val.isBlank()) continue;
       try {
         cache.put(key, UUID.fromString(val));
@@ -96,7 +123,7 @@ public final class BotIdentityCache {
   private UUID lookupOrCreateYaml(String botName, String cacheKey) {
     if (yamlConfig == null) yamlConfig = new YamlConfiguration();
 
-    String stored = yamlConfig.getString(cacheKey);
+    String stored = yamlConfig.getString(ROOT + "." + cacheKey);
     if (stored != null && !stored.isBlank()) {
       try {
         UUID fromYaml = UUID.fromString(stored);
@@ -109,7 +136,7 @@ public final class BotIdentityCache {
     }
 
     UUID fresh = UUID.randomUUID();
-    yamlConfig.set(cacheKey, fresh.toString());
+    yamlConfig.set(ROOT + "." + cacheKey, fresh.toString());
     saveYaml();
     Config.debugDatabase("BotIdentityCache: new YAML identity for '" + botName + "' → " + fresh);
     return fresh;
@@ -120,7 +147,8 @@ public final class BotIdentityCache {
 
       File parent = yamlFile.getParentFile();
       if (parent != null && !parent.exists()) parent.mkdirs();
-      yamlConfig.save(yamlFile);
+      BotDataYaml.save(pluginRef, yamlConfig);
+      if (yamlFile.exists()) yamlFile.delete();
     } catch (IOException e) {
       FppLogger.warn("BotIdentityCache: failed to save " + YAML_FILE + ": " + e.getMessage());
     }

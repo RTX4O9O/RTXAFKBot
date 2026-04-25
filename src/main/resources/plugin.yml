@@ -1,11 +1,12 @@
 name: FakePlayerPlugin
-version: '1.6.6.4'
+version: '1.6.7'
 main: me.bill.fakePlayerPlugin.FakePlayerPlugin
 api-version: '1.21'
+folia-supported: true
 authors: [ el_pepes ]
 description: "Advanced Fake Player Spoofer for Paper 1.21+"
 website: "https://modrinth.com/plugin/fake-player-plugin-(fpp)"
-softdepend: [ PlaceholderAPI, LuckPerms, WorldGuard, NameTag ]
+softdepend: [ PlaceholderAPI, LuckPerms, WorldGuard, WorldEdit, NameTag ]
 
 commands:
   fpp:
@@ -114,6 +115,8 @@ permissions:
       fpp.mine.stop:            true
       fpp.mine.area:            true
       fpp.storage:              true
+      fpp.setowner:             true
+      fpp.save:                 true
       fpp.place:                true
       fpp.place.start:          true
       fpp.place.once:           true
@@ -134,10 +137,6 @@ permissions:
       fpp.rename.own:           true
       fpp.notify:               true
       fpp.personality:          true
-      fpp.ping:                 true
-      fpp.ping.set:             true
-      fpp.ping.random:          true
-      fpp.ping.bulk:            true
       fpp.use:                  true
 
   fpp.use:
@@ -437,31 +436,6 @@ permissions:
     default: false
 
   # ════════════════════════════════════════════════════════════════════════════
-  #  PING  (granular sub-nodes)
-  # ════════════════════════════════════════════════════════════════════════════
-
-  fpp.ping:
-    description: >
-      Set simulated latency — grants fpp.ping.set, fpp.ping.random, fpp.ping.bulk.
-    default: op
-    children:
-      fpp.ping.set:    true
-      fpp.ping.random: true
-      fpp.ping.bulk:   true
-
-  fpp.ping.set:
-    description: Set a fixed ping with --ping <ms>.
-    default: op
-
-  fpp.ping.random:
-    description: Assign random ping distribution with --random.
-    default: op
-
-  fpp.ping.bulk:
-    description: Target multiple bots at once with --count <n>.
-    default: op
-
-  # ════════════════════════════════════════════════════════════════════════════
   #  INVENTORY
   # ════════════════════════════════════════════════════════════════════════════
 
@@ -529,6 +503,10 @@ permissions:
     description: Area-selection mining (--pos1 / --pos2 / --start).
     default: op
 
+  fpp.mine.wesel:
+    description: Use a WorldEdit selection as the mine area (--wesel).
+    default: op
+
   # ════════════════════════════════════════════════════════════════════════════
   #  USE  (fpp.useitem = legacy;  fpp.use.cmd = new alias)
   # ════════════════════════════════════════════════════════════════════════════
@@ -573,6 +551,12 @@ permissions:
       Respects 1.9+ attack cooldown and item-specific cooldowns dynamically.
     default: op
 
+  fpp.attack.hunt:
+    description: >
+      Roaming mob hunt mode (--hunt).  Bot navigates autonomously to the nearest
+      hostile mob (or a specific type) and attacks continuously.
+    default: op
+
   # ════════════════════════════════════════════════════════════════════════════
   #  FIND
   # ════════════════════════════════════════════════════════════════════════════
@@ -591,12 +575,20 @@ permissions:
     description: Make a bot continuously follow a player using pathfinding.
     default: op
 
-   fpp.sleep:
+  fpp.sleep:
     description: Set a sleep origin and radius for a bot — the bot auto-sleeps at night and wakes at dawn.
     default: op
 
-   fpp.stop:
+  fpp.stop:
     description: Stop all active tasks (move/mine/use/place/attack/follow/find/sleep) for one or all bots.
+    default: op
+
+  fpp.setowner:
+    description: Set the owner of a specific bot.
+    default: op
+
+  fpp.save:
+    description: Save all active bot data immediately.
     default: op
 
   # ════════════════════════════════════════════════════════════════════════════
@@ -622,6 +614,10 @@ permissions:
 
   fpp.place.stop:
     description: Stop placing (/fpp place <bot> --stop).
+    default: op
+
+  fpp.place.wesel:
+    description: Use a WorldEdit selection as the place fill area (--wesel).
     default: op
 
   # ════════════════════════════════════════════════════════════════════════════

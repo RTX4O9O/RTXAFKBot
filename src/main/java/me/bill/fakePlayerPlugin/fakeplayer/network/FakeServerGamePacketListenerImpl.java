@@ -4,6 +4,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import me.bill.fakePlayerPlugin.FakePlayerPlugin;
 import me.bill.fakePlayerPlugin.config.Config;
+import me.bill.fakePlayerPlugin.util.FppLogger;
 import net.minecraft.network.Connection;
 import net.minecraft.network.DisconnectionDetails;
 import net.minecraft.network.PacketSendListener;
@@ -124,11 +125,6 @@ public final class FakeServerGamePacketListenerImpl extends ServerGamePacketList
   @Override
   public void send(Packet<?> packet) {
     if (packet instanceof ClientboundSetEntityMotionPacket motionPacket) {
-      Config.debugNms(
-          "[KB-DEBUG] send(Packet) called for "
-              + this.player.getScoreboardName()
-              + " packetClass="
-              + packet.getClass().getSimpleName());
       applyKnockback(motionPacket);
     }
   }
@@ -136,11 +132,6 @@ public final class FakeServerGamePacketListenerImpl extends ServerGamePacketList
   @SuppressWarnings("unused")
   public void send(Packet<?> packet, @Nullable PacketSendListener listener) {
     if (packet instanceof ClientboundSetEntityMotionPacket motionPacket) {
-      Config.debugNms(
-          "[KB-DEBUG] send(Packet,PacketSendListener) called for "
-              + this.player.getScoreboardName()
-              + " packetClass="
-              + packet.getClass().getSimpleName());
       applyKnockback(motionPacket);
     }
   }
@@ -148,112 +139,51 @@ public final class FakeServerGamePacketListenerImpl extends ServerGamePacketList
   private void applyKnockback(ClientboundSetEntityMotionPacket packet) {
     int packetEntityId = resolveEntityId(packet);
     int myId = this.player.getId();
-    Config.debugNms(
-        "[KB-DEBUG] applyKnockback: bot="
-            + this.player.getScoreboardName()
-            + " myId="
-            + myId
-            + " packetId="
-            + packetEntityId
-            + " hurtMarked="
-            + this.player.hurtMarked);
+    if (packetEntityId != -1 && packetEntityId != myId) return;
 
-    if (packetEntityId != -1 && packetEntityId != myId) {
-      Config.debugNms(
-          "[KB-DEBUG] applyKnockback: SKIPPED - packet is for entity "
-              + packetEntityId
-              + " not this bot ("
-              + myId
-              + ")");
-      return;
+    try {
+      KbStrategy strategy = resolveStrategy();
+      switch (strategy) {
+        case GET_MOVEMENT -> {
+          Object movement = getMovementMethod.invoke(packet);
+          lerpMotionVec3Method.invoke(this.player, movement);
+          markVelocityChanged();
+        }
+        case GET_XA -> {
+          double xa = toMotionComponent(getXaMethod.invoke(packet));
+          double ya = toMotionComponent(getYaMethod.invoke(packet));
+          double za = toMotionComponent(getZaMethod.invoke(packet));
+          if (lerpMotion3Method != null) {
+            lerpMotion3Method.invoke(this.player, xa, ya, za);
+          } else {
+            Object v =
+                vec3Class
+                    .getConstructor(double.class, double.class, double.class)
+                    .newInstance(xa, ya, za);
+            setDeltaMovementMethod.invoke(this.player, v);
+          }
+          markVelocityChanged();
+        }
+        case FIELD_SCAN -> {
+          double fx = toMotionComponent(scanXField.get(packet));
+          double fy = toMotionComponent(scanYField.get(packet));
+          double fz = toMotionComponent(scanZField.get(packet));
+          if (lerpMotion3Method != null) {
+            lerpMotion3Method.invoke(this.player, fx, fy, fz);
+          } else if (setDeltaMovementMethod != null && vec3Class != null) {
+            Object v =
+                vec3Class
+                    .getConstructor(double.class, double.class, double.class)
+                    .newInstance(fx, fy, fz);
+            setDeltaMovementMethod.invoke(this.player, v);
+          }
+          markVelocityChanged();
+        }
+        case NONE, UNRESOLVED -> {}
+      }
+    } catch (Exception e) {
+      FppLogger.warn("Knockback apply failed: " + e.getClass().getSimpleName() + ": " + e.getMessage());
     }
-
-    Config.debugNms(
-        "[KB-DEBUG] applyKnockback: PROCEEDING - scheduling task for "
-            + this.player.getScoreboardName()
-            + " strategy="
-            + kbStrategy);
-
-    Bukkit.getScheduler()
-        .runTask(
-            FakePlayerPlugin.getInstance(),
-            () -> {
-              try {
-                KbStrategy strategy = resolveStrategy();
-                Config.debugNms(
-                    "[KB-DEBUG] task running for "
-                        + this.player.getScoreboardName()
-                        + " strategy="
-                        + strategy
-                        + " alive="
-                        + !this.player.isRemoved());
-
-                switch (strategy) {
-                  case GET_MOVEMENT -> {
-                    Object movement = getMovementMethod.invoke(packet);
-
-                    Config.debugNms(
-                        "[KB-DEBUG] GET_MOVEMENT velocity="
-                            + movement
-                            + " applyMethod="
-                            + lerpMotionVec3Method.getName());
-                    lerpMotionVec3Method.invoke(this.player, movement);
-
-                    markVelocityChanged();
-                    logPostApplyVelocity("GET_MOVEMENT");
-                  }
-                  case GET_XA -> {
-                    double xa = toMotionComponent(getXaMethod.invoke(packet));
-                    double ya = toMotionComponent(getYaMethod.invoke(packet));
-                    double za = toMotionComponent(getZaMethod.invoke(packet));
-                    Config.debugNms(
-                        "[KB-DEBUG] GET_XA velocity=(" + xa + "," + ya + "," + za + ")");
-                    if (lerpMotion3Method != null) {
-                      lerpMotion3Method.invoke(this.player, xa, ya, za);
-                    } else {
-                      Object v =
-                          vec3Class
-                              .getConstructor(double.class, double.class, double.class)
-                              .newInstance(xa, ya, za);
-                      setDeltaMovementMethod.invoke(this.player, v);
-                    }
-                    markVelocityChanged();
-                    logPostApplyVelocity("GET_XA");
-                  }
-                  case FIELD_SCAN -> {
-                    double fx = toMotionComponent(scanXField.get(packet));
-                    double fy = toMotionComponent(scanYField.get(packet));
-                    double fz = toMotionComponent(scanZField.get(packet));
-                    Config.debugNms(
-                        "[KB-DEBUG] FIELD_SCAN velocity=(" + fx + "," + fy + "," + fz + ")");
-                    if (lerpMotion3Method != null) {
-                      lerpMotion3Method.invoke(this.player, fx, fy, fz);
-                    } else if (setDeltaMovementMethod != null && vec3Class != null) {
-                      Object v =
-                          vec3Class
-                              .getConstructor(double.class, double.class, double.class)
-                              .newInstance(fx, fy, fz);
-                      setDeltaMovementMethod.invoke(this.player, v);
-                    }
-                    markVelocityChanged();
-                    logPostApplyVelocity("FIELD_SCAN");
-                  }
-                  case NONE ->
-                      Config.debugNms(
-                          "[KB-DEBUG] knockback NONE - no compatible MC" + " API found");
-                  default -> Config.debugNms("[KB-DEBUG] unexpected strategy: " + strategy);
-                }
-              } catch (Exception e) {
-                me.bill.fakePlayerPlugin.util.FppLogger.warn(
-                    "[KB-DEBUG] knockback task exception: "
-                        + e.getClass().getSimpleName()
-                        + ": "
-                        + e.getMessage());
-                if (Config.debugNms()) {
-                  e.printStackTrace();
-                }
-              }
-            });
   }
 
   private void logPostApplyVelocity(String strategyName) {
@@ -284,7 +214,7 @@ public final class FakeServerGamePacketListenerImpl extends ServerGamePacketList
     this.player.hurtMarked = true;
     try {
       if (hasImpulseField == null) {
-        hasImpulseField = findDeclaredField(ServerPlayer.class, "hasImpulse", boolean.class);
+        hasImpulseField = findField(ServerPlayer.class, "hasImpulse", boolean.class);
       }
       if (hasImpulseField != null) {
         hasImpulseField.setBoolean(this.player, true);
@@ -317,10 +247,8 @@ public final class FakeServerGamePacketListenerImpl extends ServerGamePacketList
       Method gm = ClientboundSetEntityMotionPacket.class.getMethod("getMovement");
       Class<?> returnType = gm.getReturnType();
 
-      Method lm = findLerpMotionVec3(returnType);
-      if (lm == null && vec3Class != null) {
-        lm = findMethod(ServerPlayer.class, "setDeltaMovement", vec3Class);
-      }
+      Method lm = vec3Class != null ? findMethod(ServerPlayer.class, "setDeltaMovement", vec3Class) : null;
+      if (lm == null) lm = findLerpMotionVec3(returnType);
       if (lm != null) {
         getMovementMethod = gm;
         lerpMotionVec3Method = lm;
@@ -473,14 +401,18 @@ public final class FakeServerGamePacketListenerImpl extends ServerGamePacketList
     return null;
   }
 
-  private static Field findDeclaredField(Class<?> clazz, String name, Class<?> type) {
-    try {
-      Field f = clazz.getDeclaredField(name);
-      if (f.getType() == type) {
-        f.setAccessible(true);
-        return f;
+  private static Field findField(Class<?> clazz, String name, Class<?> type) {
+    Class<?> cur = clazz;
+    while (cur != null && cur != Object.class) {
+      try {
+        Field f = cur.getDeclaredField(name);
+        if (f.getType() == type) {
+          f.setAccessible(true);
+          return f;
+        }
+      } catch (NoSuchFieldException ignored) {
       }
-    } catch (NoSuchFieldException ignored) {
+      cur = cur.getSuperclass();
     }
     return null;
   }

@@ -121,11 +121,17 @@ public final class Perm {
 
   public static final String FIND = "fpp.find";
 
+  public static final String FARM = "fpp.farm";
+
   public static final String FOLLOW = "fpp.follow";
 
   public static final String SLEEP = "fpp.sleep";
 
   public static final String STOP = "fpp.stop";
+
+  public static final String SETOWNER = "fpp.setowner";
+
+  public static final String SAVE = "fpp.save";
 
   public static final String PLACE = "fpp.place";
 

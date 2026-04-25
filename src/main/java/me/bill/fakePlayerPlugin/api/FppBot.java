@@ -1,6 +1,7 @@
 package me.bill.fakePlayerPlugin.api;
 
 import java.time.Duration;
+import java.util.Set;
 import java.util.UUID;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
@@ -53,6 +54,11 @@ public interface FppBot {
   void setPvePriority(@Nullable String priority);
   @NotNull String getSpawnedBy();
   @NotNull UUID getSpawnedByUuid();
+  boolean isOwnedBy(@NotNull UUID playerUuid);
+  boolean hasControllerAccess(@NotNull UUID playerUuid);
+  @NotNull Set<UUID> getSharedControllerUuids();
+  boolean grantControllerAccess(@NotNull UUID playerUuid);
+  boolean revokeControllerAccess(@NotNull UUID playerUuid);
   @NotNull Duration getUptime();
   int getDeathCount();
   double getTotalDamageTaken();

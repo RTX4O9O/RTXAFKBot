@@ -3,6 +3,8 @@ package me.bill.fakePlayerPlugin.fakeplayer;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Type;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -166,15 +168,38 @@ public final class PacketHelper {
   }
 
   private static Constructor<?> findPlayerInfoUpdateCtor() {
+    Constructor<?> fallback = null;
     for (Constructor<?> c : playerInfoUpdatePacketClass.getDeclaredConstructors()) {
       Class<?>[] p = c.getParameterTypes();
       if (p.length == 2 && p[0] == EnumSet.class) {
         c.setAccessible(true);
-        Config.debugPackets("PlayerInfoUpdatePacket ctor: second param = " + p[1].getName());
-        return c;
+        if (p[1] == playerInfoUpdateEntryClass || p[1].isArray() || isEntryCollectionParameter(c)) {
+          Config.debugPackets("PlayerInfoUpdatePacket ctor: second param = " + p[1].getName());
+          return c;
+        }
+        if (fallback == null) fallback = c;
       }
     }
-    return null;
+    if (fallback != null) {
+      Config.debugPackets(
+          "PlayerInfoUpdatePacket ctor fallback: second param = "
+              + fallback.getParameterTypes()[1].getName());
+    }
+    return fallback;
+  }
+
+  private static boolean isEntryCollectionParameter(Constructor<?> ctor) {
+    Class<?> rawType = ctor.getParameterTypes()[1];
+    if (rawType != List.class && rawType != Collection.class) return false;
+    Type genericType = ctor.getGenericParameterTypes()[1];
+    if (!(genericType instanceof ParameterizedType parameterizedType)) {
+      return rawType == List.class;
+    }
+    Type[] args = parameterizedType.getActualTypeArguments();
+    if (args.length != 1) return false;
+    Type arg = args[0];
+    if (arg == playerInfoUpdateEntryClass) return true;
+    return arg.getTypeName().equals(playerInfoUpdateEntryClass.getName());
   }
 
   private static boolean ensureReady() {
@@ -250,17 +275,23 @@ public final class PacketHelper {
   }
 
   public static void sendTabListAdd(Player receiver, FakePlayer fp) {
+    if (receiver == null || fp == null) return;
     if (!ensureReady()) return;
     try {
       Object nms = getHandle(receiver);
+      if (nms == null) return;
 
       Object profile = buildProfileWithSkin(fp);
+      if (profile == null) return;
 
       String dispStr = fp.getDisplayName();
+      if (dispStr == null || dispStr.isBlank()) dispStr = fp.getName();
       Object displayName = fp.getCachedNmsDisplayComponent();
       if (displayName == null || !dispStr.equals(fp.getCachedNmsDisplaySource())) {
         Component adv = MiniMessage.miniMessage().deserialize(dispStr);
         displayName = adventureToNms(adv);
+        if (displayName == null) displayName = componentLiteral(dispStr);
+        if (displayName == null) return;
         fp.setCachedNmsDisplay(displayName, dispStr);
       }
 
@@ -271,7 +302,7 @@ public final class PacketHelper {
       sendPacket(nms, playerInfoUpdateCtor.newInstance(actions, buildSecondArg(entry)));
       Config.debugPackets("Tab ADD → " + receiver.getName() + " for " + fp.getName());
     } catch (Exception e) {
-      FppLogger.error("sendTabListAdd failed: " + e.getMessage());
+      FppLogger.error("sendTabListAdd failed: " + describeException(e));
       if (Config.debugPackets()) FppLogger.warn("  → " + e);
     }
   }
@@ -280,20 +311,18 @@ public final class PacketHelper {
 
     String profileName = fp.getPacketProfileName();
     if (profileName == null || profileName.isBlank()) profileName = fp.getName();
-    Object profile =
-        gameProfileCtor != null
-            ? gameProfileCtor.newInstance(fp.getUuid(), profileName)
-            : gameProfileClass.getDeclaredConstructors()[0].newInstance(fp.getUuid(), profileName);
-
     SkinProfile skin = fp.getResolvedSkin();
-    if (skin == null || !skin.isValid()) return profile;
-
-    try {
-      injectProperty(profile, "textures", skin.getValue(), skin.getSignature());
-    } catch (Exception e) {
-      Config.debugPackets("buildProfileWithSkin: inject failed - " + e.getMessage());
+    if (skin != null && skin.isValid()) {
+      try {
+        return SkinProfileInjector.createGameProfile(gameProfileClass, fp.getUuid(), profileName, skin);
+      } catch (Exception e) {
+        Config.debugPackets("buildProfileWithSkin: mutable profile failed - " + e.getMessage());
+      }
     }
-    return profile;
+
+    return gameProfileCtor != null
+        ? gameProfileCtor.newInstance(fp.getUuid(), profileName)
+        : gameProfileClass.getDeclaredConstructors()[0].newInstance(fp.getUuid(), profileName);
   }
 
   private static void injectProperty(Object profile, String key, String value, String signature)
@@ -972,6 +1001,7 @@ public final class PacketHelper {
   }
 
   private static void sendPacket(Object serverPlayer, Object packet) throws Exception {
+    if (serverPlayer == null || packet == null) return;
     if (cachedConnectionField == null) {
       Field f = findFieldInHierarchy(serverPlayer.getClass(), "connection");
       if (f == null) throw new IllegalStateException("ServerPlayer.connection field not found");
@@ -1076,6 +1106,25 @@ public final class PacketHelper {
     return null;
   }
 
+  private static Object componentLiteral(String text) {
+    if (componentLiteral == null) return null;
+    try {
+      return componentLiteral.invoke(null, text != null ? text : "");
+    } catch (Exception e) {
+      Config.debugPackets("componentLiteral failed: " + describeException(e));
+      return null;
+    }
+  }
+
+  private static String describeException(Throwable throwable) {
+    Throwable cause = throwable;
+    while (cause instanceof java.lang.reflect.InvocationTargetException ite && ite.getCause() != null) {
+      cause = ite.getCause();
+    }
+    String message = cause.getMessage();
+    return cause.getClass().getSimpleName() + (message == null ? "" : ": " + message);
+  }
+
   private static volatile Object cachedFullActionSet;
 
   @SuppressWarnings({"unchecked", "rawtypes"})
@@ -1092,9 +1141,19 @@ public final class PacketHelper {
     actions.add(Enum.valueOf(enumClass, "UPDATE_LATENCY"));
     actions.add(Enum.valueOf(enumClass, "UPDATE_GAME_MODE"));
     actions.add(Enum.valueOf(enumClass, "UPDATE_DISPLAY_NAME"));
+    tryAddAction(actions, enumClass, "UPDATE_LIST_ORDER");
+    tryAddAction(actions, enumClass, "UPDATE_HAT");
 
     cachedFullActionSet = actions;
     return actions;
+  }
+
+  @SuppressWarnings({"unchecked", "rawtypes"})
+  private static void tryAddAction(EnumSet actions, Class<? extends Enum> enumClass, String name) {
+    try {
+      actions.add(Enum.valueOf(enumClass, name));
+    } catch (IllegalArgumentException ignored) {
+    }
   }
 
   private static Object buildEntry(UUID uuid, Object profile, Object displayName) throws Exception {
@@ -1187,16 +1246,19 @@ public final class PacketHelper {
       Class<?>[] types, UUID uuid, Object profile, Object displayName, int latency) {
     Object[] args = new Object[types.length];
     for (int i = 0; i < types.length; i++) {
+      Class<?> type = types[i];
       args[i] =
-          switch (types[i].getSimpleName()) {
+          switch (type.getSimpleName()) {
             case "UUID" -> uuid;
             case "GameProfile" -> profile;
 
             case "boolean" -> true;
+            case "Boolean" -> Boolean.TRUE;
             case "int" -> latency;
+            case "Integer" -> Integer.valueOf(latency);
             case "GameType" -> gameTypeSurvival;
             case "Component" -> displayName;
-            default -> null;
+            default -> defaultEntryArg(type);
           };
     }
     return args;
@@ -1211,18 +1273,39 @@ public final class PacketHelper {
       boolean listed) {
     Object[] args = new Object[types.length];
     for (int i = 0; i < types.length; i++) {
+      Class<?> type = types[i];
       args[i] =
-          switch (types[i].getSimpleName()) {
+          switch (type.getSimpleName()) {
             case "UUID" -> uuid;
             case "GameProfile" -> profile;
 
             case "boolean" -> listed;
+            case "Boolean" -> Boolean.valueOf(listed);
             case "int" -> latency;
+            case "Integer" -> Integer.valueOf(latency);
             case "GameType" -> gameTypeSurvival;
             case "Component" -> displayName;
-            default -> null;
+            default -> defaultEntryArg(type);
           };
     }
     return args;
+  }
+
+  private static Object defaultEntryArg(Class<?> type) {
+    if (type == Optional.class) return Optional.empty();
+    if (type == String.class) return "";
+    if (type == List.class || type == Collection.class) return List.of();
+    if (type == EnumSet.class || type == Set.class) return Set.of();
+    if (type == long.class) return 0L;
+    if (type == Long.class) return Long.valueOf(0L);
+    if (type == float.class) return 0f;
+    if (type == Float.class) return Float.valueOf(0f);
+    if (type == double.class) return 0d;
+    if (type == Double.class) return Double.valueOf(0d);
+    if (type == byte.class) return (byte) 0;
+    if (type == Byte.class) return Byte.valueOf((byte) 0);
+    if (type == short.class) return (short) 0;
+    if (type == Short.class) return Short.valueOf((short) 0);
+    return null;
   }
 }

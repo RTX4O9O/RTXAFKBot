@@ -11,6 +11,7 @@ import me.bill.fakePlayerPlugin.fakeplayer.FakePlayerManager;
 import me.bill.fakePlayerPlugin.fakeplayer.PeakHoursManager;
 import me.bill.fakePlayerPlugin.lang.Lang;
 import me.bill.fakePlayerPlugin.permission.Perm;
+import me.bill.fakePlayerPlugin.util.FppScheduler;
 import org.bukkit.Location;
 import org.bukkit.command.CommandSender;
 
@@ -90,7 +91,7 @@ public class PeaksCommand implements FppCommand {
     if (ph != null) {
       if (!ph.isRunning()) ph.start();
 
-      plugin.getServer().getScheduler().runTaskLater(plugin, ph::forceCheck, 5L);
+      FppScheduler.runSyncLater(plugin, ph::forceCheck, 5L);
     }
 
     sender.sendMessage(Lang.get("peaks-enabled"));

@@ -21,6 +21,12 @@ public final class FakeConnection extends Connection {
   }
 
   @Override
+  public void tick() {
+    // Prevent parent Connection.tick() from running keepalive state machines.
+    // Fake players have no real network client to respond to keepalive challenges.
+  }
+
+  @Override
   public boolean isConnected() {
     return true;
   }

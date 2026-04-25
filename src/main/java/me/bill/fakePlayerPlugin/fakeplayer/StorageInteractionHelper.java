@@ -2,6 +2,7 @@ package me.bill.fakePlayerPlugin.fakeplayer;
 
 import java.util.function.BiConsumer;
 import me.bill.fakePlayerPlugin.FakePlayerPlugin;
+import me.bill.fakePlayerPlugin.util.FppScheduler;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.block.Block;
@@ -29,49 +30,47 @@ public final class StorageInteractionHelper {
     }
 
     manager.lockForAction(fp.getUuid(), faceLoc);
-    bot.teleport(faceLoc);
+    FppScheduler.teleportAsync(bot, faceLoc);
     bot.setRotation(faceLoc.getYaw(), faceLoc.getPitch());
     NmsPlayerSpawner.setHeadYaw(bot, faceLoc.getYaw());
     NmsPlayerSpawner.setMovementForward(bot, 0f);
     bot.setSprinting(false);
 
-    Bukkit.getScheduler()
-        .runTaskLater(
-            plugin,
-            () -> {
-              Player lb = fp.getPlayer();
-              if (lb == null || !lb.isOnline()) {
-                manager.unlockAction(fp.getUuid());
-                if (onFinally != null) onFinally.run();
-                return;
-              }
-              BotNavUtil.useStorageBlock(lb, block);
+    FppScheduler.runSyncLater(
+        plugin,
+        () -> {
+          Player lb = fp.getPlayer();
+          if (lb == null || !lb.isOnline()) {
+            manager.unlockAction(fp.getUuid());
+            if (onFinally != null) onFinally.run();
+            return;
+          }
+          BotNavUtil.useStorageBlock(lb, block);
 
-              Bukkit.getScheduler()
-                  .runTaskLater(
-                      plugin,
-                      () -> {
-                        Player liveBot = fp.getPlayer();
-                        if (liveBot == null || !liveBot.isOnline()) {
-                          manager.unlockAction(fp.getUuid());
-                          if (onFinally != null) onFinally.run();
-                          return;
-                        }
-                        Block liveBlock = block.getLocation().getBlock();
-                        if (!(liveBlock.getState() instanceof InventoryHolder liveHolder)) {
-                          manager.unlockAction(fp.getUuid());
-                          if (onFinally != null) onFinally.run();
-                          return;
-                        }
-                        transferFn.accept(liveHolder, liveBot);
-                        liveBot.closeInventory();
-                        manager.unlockAction(fp.getUuid());
-                        if (plugin.getInventoryCommand() != null)
-                          plugin.getInventoryCommand().refreshOpenGui(fp.getUuid());
-                        if (onFinally != null) onFinally.run();
-                      },
-                      3L);
-            },
-            1L);
+          FppScheduler.runSyncLater(
+              plugin,
+              () -> {
+                Player liveBot = fp.getPlayer();
+                if (liveBot == null || !liveBot.isOnline()) {
+                  manager.unlockAction(fp.getUuid());
+                  if (onFinally != null) onFinally.run();
+                  return;
+                }
+                Block liveBlock = block.getLocation().getBlock();
+                if (!(liveBlock.getState() instanceof InventoryHolder liveHolder)) {
+                  manager.unlockAction(fp.getUuid());
+                  if (onFinally != null) onFinally.run();
+                  return;
+                }
+                transferFn.accept(liveHolder, liveBot);
+                liveBot.closeInventory();
+                manager.unlockAction(fp.getUuid());
+                if (plugin.getInventoryCommand() != null)
+                  plugin.getInventoryCommand().refreshOpenGui(fp.getUuid());
+                if (onFinally != null) onFinally.run();
+              },
+              3L);
+        },
+        1L);
   }
 }

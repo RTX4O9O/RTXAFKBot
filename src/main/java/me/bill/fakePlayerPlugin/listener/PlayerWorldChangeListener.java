@@ -2,6 +2,7 @@ package me.bill.fakePlayerPlugin.listener;
 
 import me.bill.fakePlayerPlugin.FakePlayerPlugin;
 import me.bill.fakePlayerPlugin.fakeplayer.FakePlayerManager;
+import me.bill.fakePlayerPlugin.util.FppScheduler;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -25,13 +26,12 @@ public class PlayerWorldChangeListener implements Listener {
 
     Player player = event.getPlayer();
 
-    Bukkit.getScheduler()
-        .runTaskLater(
-            plugin,
-            () -> {
-              if (!player.isOnline()) return;
-              manager.syncToPlayer(player);
-            },
-            3L);
+    FppScheduler.runSyncLater(
+        plugin,
+        () -> {
+          if (!player.isOnline()) return;
+          manager.syncToPlayer(player);
+        },
+        3L);
   }
 }

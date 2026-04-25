@@ -35,7 +35,14 @@ public final class SkinFetcher {
 
   private static final long REQUEST_GAP_MS = 300;
   private static final String USER_AGENT = "FakePlayerPlugin/1.5.0";
+  private static final long RATE_LIMIT_COOLDOWN_MS = TimeUnit.MINUTES.toMillis(5);
+  private static final long RATE_LIMIT_LOG_INTERVAL_MS = TimeUnit.MINUTES.toMillis(1);
   private static long nextSlotMs = 0;
+  private static volatile long mojangRateLimitedUntilMs = 0;
+  private static volatile long mineskinRateLimitedUntilMs = 0;
+  private static volatile long lastRateLimitLogMs = 0;
+  private static final java.util.concurrent.atomic.AtomicInteger suppressedRateLimitLogs =
+      new java.util.concurrent.atomic.AtomicInteger();
 
   private static final class RateLimitException extends RuntimeException {
     RateLimitException(String source) {
@@ -166,8 +173,14 @@ public final class SkinFetcher {
   private static void doFetch(String cacheKey, String playerName) {
     String value = null, signature = null;
     boolean shouldCache = true;
+    boolean allowFallback = true;
 
     try {
+      long now = System.currentTimeMillis();
+      if (now < mojangRateLimitedUntilMs) {
+        allowFallback = false;
+        ConfigDebugRateLimit("Mojang API", playerName, mojangRateLimitedUntilMs - now);
+      } else {
       String uuidResponse = get("https://api.mojang.com/users/profiles/minecraft/" + playerName);
       if (uuidResponse != null) {
         JsonObject uuidJson = parseJsonObject(uuidResponse);
@@ -192,18 +205,22 @@ public final class SkinFetcher {
           }
         }
       }
+      }
     } catch (RateLimitException e) {
-      shouldCache = false;
-      FppLogger.warn(
-          "SkinFetcher: Mojang API rate-limited for '"
-              + playerName
-              + "'. Will try mineskin.eu fallback.");
+      mojangRateLimitedUntilMs = System.currentTimeMillis() + RATE_LIMIT_COOLDOWN_MS;
+      allowFallback = false;
+      logRateLimited("Mojang API", playerName);
     } catch (Exception e) {
       FppLogger.debug("SkinFetcher: Mojang API error for '" + playerName + "': " + e.getMessage());
     }
 
-    if (value == null && shouldCache) {
+    if (value == null && shouldCache && allowFallback) {
       try {
+        long now = System.currentTimeMillis();
+        if (now < mineskinRateLimitedUntilMs) {
+          ConfigDebugRateLimit("mineskin.eu", playerName, mineskinRateLimitedUntilMs - now);
+          throw new SkipSkinFetchException();
+        }
         String response = get("https://mineskin.eu/profile/" + playerName);
         JsonObject json = parseJsonObject(response);
         String[] tex = extractTexturePayload(json);
@@ -216,11 +233,9 @@ public final class SkinFetcher {
               "SkinFetcher: no skin found for '" + playerName + "' on mineskin.eu either.");
         }
       } catch (RateLimitException e) {
-        shouldCache = false;
-        FppLogger.warn(
-            "SkinFetcher: mineskin.eu rate-limited for '"
-                + playerName
-                + "'. Will retry on next request.");
+        mineskinRateLimitedUntilMs = System.currentTimeMillis() + RATE_LIMIT_COOLDOWN_MS;
+        logRateLimited("mineskin.eu", playerName);
+      } catch (SkipSkinFetchException ignored) {
       } catch (Exception e) {
         FppLogger.warn(
             "SkinFetcher: mineskin.eu error for '" + playerName + "': " + e.getMessage());
@@ -241,6 +256,39 @@ public final class SkinFetcher {
         }
       }
     }
+  }
+
+  private static final class SkipSkinFetchException extends RuntimeException {}
+
+  private static void ConfigDebugRateLimit(String source, String playerName, long remainingMs) {
+    suppressedRateLimitLogs.incrementAndGet();
+    FppLogger.debug(
+        "SkinFetcher: skipping "
+            + source
+            + " lookup for '"
+            + playerName
+            + "' during rate-limit cooldown ("
+            + Math.max(1, TimeUnit.MILLISECONDS.toSeconds(remainingMs))
+            + "s left).");
+  }
+
+  private static void logRateLimited(String source, String playerName) {
+    long now = System.currentTimeMillis();
+    int suppressed = suppressedRateLimitLogs.getAndSet(0);
+    if (now - lastRateLimitLogMs < RATE_LIMIT_LOG_INTERVAL_MS) {
+      suppressedRateLimitLogs.incrementAndGet();
+      return;
+    }
+    lastRateLimitLogMs = now;
+    FppLogger.warn(
+        "SkinFetcher: "
+            + source
+            + " rate-limited while fetching '"
+            + playerName
+            + "'. Suppressing skin lookups for "
+            + TimeUnit.MILLISECONDS.toMinutes(RATE_LIMIT_COOLDOWN_MS)
+            + " minutes."
+            + (suppressed > 0 ? " Suppressed " + suppressed + " similar message(s)." : ""));
   }
 
   private static String get(String urlStr) throws Exception {

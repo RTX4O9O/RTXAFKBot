@@ -7,7 +7,7 @@ import org.bukkit.configuration.file.YamlConfiguration;
 
 public final class ConfigMigrator {
 
-  public static final int CURRENT_VERSION = 65;
+  public static final int CURRENT_VERSION = 66;
 
   private static boolean rawDebug = false;
 
@@ -36,6 +36,10 @@ public final class ConfigMigrator {
     }
 
     if (stored >= CURRENT_VERSION) {
+      if (syncCurrentDefaults(plugin, configFile, cfg)) {
+        log("config is current (v" + stored + ") but missing defaults were synced.");
+        return true;
+      }
       log("config is current (v" + stored + "). No migration needed.");
       return false;
     }
@@ -384,8 +388,8 @@ public final class ConfigMigrator {
       changed = true;
     }
     if (!cfg.contains("skin.fallback-name")) {
-      cfg.set("skin.fallback-name", "Notch");
-      log("v10→v11", "added skin.fallback-name = Notch");
+      cfg.set("skin.fallback-name", "BotSkin");
+      log("v10→v11", "added skin.fallback-name = BotSkin");
       changed = true;
     }
     return changed;
@@ -493,6 +497,22 @@ public final class ConfigMigrator {
     } catch (IOException e) {
 
       FppLogger.warn("ConfigMigrator.fillDefaults: " + e.getMessage());
+    }
+  }
+
+  private static boolean syncCurrentDefaults(
+      FakePlayerPlugin plugin, File configFile, YamlConfiguration cfg) {
+    String before = cfg.saveToString();
+    fillDefaults(plugin, cfg);
+    String after = cfg.saveToString();
+    if (before.equals(after)) return false;
+    try {
+      BackupManager.createConfigFilesBackup(plugin, "config-default-sync");
+      cfg.save(configFile);
+      return true;
+    } catch (IOException e) {
+      FppLogger.error("ConfigMigrator: failed to save synced config defaults: " + e.getMessage());
+      return false;
     }
   }
 
@@ -1122,6 +1142,9 @@ public final class ConfigMigrator {
     changed |= setIfMissing(cfg, "pathfinding.patrol-arrival-distance", 1.5);
     changed |= setIfMissing(cfg, "pathfinding.waypoint-arrival-distance", 0.65);
     changed |= setIfMissing(cfg, "pathfinding.sprint-distance", 6.0);
+    changed |= setIfMissing(cfg, "automation.auto-eat", true);
+    changed |= setIfMissing(cfg, "automation.auto-place-bed", true);
+    changed |= setIfMissing(cfg, "swim-ai.enabled", false);
     changed |= setIfMissing(cfg, "pathfinding.follow-recalc-distance", 3.5);
     changed |= setIfMissing(cfg, "pathfinding.recalc-interval", 60);
     changed |= setIfMissing(cfg, "pathfinding.stuck-ticks", 5);
@@ -1129,8 +1152,8 @@ public final class ConfigMigrator {
     changed |= setIfMissing(cfg, "pathfinding.break-ticks", 15);
     changed |= setIfMissing(cfg, "pathfinding.place-ticks", 5);
     changed |= setIfMissing(cfg, "pathfinding.max-range", 64);
-    changed |= setIfMissing(cfg, "pathfinding.max-nodes", 2000);
-    changed |= setIfMissing(cfg, "pathfinding.max-nodes-extended", 4000);
+    changed |= setIfMissing(cfg, "pathfinding.max-nodes", 900);
+    changed |= setIfMissing(cfg, "pathfinding.max-nodes-extended", 1800);
     if (changed) {
       log("v54→v55", "added shared global pathfinding tuning keys");
     }

@@ -2,11 +2,14 @@ package me.bill.fakePlayerPlugin.command;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import me.bill.fakePlayerPlugin.api.event.FppBotDespawnEvent;
 import me.bill.fakePlayerPlugin.fakeplayer.FakePlayer;
 import me.bill.fakePlayerPlugin.fakeplayer.FakePlayerManager;
 import me.bill.fakePlayerPlugin.gui.BotSettingGui;
 import me.bill.fakePlayerPlugin.lang.Lang;
 import me.bill.fakePlayerPlugin.permission.Perm;
+import me.bill.fakePlayerPlugin.util.FppScheduler;
+import me.bill.fakePlayerPlugin.util.BotAccess;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextColor;
@@ -72,6 +75,7 @@ public class InventoryCommand implements FppCommand, Listener {
   private final BotSettingGui botSettingGui;
   private final Map<UUID, UUID> sessions = new ConcurrentHashMap<>();
   private final Map<Inventory, UUID> invToBot = new ConcurrentHashMap<>();
+  private final Map<UUID, UUID> botLocks = new ConcurrentHashMap<>();
 
   public InventoryCommand(FakePlayerManager manager, Plugin plugin, BotSettingGui botSettingGui) {
     this.manager = manager;
@@ -128,6 +132,10 @@ public class InventoryCommand implements FppCommand, Listener {
       sender.sendMessage(Lang.get("inv-bodyless", "name", fp.getDisplayName()));
       return false;
     }
+    if (!BotAccess.canAdminister(player, fp)) {
+      sender.sendMessage(Lang.get("no-permission"));
+      return false;
+    }
     openGui(player, fp);
     player.sendMessage(Lang.get("inv-opened", "name", fp.getDisplayName()));
     return true;
@@ -147,6 +155,16 @@ public class InventoryCommand implements FppCommand, Listener {
 
   public void openGui(Player viewer, FakePlayer fp) {
     Player botPlayer = fp.getPlayer();
+    UUID owner = botLocks.putIfAbsent(fp.getUuid(), viewer.getUniqueId());
+    if (owner != null && !owner.equals(viewer.getUniqueId())) {
+      viewer.sendMessage(Lang.get("inv-busy", "name", fp.getDisplayName()));
+      return;
+    }
+    if (botPlayer == null || !botPlayer.isOnline() || fp.isBodyless()) {
+      botLocks.remove(fp.getUuid(), viewer.getUniqueId());
+      viewer.sendMessage(Lang.get("inv-bodyless", "name", fp.getDisplayName()));
+      return;
+    }
     Component title =
         Component.empty()
             .decoration(TextDecoration.ITALIC, false)
@@ -328,38 +346,34 @@ public class InventoryCommand implements FppCommand, Listener {
   }
 
   private void scheduleSync(UUID botUuid, Inventory gui) {
-    Bukkit.getScheduler()
-        .runTask(
-            plugin,
-            () -> {
-              FakePlayer fp = manager.getByUuid(botUuid);
-              if (fp == null || fp.getPlayer() == null || fp.isBodyless()) return;
-              syncToBotInventory(gui, fp.getPlayer().getInventory());
-            });
+    FppScheduler.runSync(
+        plugin,
+        () -> {
+          FakePlayer fp = manager.getByUuid(botUuid);
+          if (fp == null || fp.getPlayer() == null || fp.isBodyless()) return;
+          syncToBotInventory(gui, fp.getPlayer().getInventory());
+        });
   }
 
   public void refreshOpenGui(UUID botUuid) {
-    Bukkit.getScheduler()
-        .runTask(
-            plugin,
-            () -> {
-              FakePlayer fp = manager.getByUuid(botUuid);
-              if (fp == null || fp.getPlayer() == null || fp.isBodyless()) return;
-              PlayerInventory botInv = fp.getPlayer().getInventory();
-              for (Map.Entry<Inventory, UUID> entry : new HashMap<>(invToBot).entrySet()) {
-                if (!botUuid.equals(entry.getValue())) continue;
-                Inventory gui = entry.getKey();
-                for (int guiSlot = 0; guiSlot < GUI_SIZE; guiSlot++) {
-                  if (DECO.contains(guiSlot)) continue;
-                  int botSlot = GUI_TO_BOT[guiSlot];
-                  if (botSlot < 0) continue;
-                  ItemStack item = botInv.getItem(botSlot);
-                  gui.setItem(
-                      guiSlot,
-                      (item == null || item.getType() == Material.AIR) ? null : item.clone());
-                }
-              }
-            });
+    FppScheduler.runSync(
+        plugin,
+        () -> {
+          FakePlayer fp = manager.getByUuid(botUuid);
+          if (fp == null || fp.getPlayer() == null || fp.isBodyless()) return;
+          PlayerInventory botInv = fp.getPlayer().getInventory();
+          for (Map.Entry<Inventory, UUID> entry : new HashMap<>(invToBot).entrySet()) {
+            if (!botUuid.equals(entry.getValue())) continue;
+            Inventory gui = entry.getKey();
+            for (int guiSlot = 0; guiSlot < GUI_SIZE; guiSlot++) {
+              if (DECO.contains(guiSlot)) continue;
+              int botSlot = GUI_TO_BOT[guiSlot];
+              if (botSlot < 0) continue;
+              ItemStack item = botInv.getItem(botSlot);
+              gui.setItem(guiSlot, (item == null || item.getType() == Material.AIR) ? null : item.clone());
+            }
+          }
+        });
   }
 
   @EventHandler(priority = EventPriority.LOW)
@@ -436,6 +450,7 @@ public class InventoryCommand implements FppCommand, Listener {
     Inventory top = event.getView().getTopInventory();
     UUID botUuid = invToBot.remove(top);
     if (botUuid == null) return;
+    botLocks.remove(botUuid, viewer.getUniqueId());
     sessions.remove(viewer.getUniqueId());
     FakePlayer fp = manager.getByUuid(botUuid);
     if (fp != null && fp.getPlayer() != null && !fp.isBodyless()) {
@@ -466,6 +481,10 @@ public class InventoryCommand implements FppCommand, Listener {
         && me.bill.fakePlayerPlugin.config.Config.isBotShiftRightClickSettingsEnabled()
         && Perm.has(player, Perm.SETTINGS)) {
       event.setCancelled(true);
+      if (!BotAccess.canAdminister(player, fp)) {
+        player.sendMessage(Lang.get("no-permission"));
+        return;
+      }
       botSettingGui.open(player, fp);
       return;
     }
@@ -473,6 +492,7 @@ public class InventoryCommand implements FppCommand, Listener {
     if (!me.bill.fakePlayerPlugin.config.Config.isBotRightClickEnabled()) return;
 
     if (fp.hasRightClickCommand()) {
+      if (!BotAccess.canAdminister(player, fp)) return;
       event.setCancelled(true);
 
       Bukkit.dispatchCommand(fp.getPlayer(), fp.getRightClickCommand());
@@ -480,6 +500,7 @@ public class InventoryCommand implements FppCommand, Listener {
     }
 
     if (!Perm.has(player, Perm.INVENTORY_RIGHTCLICK)) return;
+    if (!BotAccess.canAdminister(player, fp)) return;
     event.setCancelled(true);
     openGui(player, fp);
     player.sendMessage(Lang.get("inv-opened", "name", fp.getDisplayName()));
@@ -487,7 +508,21 @@ public class InventoryCommand implements FppCommand, Listener {
 
   @EventHandler(priority = EventPriority.MONITOR)
   public void onViewerQuit(PlayerQuitEvent event) {
-    sessions.remove(event.getPlayer().getUniqueId());
+    UUID viewerUuid = event.getPlayer().getUniqueId();
+    UUID botUuid = sessions.remove(viewerUuid);
+    if (botUuid != null) botLocks.remove(botUuid, viewerUuid);
+  }
+
+  @EventHandler(priority = EventPriority.MONITOR)
+  public void onBotDespawn(FppBotDespawnEvent event) {
+    UUID botUuid = event.getBot().getUuid();
+    botLocks.remove(botUuid);
+    for (Map.Entry<UUID, UUID> entry : new HashMap<>(sessions).entrySet()) {
+      if (!botUuid.equals(entry.getValue())) continue;
+      Player viewer = Bukkit.getPlayer(entry.getKey());
+      if (viewer != null) viewer.closeInventory();
+      sessions.remove(entry.getKey());
+    }
   }
 
   @EventHandler(priority = EventPriority.MONITOR)
@@ -495,6 +530,7 @@ public class InventoryCommand implements FppCommand, Listener {
     FakePlayer fp = manager.getByEntity(event.getEntity());
     if (fp == null) return;
     UUID botUuid = fp.getUuid();
+    botLocks.remove(botUuid);
     for (Map.Entry<UUID, UUID> entry : new HashMap<>(sessions).entrySet()) {
       if (botUuid.equals(entry.getValue())) {
         Player viewer = Bukkit.getPlayer(entry.getKey());

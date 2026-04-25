@@ -207,23 +207,7 @@ public final class FollowCommand implements FppCommand {
             FOLLOW_DISTANCE,
             RECALC_DISTANCE,
             Integer.MAX_VALUE,
-            () -> {
-              if (activeFollows.containsKey(botUuid)) {
-                Bukkit.getScheduler()
-                    .runTaskLater(
-                        plugin,
-                        () -> {
-                          if (!activeFollows.containsKey(botUuid)) return;
-                          FakePlayer liveFp = manager.getByUuid(botUuid);
-                          if (liveFp == null) {
-                            cleanupFollow(botUuid);
-                            return;
-                          }
-                          scheduleNavigation(liveFp, botUuid, targetUuid);
-                        },
-                        5L);
-              }
-            },
+            null,
             () -> cleanupFollow(botUuid),
             null));
   }

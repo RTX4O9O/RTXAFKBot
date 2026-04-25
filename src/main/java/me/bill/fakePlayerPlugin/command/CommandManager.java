@@ -7,6 +7,7 @@ import me.bill.fakePlayerPlugin.api.FppAddonCommand;
 import me.bill.fakePlayerPlugin.config.Config;
 import me.bill.fakePlayerPlugin.lang.Lang;
 import me.bill.fakePlayerPlugin.permission.Perm;
+import me.bill.fakePlayerPlugin.util.BotAccess;
 import me.bill.fakePlayerPlugin.util.TextUtil;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.event.ClickEvent;
@@ -30,6 +31,7 @@ public class CommandManager implements CommandExecutor, TabCompleter {
   private final List<FppCommand> commands = new ArrayList<>();
   private final Map<String, FppCommand> byName = new LinkedHashMap<>();
   private final Map<String, FppAddonCommand> addonByName = new LinkedHashMap<>();
+  private final Map<String, List<me.bill.fakePlayerPlugin.api.FppCommandExtension>> commandExtensions = new LinkedHashMap<>();
   private final FakePlayerPlugin plugin;
 
   public CommandManager(FakePlayerPlugin plugin) {
@@ -65,6 +67,32 @@ public class CommandManager implements CommandExecutor, TabCompleter {
       addonByName.putIfAbsent(alias.toLowerCase(), command);
     }
     Config.debug("Registered addon command: fpp " + command.getName());
+  }
+
+  public void unregisterAddonCommand(@org.jetbrains.annotations.NotNull FppAddonCommand command) {
+    String key = command.getName().toLowerCase(Locale.ROOT);
+    FppAddonCommand existing = addonByName.get(key);
+    if (existing == null) return;
+    addonByName.entrySet().removeIf(entry -> entry.getValue() == existing);
+    Config.debug("Unregistered addon command: fpp " + command.getName());
+  }
+
+  public void registerCommandExtension(@org.jetbrains.annotations.NotNull me.bill.fakePlayerPlugin.api.FppCommandExtension extension) {
+    registerExtensionKey(extension.getCommandName(), extension);
+    for (String alias : extension.getAliases()) registerExtensionKey(alias, extension);
+    Config.debug("Registered command extension: fpp " + extension.getCommandName());
+  }
+
+  public void unregisterCommandExtension(@org.jetbrains.annotations.NotNull me.bill.fakePlayerPlugin.api.FppCommandExtension extension) {
+    for (List<me.bill.fakePlayerPlugin.api.FppCommandExtension> list : commandExtensions.values()) {
+      list.removeIf(existing -> existing == extension);
+    }
+    commandExtensions.entrySet().removeIf(e -> e.getValue().isEmpty());
+    Config.debug("Unregistered command extension: fpp " + extension.getCommandName());
+  }
+
+  private void registerExtensionKey(String key, me.bill.fakePlayerPlugin.api.FppCommandExtension extension) {
+    commandExtensions.computeIfAbsent(key.toLowerCase(Locale.ROOT), k -> new ArrayList<>()).add(extension);
   }
 
   public void setHelpGui(me.bill.fakePlayerPlugin.gui.HelpGui helpGui) {
@@ -129,8 +157,104 @@ public class CommandManager implements CommandExecutor, TabCompleter {
     Config.debug(sender.getName() + " executed: fpp " + String.join(" ", args));
 
     if (sub instanceof HelpCommand hc) hc.setLastLabel(label);
-    sub.execute(sender, Arrays.copyOfRange(args, 1, args.length));
+    String[] subArgs = Arrays.copyOfRange(args, 1, args.length);
+    if (requiresBotOwnership(subName)
+        && sender instanceof org.bukkit.entity.Player player
+        && subArgs.length > 0
+        && !subArgs[0].startsWith("--")
+        && !subArgs[0].equalsIgnoreCase("all")) {
+      me.bill.fakePlayerPlugin.fakeplayer.FakePlayer fp =
+          plugin.getFakePlayerManager().getByName(subArgs[0]);
+      if (fp != null && !BotAccess.canAdminister(player, fp)) {
+        sender.sendMessage(Lang.get("no-permission"));
+        return true;
+      }
+    }
+    if (executeCommandExtensions(subName, sender, subArgs)) return true;
+    if (expandTaskTargets(sender, subName, sub, subArgs)) return true;
+    sub.execute(sender, subArgs);
     return true;
+  }
+
+  private static boolean requiresBotOwnership(String name) {
+    return Set.of(
+            "move", "mine", "find", "place", "use", "attack", "follow", "sleep", "stop",
+            "storage", "inventory", "inv", "settings", "xp", "cmd", "rename")
+        .contains(name.toLowerCase(Locale.ROOT));
+  }
+
+  private boolean expandTaskTargets(
+      CommandSender sender, String subName, FppCommand sub, String[] subArgs) {
+    if (!isTaskCommand(subName) || subArgs.length == 0) return false;
+    if (subArgs[0].equalsIgnoreCase("--group")) {
+      if (!(sender instanceof org.bukkit.entity.Player player)) {
+        sender.sendMessage(Lang.get("player-only"));
+        return true;
+      }
+      if (subArgs.length < 2) {
+        sender.sendMessage(Component.text("Usage: /fpp " + subName + " --group <group> ...", NamedTextColor.RED));
+        return true;
+      }
+      var store = plugin.getBotGroupStore();
+      if (store == null) return false;
+      List<me.bill.fakePlayerPlugin.fakeplayer.FakePlayer> bots = store.resolve(player, subArgs[1]);
+      if (bots.isEmpty()) {
+        sender.sendMessage(Component.text("No bots found in group: " + subArgs[1], NamedTextColor.RED));
+        return true;
+      }
+      String[] rest = Arrays.copyOfRange(subArgs, 2, subArgs.length);
+      int started = 0;
+      for (me.bill.fakePlayerPlugin.fakeplayer.FakePlayer fp : bots) {
+        if (fp.getPlayer() == null || !fp.getPlayer().isOnline()) continue;
+        sub.execute(sender, prepend(fp.getName(), rest));
+        started++;
+      }
+      sender.sendMessage(Component.text("Group task dispatched to " + started + " bot(s).", NamedTextColor.YELLOW));
+      return true;
+    }
+
+    if (subArgs[0].equalsIgnoreCase("all") && shouldExpandAll(subName)) {
+      String[] rest = Arrays.copyOfRange(subArgs, 1, subArgs.length);
+      int started = 0;
+      for (me.bill.fakePlayerPlugin.fakeplayer.FakePlayer fp : plugin.getFakePlayerManager().getActivePlayers()) {
+        if (fp.getPlayer() == null || !fp.getPlayer().isOnline()) continue;
+        if (sender instanceof org.bukkit.entity.Player player && !BotAccess.canAdminister(player, fp)) continue;
+        sub.execute(sender, prepend(fp.getName(), rest));
+        started++;
+      }
+      sender.sendMessage(Component.text("Task dispatched to " + started + " bot(s).", NamedTextColor.YELLOW));
+      return true;
+    }
+    return false;
+  }
+
+  private static boolean isTaskCommand(String name) {
+    return Set.of("move", "mine", "find", "place", "use", "attack", "follow", "sleep", "stop", "storage")
+        .contains(name.toLowerCase());
+  }
+
+  private static boolean shouldExpandAll(String name) {
+    return Set.of("mine", "find", "place", "use", "storage").contains(name.toLowerCase());
+  }
+
+  private boolean executeCommandExtensions(String commandName, CommandSender sender, String[] args) {
+    List<me.bill.fakePlayerPlugin.api.FppCommandExtension> extensions = commandExtensions.get(commandName.toLowerCase(Locale.ROOT));
+    if (extensions == null || extensions.isEmpty()) return false;
+    for (me.bill.fakePlayerPlugin.api.FppCommandExtension extension : extensions) {
+      try {
+        if (extension.execute(sender, args)) return true;
+      } catch (Throwable t) {
+        sender.sendMessage(Component.text("Addon command extension failed: " + t.getMessage(), NamedTextColor.RED));
+      }
+    }
+    return false;
+  }
+
+  private static String[] prepend(String first, String[] rest) {
+    String[] out = new String[rest.length + 1];
+    out[0] = first;
+    System.arraycopy(rest, 0, out, 1, rest.length);
+    return out;
   }
 
   @Override
@@ -162,7 +286,33 @@ public class CommandManager implements CommandExecutor, TabCompleter {
       FppCommand sub = byName.get(args[0].toLowerCase());
 
       if (sub != null && sub.canUse(sender)) {
-        return sub.tabComplete(sender, Arrays.copyOfRange(args, 1, args.length));
+        if (isTaskCommand(args[0]) && args.length == 2 && "--group".startsWith(args[1].toLowerCase())) {
+          return List.of("--group");
+        }
+        if (isTaskCommand(args[0])
+            && args.length == 3
+            && args[1].equalsIgnoreCase("--group")
+            && sender instanceof org.bukkit.entity.Player player
+            && plugin.getBotGroupStore() != null) {
+          String prefix = args[2].toLowerCase();
+          return plugin.getBotGroupStore().getGroups(player).stream()
+              .filter(name -> name.startsWith(prefix))
+              .toList();
+        }
+        List<String> result = new ArrayList<>(sub.tabComplete(sender, Arrays.copyOfRange(args, 1, args.length)));
+        List<me.bill.fakePlayerPlugin.api.FppCommandExtension> extensions = commandExtensions.get(args[0].toLowerCase(Locale.ROOT));
+        if (extensions != null) {
+          String[] subArgs = Arrays.copyOfRange(args, 1, args.length);
+          for (var extension : extensions) {
+            try {
+              for (String suggestion : extension.tabComplete(sender, subArgs)) {
+                if (!result.contains(suggestion)) result.add(suggestion);
+              }
+            } catch (Throwable ignored) {
+            }
+          }
+        }
+        return result;
       }
 
       // Check addon tab-complete.

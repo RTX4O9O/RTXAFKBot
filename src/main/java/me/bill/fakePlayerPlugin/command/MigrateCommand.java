@@ -13,6 +13,7 @@ import me.bill.fakePlayerPlugin.permission.Perm;
 import me.bill.fakePlayerPlugin.util.BackupManager;
 import me.bill.fakePlayerPlugin.util.ConfigMigrator;
 import me.bill.fakePlayerPlugin.util.DataMigrator;
+import me.bill.fakePlayerPlugin.util.FppScheduler;
 import me.bill.fakePlayerPlugin.util.TextUtil;
 import me.bill.fakePlayerPlugin.util.YamlFileSyncer;
 import org.bukkit.command.CommandSender;
@@ -85,17 +86,14 @@ public class MigrateCommand implements FppCommand {
 
   private void doBackup(CommandSender sender) {
     msg(sender, GRAY + "Creating backup of all plugin files…");
-    plugin
-        .getServer()
-        .getScheduler()
-        .runTaskAsynchronously(
-            plugin,
-            () -> {
-              File dir = BackupManager.createFullBackup(plugin, "manual");
-              long bytes = BackupManager.totalBackupSizeBytes(plugin);
-              sync(sender, GREEN + "✔ Backup created: " + GRAY + "backups/" + dir.getName());
-              sync(sender, GRAY + "  Total backup storage: " + GRAY + formatBytes(bytes));
-            });
+    FppScheduler.runAsync(
+        plugin,
+        () -> {
+          File dir = BackupManager.createFullBackup(plugin, "manual");
+          long bytes = BackupManager.totalBackupSizeBytes(plugin);
+          sync(sender, GREEN + "✔ Backup created: " + GRAY + "backups/" + dir.getName());
+          sync(sender, GRAY + "  Total backup storage: " + GRAY + formatBytes(bytes));
+        });
   }
 
   private void doBackupsList(CommandSender sender) {
@@ -241,32 +239,29 @@ public class MigrateCommand implements FppCommand {
       msg(sender, GRAY + label + " does not exist yet - extracting from JAR…");
     } else {
       msg(sender, GRAY + "Backing up config files before sync…");
-      plugin
-          .getServer()
-          .getScheduler()
-          .runTaskAsynchronously(
-              plugin,
-              () -> {
-                BackupManager.createConfigFilesBackup(plugin, "pre-sync");
-                sync(sender, GRAY + "Backup created. Syncing " + label + "…");
-                YamlFileSyncer.SyncResult result =
-                    YamlFileSyncer.syncMissingKeys(plugin, diskPath, jarPath);
-                if (result.hasChanges()) {
-                  sync(sender, GREEN + "✔ Added " + result.count() + " key(s) to " + label + ":");
-                  result.keysAdded().forEach(k -> sync(sender, GRAY + "    + " + k));
-                  sync(
-                      sender,
-                      GRAY
-                          + "  Run "
-                          + COLOR
-                          + "/fpp reload"
-                          + C_CLOSE
-                          + GRAY
-                          + " to apply the updated file.");
-                } else {
-                  sync(sender, GREEN + "✔ " + label + " is up to date - no changes made.");
-                }
-              });
+      FppScheduler.runAsync(
+          plugin,
+          () -> {
+            BackupManager.createConfigFilesBackup(plugin, "pre-sync");
+            sync(sender, GRAY + "Backup created. Syncing " + label + "…");
+            YamlFileSyncer.SyncResult result =
+                YamlFileSyncer.syncMissingKeys(plugin, diskPath, jarPath);
+            if (result.hasChanges()) {
+              sync(sender, GREEN + "✔ Added " + result.count() + " key(s) to " + label + ":");
+              result.keysAdded().forEach(k -> sync(sender, GRAY + "    + " + k));
+              sync(
+                  sender,
+                  GRAY
+                      + "  Run "
+                      + COLOR
+                      + "/fpp reload"
+                      + C_CLOSE
+                      + GRAY
+                      + " to apply the updated file.");
+            } else {
+              sync(sender, GREEN + "✔ " + label + " is up to date - no changes made.");
+            }
+          });
       return;
     }
 
@@ -320,20 +315,17 @@ public class MigrateCommand implements FppCommand {
                 + file.getName()
                 + " into current database… (this may take a moment)");
 
-        plugin
-            .getServer()
-            .getScheduler()
-            .runTaskAsynchronously(
-                plugin,
-                () -> {
-                  int merged = DataMigrator.mergeFromSQLite(plugin, db, file);
-                  if (merged >= 0) {
-                    sync(sender, GREEN + "✔ Merge complete - " + merged + " row(s) inserted.");
-                    sync(sender, GRAY + "  Total sessions now: " + db.countSessions());
-                  } else {
-                    sync(sender, RED + "✘ Merge failed. Check console for details.");
-                  }
-                });
+        FppScheduler.runAsync(
+            plugin,
+            () -> {
+              int merged = DataMigrator.mergeFromSQLite(plugin, db, file);
+              if (merged >= 0) {
+                sync(sender, GREEN + "✔ Merge complete - " + merged + " row(s) inserted.");
+                sync(sender, GRAY + "  Total sessions now: " + db.countSessions());
+              } else {
+                sync(sender, RED + "✘ Merge failed. Check console for details.");
+              }
+            });
       }
 
       case "export" -> {
@@ -342,19 +334,16 @@ public class MigrateCommand implements FppCommand {
           return;
         }
         msg(sender, GRAY + "Exporting session history to CSV…");
-        plugin
-            .getServer()
-            .getScheduler()
-            .runTaskAsynchronously(
-                plugin,
-                () -> {
-                  File exported = DataMigrator.exportSessionsCsv(plugin, db);
-                  if (exported != null) {
-                    sync(sender, GREEN + "✔ Exported → " + GRAY + "exports/" + exported.getName());
-                  } else {
-                    sync(sender, RED + "✘ Export failed. Check console for" + " details.");
-                  }
-                });
+        FppScheduler.runAsync(
+            plugin,
+            () -> {
+              File exported = DataMigrator.exportSessionsCsv(plugin, db);
+              if (exported != null) {
+                sync(sender, GREEN + "✔ Exported → " + GRAY + "exports/" + exported.getName());
+              } else {
+                sync(sender, RED + "✘ Export failed. Check console for" + " details.");
+              }
+            });
       }
 
       case "tomysql" -> {
@@ -381,20 +370,16 @@ public class MigrateCommand implements FppCommand {
           return;
         }
         msg(sender, GRAY + "Migrating SQLite → MySQL… (this may take a moment)");
-        plugin
-            .getServer()
-            .getScheduler()
-            .runTaskAsynchronously(
-                plugin,
-                () -> {
-                  int count = DataMigrator.migrateToMysql(plugin, db);
-                  if (count >= 0) {
-                    sync(
-                        sender, GREEN + "✔ Migration complete - " + count + " row(s) transferred.");
-                  } else {
-                    sync(sender, RED + "✘ Migration failed. Check console for" + " details.");
-                  }
-                });
+        FppScheduler.runAsync(
+            plugin,
+            () -> {
+              int count = DataMigrator.migrateToMysql(plugin, db);
+              if (count >= 0) {
+                sync(sender, GREEN + "✔ Migration complete - " + count + " row(s) transferred.");
+              } else {
+                sync(sender, RED + "✘ Migration failed. Check console for" + " details.");
+              }
+            });
       }
 
       case "schema" -> {
@@ -427,23 +412,18 @@ public class MigrateCommand implements FppCommand {
           return;
         }
         msg(sender, GRAY + "Scanning for stale fpp_active_bots rows…");
-        plugin
-            .getServer()
-            .getScheduler()
-            .runTaskAsynchronously(
-                plugin,
-                () -> {
-                  int removed = DataMigrator.cleanupStaleActiveBots(plugin, db);
-                  if (removed > 0) {
-                    sync(
-                        sender,
-                        GREEN + "✔ Cleanup complete - " + removed + " stale row(s) removed.");
-                  } else if (removed == 0) {
-                    sync(sender, GREEN + "✔ No stale rows found - fpp_active_bots" + " is clean.");
-                  } else {
-                    sync(sender, RED + "✘ Cleanup failed. Check console for" + " details.");
-                  }
-                });
+        FppScheduler.runAsync(
+            plugin,
+            () -> {
+              int removed = DataMigrator.cleanupStaleActiveBots(plugin, db);
+              if (removed > 0) {
+                sync(sender, GREEN + "✔ Cleanup complete - " + removed + " stale row(s) removed.");
+              } else if (removed == 0) {
+                sync(sender, GREEN + "✔ No stale rows found - fpp_active_bots" + " is clean.");
+              } else {
+                sync(sender, RED + "✘ Cleanup failed. Check console for" + " details.");
+              }
+            });
       }
 
       case "repair" -> {
@@ -452,29 +432,24 @@ public class MigrateCommand implements FppCommand {
           return;
         }
         msg(sender, GRAY + "Scanning for orphaned open sessions…");
-        plugin
-            .getServer()
-            .getScheduler()
-            .runTaskAsynchronously(
-                plugin,
-                () -> {
-                  int repaired = DataMigrator.repairOrphanedSessions(plugin, db);
-                  if (repaired > 0) {
-                    sync(
-                        sender,
-                        GREEN
-                            + "✔ Repair complete - "
-                            + repaired
-                            + " orphaned session(s) closed as"
-                            + " ORPHAN_REPAIR.");
-                  } else if (repaired == 0) {
-                    sync(
-                        sender,
-                        GREEN + "✔ No orphaned sessions found - database" + " is consistent.");
-                  } else {
-                    sync(sender, RED + "✘ Repair failed. Check console for" + " details.");
-                  }
-                });
+        FppScheduler.runAsync(
+            plugin,
+            () -> {
+              int repaired = DataMigrator.repairOrphanedSessions(plugin, db);
+              if (repaired > 0) {
+                sync(
+                    sender,
+                    GREEN
+                        + "✔ Repair complete - "
+                        + repaired
+                        + " orphaned session(s) closed as"
+                        + " ORPHAN_REPAIR.");
+              } else if (repaired == 0) {
+                sync(sender, GREEN + "✔ No orphaned sessions found - database" + " is consistent.");
+              } else {
+                sync(sender, RED + "✘ Repair failed. Check console for" + " details.");
+              }
+            });
       }
 
       default -> sendHelp(sender);
@@ -662,7 +637,7 @@ public class MigrateCommand implements FppCommand {
   }
 
   private void sync(CommandSender sender, String mm) {
-    plugin.getServer().getScheduler().runTask(plugin, () -> msg(sender, mm));
+    FppScheduler.runSync(plugin, () -> msg(sender, mm));
   }
 
   private File resolveDbFile(String filename) {

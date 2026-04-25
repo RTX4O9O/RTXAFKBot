@@ -6,6 +6,7 @@ import java.time.Instant;
 import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import me.bill.fakePlayerPlugin.config.Config;
 import me.bill.fakePlayerPlugin.database.BotRecord;
 import org.bukkit.Location;
@@ -105,7 +106,11 @@ public final class FakePlayer {
   private boolean pveEnabled = false;
   private double pveRange = Config.attackMobDefaultRange();
   private String pvePriority = Config.attackMobDefaultPriority();
+  private boolean pveMoveToTarget = false;
   private Set<String> pveMobTypes = new LinkedHashSet<>();
+  private final Set<UUID> sharedControllers = ConcurrentHashMap.newKeySet();
+  private boolean autoEatEnabled = Config.autoEatEnabled();
+  private boolean autoPlaceBedEnabled = Config.autoPlaceBedEnabled();
 
   private volatile String nameTagNick = null;
 
@@ -579,6 +584,14 @@ public final class FakePlayer {
     this.pvePriority = v;
   }
 
+  public boolean isPveMoveToTarget() {
+    return pveMoveToTarget;
+  }
+
+  public void setPveMoveToTarget(boolean v) {
+    this.pveMoveToTarget = v;
+  }
+
   public String getPveMobType() {
     return pveMobTypes.isEmpty() ? null : String.join(",", pveMobTypes);
   }
@@ -613,6 +626,38 @@ public final class FakePlayer {
 
   public boolean hasPveMobType(String type) {
     return pveMobTypes.contains(type);
+  }
+
+  public Set<UUID> getSharedControllers() {
+    return Set.copyOf(sharedControllers);
+  }
+
+  public boolean hasSharedController(UUID uuid) {
+    return uuid != null && sharedControllers.contains(uuid);
+  }
+
+  public boolean addSharedController(UUID uuid) {
+    return uuid != null && !uuid.equals(spawnedByUuid) && sharedControllers.add(uuid);
+  }
+
+  public boolean removeSharedController(UUID uuid) {
+    return uuid != null && sharedControllers.remove(uuid);
+  }
+
+  public boolean isAutoEatEnabled() {
+    return autoEatEnabled;
+  }
+
+  public void setAutoEatEnabled(boolean autoEatEnabled) {
+    this.autoEatEnabled = autoEatEnabled;
+  }
+
+  public boolean isAutoPlaceBedEnabled() {
+    return autoPlaceBedEnabled;
+  }
+
+  public void setAutoPlaceBedEnabled(boolean autoPlaceBedEnabled) {
+    this.autoPlaceBedEnabled = autoPlaceBedEnabled;
   }
 
   // ── Sleep system accessors ────────────────────────────────────────────────

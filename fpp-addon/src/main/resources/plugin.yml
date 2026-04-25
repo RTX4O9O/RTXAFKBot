@@ -1,0 +1,31 @@
+name: FPP Addon
+version: 1.0.0
+main: me.bill.fakePlayerPlugin.fppaddon.FPPAddon
+api-version: '1.21'
+depend: [ FakePlayerPlugin ]
+description: FPP addon plugin for farm, ping, stripmine, automation, and WorldEdit helpers.
+
+permissions:
+  fpp.farm:
+    description: Harvest and replant nearby mature crops.
+    default: op
+
+  fpp.ping:
+    description: Simulated latency controls for bots.
+    default: op
+    children:
+      fpp.ping.set: true
+      fpp.ping.random: true
+      fpp.ping.bulk: true
+
+  fpp.ping.set:
+    description: Set a fixed ping with --ping <ms>.
+    default: op
+
+  fpp.ping.random:
+    description: Assign random ping distribution with --random.
+    default: op
+
+  fpp.ping.bulk:
+    description: Target multiple bots at once with --count <n>.
+    default: op

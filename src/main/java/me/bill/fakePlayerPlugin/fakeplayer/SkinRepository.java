@@ -10,6 +10,7 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Consumer;
 import me.bill.fakePlayerPlugin.config.Config;
 import me.bill.fakePlayerPlugin.util.FppLogger;
+import me.bill.fakePlayerPlugin.util.FppScheduler;
 import org.bukkit.Bukkit;
 import org.bukkit.plugin.Plugin;
 
@@ -364,7 +365,7 @@ public final class SkinRepository {
             FppLogger.warn(
                 "SkinRepository: built-in pool fetch failed for '"
                     + randomName
-                    + "' - bot will use Steve.");
+                    + "' - bot will use the default skin.");
             callback.accept(null);
           }
         });
@@ -417,7 +418,7 @@ public final class SkinRepository {
     Plugin effectivePlugin =
         (plugin != null) ? plugin : me.bill.fakePlayerPlugin.FakePlayerPlugin.getInstance();
     if (effectivePlugin != null && effectivePlugin.isEnabled() && !Bukkit.isPrimaryThread()) {
-      Bukkit.getScheduler().runTask(effectivePlugin, () -> callback.accept(profile));
+      FppScheduler.runSync(effectivePlugin, () -> callback.accept(profile));
       return;
     }
     callback.accept(profile);

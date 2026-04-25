@@ -3,9 +3,9 @@ package me.bill.fakePlayerPlugin.listener;
 import java.lang.reflect.Field;
 import me.bill.fakePlayerPlugin.FakePlayerPlugin;
 import me.bill.fakePlayerPlugin.config.Config;
-import me.bill.fakePlayerPlugin.fakeplayer.BotBroadcast;
 import me.bill.fakePlayerPlugin.fakeplayer.FakePlayer;
 import me.bill.fakePlayerPlugin.fakeplayer.FakePlayerManager;
+import me.bill.fakePlayerPlugin.util.FppScheduler;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -36,47 +36,41 @@ public class PlayerJoinListener implements Listener {
     if (fp == null) fp = manager.getByUuid(event.getPlayer().getUniqueId());
     if (fp == null) return;
 
-    event.joinMessage(null);
-
     if (event.getPlayer().getFirstPlayed() != 0L) {
       forceHasPlayedBefore(event.getPlayer());
     }
 
     if (plugin.isNameTagAvailable() && me.bill.fakePlayerPlugin.config.Config.nameTagIsolation()) {
       final java.util.UUID botUuid = event.getPlayer().getUniqueId();
-      org.bukkit.Bukkit.getScheduler()
-          .runTaskLater(
-              plugin,
-              () -> {
-                me.bill.fakePlayerPlugin.util.NameTagHelper.NickData nickData =
-                    me.bill.fakePlayerPlugin.util.NameTagHelper.clearBotFromCache(botUuid);
+      FppScheduler.runSyncLater(
+          plugin,
+          () -> {
+            me.bill.fakePlayerPlugin.util.NameTagHelper.NickData nickData =
+                me.bill.fakePlayerPlugin.util.NameTagHelper.clearBotFromCache(botUuid);
 
-                me.bill.fakePlayerPlugin.fakeplayer.FakePlayer botFp = manager.getByUuid(botUuid);
-                if (botFp != null && nickData != null) {
+            me.bill.fakePlayerPlugin.fakeplayer.FakePlayer botFp = manager.getByUuid(botUuid);
+            if (botFp != null && nickData != null) {
 
-                  botFp.setNameTagNick(nickData.nick());
-                  if (plugin.getSkinManager() != null && nickData.skin() != null) {
-                    plugin
-                        .getSkinManager()
-                        .applyNameTagSkin(botFp, nickData.skin(), nickData.nick());
-                  }
+              botFp.setNameTagNick(nickData.nick());
+              if (plugin.getSkinManager() != null && nickData.skin() != null) {
+                plugin.getSkinManager().applyNameTagSkin(botFp, nickData.skin(), nickData.nick());
+              }
 
-                  if (me.bill.fakePlayerPlugin.config.Config.nameTagSyncNickAsRename()
-                      && nickData.canRename()
-                      && !nickData.plainNick().equalsIgnoreCase(botFp.getName())) {
-                    final me.bill.fakePlayerPlugin.util.NameTagHelper.BotSkin savedSkin =
-                        nickData.skin();
-                    final String targetName = nickData.plainNick();
-                    new me.bill.fakePlayerPlugin.util.BotRenameHelper(plugin, manager)
-                        .rename(org.bukkit.Bukkit.getConsoleSender(), botFp, targetName);
+              if (me.bill.fakePlayerPlugin.config.Config.nameTagSyncNickAsRename()
+                  && nickData.canRename()
+                  && !nickData.plainNick().equalsIgnoreCase(botFp.getName())) {
+                final me.bill.fakePlayerPlugin.util.NameTagHelper.BotSkin savedSkin = nickData.skin();
+                final String targetName = nickData.plainNick();
+                new me.bill.fakePlayerPlugin.util.BotRenameHelper(plugin, manager)
+                    .rename(org.bukkit.Bukkit.getConsoleSender(), botFp, targetName);
 
-                    if (savedSkin != null) {
-                      schedulePostRenameSkinApply(targetName, savedSkin, botUuid);
-                    }
-                  }
+                if (savedSkin != null) {
+                  schedulePostRenameSkinApply(targetName, savedSkin, botUuid);
                 }
-              },
-              2L);
+              }
+            }
+          },
+          2L);
     }
   }
 
@@ -151,19 +145,19 @@ public class PlayerJoinListener implements Listener {
       me.bill.fakePlayerPlugin.util.NameTagHelper.BotSkin skin,
       java.util.UUID oldUuid) {
     final int[] elapsed = {0};
-    org.bukkit.Bukkit.getScheduler()
-        .runTaskTimer(
+    final int[] taskId = {-1};
+    taskId[0] =
+        FppScheduler.runSyncRepeatingWithId(
             plugin,
-            task -> {
+            () -> {
               elapsed[0] += 5;
               if (elapsed[0] > 120) {
-                task.cancel();
+                FppScheduler.cancelTask(taskId[0]);
                 return;
               }
-              me.bill.fakePlayerPlugin.fakeplayer.FakePlayer newBot =
-                  manager.getByName(renamedBotName);
+              me.bill.fakePlayerPlugin.fakeplayer.FakePlayer newBot = manager.getByName(renamedBotName);
               if (newBot == null) return;
-              task.cancel();
+              FppScheduler.cancelTask(taskId[0]);
               if (plugin.getSkinManager() != null) {
                 plugin.getSkinManager().applyNameTagSkin(newBot, skin, renamedBotName);
               }
@@ -179,13 +173,10 @@ public class PlayerJoinListener implements Listener {
     if (fp == null) fp = manager.getByUuid(event.getPlayer().getUniqueId());
     if (fp != null) {
 
-      if (fp.isRespawning()
+      if (!Config.joinMessage()
+          || fp.isRespawning()
           || manager.isBodyTransitioning(fp.getUuid())
           || manager.isRenaming(fp.getUuid())) {
-        event.joinMessage(null);
-      } else if (Config.joinMessage()) {
-        event.joinMessage(BotBroadcast.joinComponent(fp));
-      } else {
         event.joinMessage(null);
       }
 
@@ -229,7 +220,7 @@ public class PlayerJoinListener implements Listener {
       var vc = plugin.getVelocityChannel();
       if (vc != null && vc.hasPendingResync()) {
         vc.clearPendingResync();
-        org.bukkit.Bukkit.getScheduler().runTaskLater(plugin, vc::broadcastResyncRequest, 5L);
+        FppScheduler.runSyncLater(plugin, vc::broadcastResyncRequest, 5L);
       }
     } catch (Throwable ignored) {
     }
@@ -238,54 +229,51 @@ public class PlayerJoinListener implements Listener {
       var vc = plugin.getVelocityChannel();
       if (vc != null && vc.hasPendingProxyBroadcast()) {
         vc.clearPendingProxyBroadcast();
-        org.bukkit.Bukkit.getScheduler()
-            .runTaskLater(
-                plugin,
-                () -> {
-                  for (me.bill.fakePlayerPlugin.fakeplayer.FakePlayer botFp :
-                      manager.getActivePlayers()) {
-                    vc.broadcastBotSpawn(botFp);
-                  }
-                },
-                10L);
+        FppScheduler.runSyncLater(
+            plugin,
+            () -> {
+              for (me.bill.fakePlayerPlugin.fakeplayer.FakePlayer botFp : manager.getActivePlayers()) {
+                vc.broadcastBotSpawn(botFp);
+              }
+            },
+            10L);
       }
     } catch (Throwable ignored) {
     }
 
     long delayTicks = manager.isRestorationInProgress() ? 40L : 5L;
 
-    org.bukkit.Bukkit.getScheduler()
-        .runTaskLater(
-            plugin,
-            () -> {
-              try {
-                manager.syncToPlayer(event.getPlayer());
+    FppScheduler.runSyncLater(
+        plugin,
+        () -> {
+          try {
+            manager.syncToPlayer(event.getPlayer());
 
-                var btt = plugin.getBotTabTeam();
-                if (btt != null) btt.syncToPlayer(event.getPlayer());
-              } catch (Throwable ignored) {
-              }
+            var btt = plugin.getBotTabTeam();
+            if (btt != null) btt.syncToPlayer(event.getPlayer());
+          } catch (Throwable ignored) {
+          }
 
-              if (me.bill.fakePlayerPlugin.config.Config.isNetworkMode()
-                  && me.bill.fakePlayerPlugin.config.Config.tabListEnabled()) {
-                try {
-                  var cache = plugin.getRemoteBotCache();
-                  if (cache != null) {
-                    for (var entry : cache.getAll()) {
-                      me.bill.fakePlayerPlugin.fakeplayer.PacketHelper.sendTabListAddRaw(
-                          event.getPlayer(),
-                          entry.uuid(),
-                          entry.packetProfileName(),
-                          entry.displayName(),
-                          entry.skinValue(),
-                          entry.skinSignature());
-                    }
-                  }
-                } catch (Throwable ignored) {
+          if (me.bill.fakePlayerPlugin.config.Config.isNetworkMode()
+              && me.bill.fakePlayerPlugin.config.Config.tabListEnabled()) {
+            try {
+              var cache = plugin.getRemoteBotCache();
+              if (cache != null) {
+                for (var entry : cache.getAll()) {
+                  me.bill.fakePlayerPlugin.fakeplayer.PacketHelper.sendTabListAddRaw(
+                      event.getPlayer(),
+                      entry.uuid(),
+                      entry.packetProfileName(),
+                      entry.displayName(),
+                      entry.skinValue(),
+                      entry.skinSignature());
                 }
               }
-            },
-            delayTicks);
+            } catch (Throwable ignored) {
+            }
+          }
+        },
+        delayTicks);
   }
 
   @EventHandler(priority = EventPriority.MONITOR)
@@ -294,14 +282,7 @@ public class PlayerJoinListener implements Listener {
 
     if (manager.isDespawning(uuid)) {
 
-      event.quitMessage(null);
-
-      if (Config.leaveMessage() && !manager.isRenaming(uuid)) {
-        String displayName = manager.getDespawningDisplayName(uuid);
-        if (displayName != null) {
-          BotBroadcast.broadcastLeaveByDisplayName(displayName);
-        }
-      }
+      if (!Config.leaveMessage() || manager.isRenaming(uuid)) event.quitMessage(null);
       return;
     }
 
@@ -313,10 +294,9 @@ public class PlayerJoinListener implements Listener {
       if (fp.isRespawning() || manager.isBodyTransitioning(fp.getUuid())) {
 
         event.quitMessage(null);
-      } else if (!fp.isAlive()) {
+      } else if (!Config.leaveMessage() || !fp.isAlive()) {
 
-        event.quitMessage(null);
-        BotBroadcast.broadcastLeave(fp);
+        if (!Config.leaveMessage()) event.quitMessage(null);
       }
 
       return;
@@ -324,15 +304,14 @@ public class PlayerJoinListener implements Listener {
 
     String name = event.getPlayer().getName();
 
-    Bukkit.getScheduler()
-        .runTaskLater(
-            plugin,
-            () -> {
-              try {
-                manager.validateUserBotNames(uuid, name);
-              } catch (Throwable ignored) {
-              }
-            },
-            2L);
+    FppScheduler.runSyncLater(
+        plugin,
+        () -> {
+          try {
+            manager.validateUserBotNames(uuid, name);
+          } catch (Throwable ignored) {
+          }
+        },
+        2L);
   }
 }

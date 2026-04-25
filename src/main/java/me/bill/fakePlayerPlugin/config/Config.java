@@ -210,6 +210,14 @@ public final class Config {
     return cfg.getBoolean("body.pick-up-xp", true);
   }
 
+  public static boolean autoEatEnabled() {
+    return cfg.getBoolean("automation.auto-eat", true);
+  }
+
+  public static boolean autoPlaceBedEnabled() {
+    return cfg.getBoolean("automation.auto-place-bed", true);
+  }
+
   public static boolean dropItemsOnDespawn() {
     return cfg.getBoolean("body.drop-items-on-despawn", false);
   }
@@ -371,6 +379,10 @@ public final class Config {
     return cfg.getInt("chunk-loading.update-interval", 20);
   }
 
+  public static int chunkLoadingMassDisableThreshold() {
+    return cfg.getInt("chunk-loading.mass-disable-threshold", 100);
+  }
+
   public static boolean headAiEnabled() {
     return cfg.getBoolean("head-ai.enabled", true);
   }
@@ -388,7 +400,7 @@ public final class Config {
   }
 
   public static boolean swimAiEnabled() {
-    return cfg.getBoolean("swim-ai.enabled", true);
+    return cfg.getBoolean("swim-ai.enabled", false);
   }
 
   public static boolean pathfindingParkour() {
@@ -456,11 +468,11 @@ public final class Config {
   }
 
   public static int pathfindingMaxNodes() {
-    return Math.max(100, cfg.getInt("pathfinding.max-nodes", 2000));
+    return Math.max(100, cfg.getInt("pathfinding.max-nodes", 900));
   }
 
   public static int pathfindingMaxNodesExtended() {
-    return Math.max(pathfindingMaxNodes(), cfg.getInt("pathfinding.max-nodes-extended", 4000));
+    return Math.max(pathfindingMaxNodes(), cfg.getInt("pathfinding.max-nodes-extended", 1800));
   }
 
 

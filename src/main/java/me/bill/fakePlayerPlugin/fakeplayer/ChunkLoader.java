@@ -3,6 +3,7 @@ package me.bill.fakePlayerPlugin.fakeplayer;
 import java.util.*;
 import me.bill.fakePlayerPlugin.FakePlayerPlugin;
 import me.bill.fakePlayerPlugin.config.Config;
+import me.bill.fakePlayerPlugin.util.FppScheduler;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.World;
@@ -20,7 +21,7 @@ public final class ChunkLoader {
     this.manager = manager;
 
     long interval = Math.max(1L, Config.chunkLoadingUpdateInterval());
-    Bukkit.getScheduler().runTaskTimer(plugin, this::tick, interval, interval);
+    FppScheduler.runSyncRepeating(plugin, this::tick, interval, interval);
   }
 
   private void tick() {
@@ -32,6 +33,13 @@ public final class ChunkLoader {
     int globalRadius = Config.chunkLoadingRadius();
     if (globalRadius == 0) {
 
+      if (!states.isEmpty()) releaseAll();
+      return;
+    }
+
+    int activeCount = manager.getActivePlayers().size();
+    int massThreshold = Config.chunkLoadingMassDisableThreshold();
+    if (massThreshold > 0 && activeCount >= massThreshold) {
       if (!states.isEmpty()) releaseAll();
       return;
     }
@@ -86,7 +94,6 @@ public final class ChunkLoader {
       for (long[] coord : spiral) {
         long key = packKey((int) coord[0], (int) coord[1]);
         if (state.keys.add(key)) {
-          world.getChunkAt((int) coord[0], (int) coord[1]);
           world.addPluginChunkTicket((int) coord[0], (int) coord[1], plugin);
         }
       }

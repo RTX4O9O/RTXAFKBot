@@ -11,7 +11,7 @@ import me.bill.fakePlayerPlugin.util.FppLogger;
 
 public class DatabaseManager {
 
-  private static final int SCHEMA_VERSION = 20;
+  private static final int SCHEMA_VERSION = 19;
 
   public static int getCurrentSchemaVersion() {
     return SCHEMA_VERSION;
@@ -565,8 +565,45 @@ public class DatabaseManager {
   }
 
   private void repairSchema() {
-    execSilent("ALTER TABLE fpp_active_bots ADD COLUMN skin_texture   TEXT DEFAULT NULL");
-    execSilent("ALTER TABLE fpp_active_bots ADD COLUMN skin_signature TEXT DEFAULT NULL");
+    createTables();
+    execSilent("ALTER TABLE fpp_bot_sessions ADD COLUMN last_yaw         FLOAT");
+    execSilent("ALTER TABLE fpp_bot_sessions ADD COLUMN last_pitch       FLOAT");
+    execSilent("ALTER TABLE fpp_bot_sessions ADD COLUMN bot_display      VARCHAR(128) DEFAULT NULL");
+    execSilent("ALTER TABLE fpp_bot_sessions ADD COLUMN luckperms_group  VARCHAR(64)  DEFAULT NULL");
+    execSilent("ALTER TABLE fpp_bot_sessions ADD COLUMN server_id        VARCHAR(64)  NOT NULL DEFAULT 'default'");
+    execSilent("ALTER TABLE fpp_active_bots ADD COLUMN bot_display       VARCHAR(128) DEFAULT NULL");
+    execSilent("ALTER TABLE fpp_active_bots ADD COLUMN luckperms_group   VARCHAR(64)  DEFAULT NULL");
+    execSilent("ALTER TABLE fpp_active_bots ADD COLUMN server_id         VARCHAR(64)  NOT NULL DEFAULT 'default'");
+    execSilent("ALTER TABLE fpp_active_bots ADD COLUMN frozen            BOOLEAN DEFAULT 0");
+    execSilent("ALTER TABLE fpp_active_bots ADD COLUMN chat_enabled      BOOLEAN DEFAULT 1");
+    execSilent("ALTER TABLE fpp_active_bots ADD COLUMN chat_tier         VARCHAR(16) DEFAULT NULL");
+    execSilent("ALTER TABLE fpp_active_bots ADD COLUMN right_click_cmd   VARCHAR(256) DEFAULT NULL");
+    execSilent("ALTER TABLE fpp_active_bots ADD COLUMN ai_personality    VARCHAR(64) DEFAULT NULL");
+    execSilent("ALTER TABLE fpp_active_bots ADD COLUMN pickup_items      BOOLEAN DEFAULT 0");
+    execSilent("ALTER TABLE fpp_active_bots ADD COLUMN pickup_xp         BOOLEAN DEFAULT 1");
+    execSilent("ALTER TABLE fpp_active_bots ADD COLUMN head_ai_enabled   BOOLEAN DEFAULT 1");
+    execSilent("ALTER TABLE fpp_active_bots ADD COLUMN nav_parkour       BOOLEAN DEFAULT 0");
+    execSilent("ALTER TABLE fpp_active_bots ADD COLUMN nav_break_blocks  BOOLEAN DEFAULT 0");
+    execSilent("ALTER TABLE fpp_active_bots ADD COLUMN nav_place_blocks  BOOLEAN DEFAULT 0");
+    execSilent("ALTER TABLE fpp_active_bots ADD COLUMN swim_ai_enabled   BOOLEAN DEFAULT 1");
+    execSilent("ALTER TABLE fpp_active_bots ADD COLUMN chunk_load_radius INT     DEFAULT -1");
+    execSilent("ALTER TABLE fpp_active_bots ADD COLUMN skin_texture      TEXT    DEFAULT NULL");
+    execSilent("ALTER TABLE fpp_active_bots ADD COLUMN skin_signature    TEXT    DEFAULT NULL");
+    execSilent("ALTER TABLE fpp_active_bots ADD COLUMN nav_avoid_water   BOOLEAN DEFAULT 0");
+    execSilent("ALTER TABLE fpp_active_bots ADD COLUMN nav_avoid_lava    BOOLEAN DEFAULT 0");
+    execSilent("ALTER TABLE fpp_active_bots ADD COLUMN ping             INT     DEFAULT -1");
+    execSilent("ALTER TABLE fpp_active_bots ADD COLUMN pve_enabled      BOOLEAN DEFAULT 0");
+    execSilent("ALTER TABLE fpp_active_bots ADD COLUMN pve_range        DOUBLE  DEFAULT 16.0");
+    execSilent("ALTER TABLE fpp_active_bots ADD COLUMN pve_priority     VARCHAR(16) DEFAULT NULL");
+    execSilent("ALTER TABLE fpp_active_bots ADD COLUMN pve_mob_type     VARCHAR(64) DEFAULT NULL");
+    execSilent("CREATE INDEX IF NOT EXISTS idx_sessions_bot_name    ON fpp_bot_sessions(bot_name)");
+    execSilent("CREATE INDEX IF NOT EXISTS idx_sessions_spawned_by  ON fpp_bot_sessions(spawned_by)");
+    execSilent("CREATE INDEX IF NOT EXISTS idx_sessions_removed_at  ON fpp_bot_sessions(removed_at)");
+    execSilent("CREATE INDEX IF NOT EXISTS idx_sessions_spawned_at  ON fpp_bot_sessions(spawned_at)");
+    execSilent("CREATE INDEX IF NOT EXISTS idx_sessions_bot_uuid    ON fpp_bot_sessions(bot_uuid)");
+    execSilent("CREATE INDEX IF NOT EXISTS idx_sessions_server_id   ON fpp_bot_sessions(server_id)");
+    execSilent("CREATE INDEX IF NOT EXISTS idx_active_server_id     ON fpp_active_bots(server_id)");
+    execSilent("CREATE INDEX IF NOT EXISTS idx_skin_cache_cached_at ON fpp_skin_cache(cached_at)");
   }
 
   private int getSchemaVersion() {
@@ -2106,6 +2143,24 @@ public class DatabaseManager {
             ps.executeUpdate();
           } catch (SQLException e) {
             FppLogger.error("DB updateBotSkin: " + e.getMessage());
+          }
+        });
+  }
+
+  public void updateBotOwner(String uuid, String ownerName, String ownerUuid) {
+    if (!isAlive()) return;
+    enqueue(
+        () -> {
+          if (!isAlive()) return;
+          try (PreparedStatement ps =
+              connection.prepareStatement(
+                  "UPDATE fpp_active_bots SET spawned_by=?,spawned_by_uuid=? WHERE bot_uuid=?")) {
+            ps.setString(1, ownerName);
+            ps.setString(2, ownerUuid);
+            ps.setString(3, uuid);
+            ps.executeUpdate();
+          } catch (SQLException e) {
+            FppLogger.error("DB updateBotOwner: " + e.getMessage());
           }
         });
   }

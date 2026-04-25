@@ -2115,18 +2115,17 @@ public final class BotPvpAI {
                         crystalBlock.getLocation().add(0.5, 0, 0.5), EntityType.END_CRYSTAL);
         ec.setShowingBottom(false);
 
-        Bukkit.getScheduler()
-            .runTaskLater(
-                bot.getServer().getPluginManager().getPlugin("FakePlayerPlugin"),
-                () -> {
-                  if (ec.isValid()) {
-                    ec.remove();
-                    for (Entity e : ec.getNearbyEntities(6, 6, 6)) {
-                      if (e instanceof LivingEntity le && !e.equals(bot)) le.damage(6.0, bot);
-                    }
-                  }
-                },
-                1L);
+        me.bill.fakePlayerPlugin.util.FppScheduler.runSyncLater(
+            bot.getServer().getPluginManager().getPlugin("FakePlayerPlugin"),
+            () -> {
+              if (ec.isValid()) {
+                ec.remove();
+                for (Entity e : ec.getNearbyEntities(6, 6, 6)) {
+                  if (e instanceof LivingEntity le && !e.equals(bot)) le.damage(6.0, bot);
+                }
+              }
+            },
+            1L);
 
         s.crystalCooldown = CRYSTAL_COOLDOWN;
         crystal.setAmount(crystal.getAmount() - 1);

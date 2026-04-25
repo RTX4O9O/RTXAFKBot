@@ -10,6 +10,7 @@ import me.bill.fakePlayerPlugin.fakeplayer.NmsPlayerSpawner;
 import me.bill.fakePlayerPlugin.fakeplayer.PathfindingService;
 import me.bill.fakePlayerPlugin.lang.Lang;
 import me.bill.fakePlayerPlugin.permission.Perm;
+import me.bill.fakePlayerPlugin.util.FppScheduler;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
@@ -20,7 +21,6 @@ import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
-import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.command.CommandSender;
 import org.bukkit.craftbukkit.entity.CraftPlayer;
@@ -180,7 +180,7 @@ public final class UseCommand implements FppCommand {
     Player bot = fp.getPlayer();
     if (bot == null) return;
 
-    bot.teleport(lockLoc);
+    FppScheduler.teleportAsync(bot, lockLoc);
 
     manager.lockForAction(uuid, lockLoc);
 
@@ -190,10 +190,9 @@ public final class UseCommand implements FppCommand {
     final int[] freeze = {0};
 
     int taskId =
-        Bukkit.getScheduler()
-            .runTaskTimer(
-                plugin,
-                () -> {
+        FppScheduler.runSyncRepeatingWithId(
+            plugin,
+            () -> {
                   Player b = fp.getPlayer();
                   if (b == null || !b.isOnline()) {
                     stopUsing(uuid);
@@ -277,9 +276,8 @@ public final class UseCommand implements FppCommand {
 
                   if (once && acted) stopUsing(uuid);
                 },
-                0L,
-                1L)
-            .getTaskId();
+            0L,
+            1L);
 
     useTasks.put(uuid, taskId);
   }
@@ -302,7 +300,7 @@ public final class UseCommand implements FppCommand {
 
   public void stopUsing(UUID botUuid) {
     Integer taskId = useTasks.remove(botUuid);
-    if (taskId != null) Bukkit.getScheduler().cancelTask(taskId);
+    if (taskId != null) FppScheduler.cancelTask(taskId);
 
     manager.unlockAction(botUuid);
 

@@ -6,6 +6,7 @@ import java.util.UUID;
 import me.bill.fakePlayerPlugin.FakePlayerPlugin;
 import me.bill.fakePlayerPlugin.config.Config;
 import me.bill.fakePlayerPlugin.fakeplayer.FakePlayerManager;
+import me.bill.fakePlayerPlugin.util.FppScheduler;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
@@ -60,14 +61,13 @@ public class BotSpawnProtectionListener implements Listener {
             + env.name()
             + ")");
 
-    Bukkit.getScheduler()
-        .runTaskLater(
-            plugin,
-            () -> {
-              protectedBots.remove(botUuid);
-              Config.debugNms("BotSpawnProtection: removed protection for " + player.getName());
-            },
-            protectionTicks);
+    FppScheduler.runSyncLater(
+        plugin,
+        () -> {
+          protectedBots.remove(botUuid);
+          Config.debugNms("BotSpawnProtection: removed protection for " + player.getName());
+        },
+        protectionTicks);
   }
 
   @EventHandler(priority = EventPriority.HIGHEST)

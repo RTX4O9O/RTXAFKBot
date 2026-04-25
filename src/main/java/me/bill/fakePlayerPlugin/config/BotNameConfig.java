@@ -4,7 +4,6 @@ import java.io.File;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
 import java.util.List;
 import me.bill.fakePlayerPlugin.FakePlayerPlugin;
 import me.bill.fakePlayerPlugin.util.YamlFileSyncer;
@@ -49,7 +48,7 @@ public final class BotNameConfig {
   }
 
   public static List<String> getNames() {
-    if (cfg == null) return Arrays.asList("Alex", "Steve", "Notch");
+    if (cfg == null) return List.of();
 
     List<String> names = cfg.getStringList("name");
     if (names.isEmpty()) {
@@ -57,7 +56,7 @@ public final class BotNameConfig {
       names = cfg.getStringList("names");
     }
     if (names.isEmpty()) {
-      return Arrays.asList("Alex", "Steve", "Notch", "Herobrine", "Jeb_");
+      return List.of();
     }
     return names;
   }
