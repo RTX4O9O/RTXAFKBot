@@ -389,6 +389,7 @@ inv-not-found:   "{prefix}<red>ɴᴏ ᴀᴄᴛɪᴠᴇ ʙᴏᴛ ɴᴀᴍᴇᴅ <
 inv-bodyless:    "{prefix}<red><#0079FF>{name}</#0079FF> <red>ʜᴀꜱ ɴᴏ ʙᴏᴅʏ <dark_gray>(ʙᴏᴅʏʟᴇꜱꜱ ʙᴏᴛ)<red>."
 inv-player-only: "{prefix}<red>ᴏɴʟʏ ᴀ ᴘʟᴀʏᴇʀ ᴄᴀɴ ᴏᴘᴇɴ ᴀɴ ɪɴᴠᴇɴᴛᴏʀʏ."
 inv-busy:        "{prefix}<red>{name} <dark_gray>is already being edited by another player."
+inv-viewer-busy: "{prefix}<red>ʏᴏᴜ ᴀʟʀᴇᴀᴅʏ ʜᴀᴠᴇ ᴀ ʙᴏᴛ ɪɴᴠᴇɴᴛᴏʀʏ ᴏᴘᴇɴ. ᴄʟᴏꜱᴇ ɪᴛ ꜰɪʀꜱᴛ."
 inv-opened:      "{prefix}<gray>ᴏᴘᴇɴᴇᴅ <#0079FF>{name}</#0079FF><gray>'ꜱ ɪɴᴠᴇɴᴛᴏʀʏ."
 settings-bot-not-found: "{prefix}<red>ɴᴏ ᴀᴄᴛɪᴠᴇ ʙᴏᴛ ɴᴀᴍᴇᴅ <white>{name}<red> ꜰᴏʀ ʙᴏᴛ ꜱᴇᴛᴛɪɴɢꜱ."
 

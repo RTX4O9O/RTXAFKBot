@@ -10,6 +10,8 @@ import me.bill.fakePlayerPlugin.FakePlayerPlugin;
 import me.bill.fakePlayerPlugin.config.Config;
 import me.bill.fakePlayerPlugin.database.BotRecord;
 import me.bill.fakePlayerPlugin.database.DatabaseManager;
+import me.bill.fakePlayerPlugin.api.event.FppBotTeleportEvent;
+import me.bill.fakePlayerPlugin.api.impl.FppBotImpl;
 import me.bill.fakePlayerPlugin.util.FppScheduler;
 import me.bill.fakePlayerPlugin.util.BotTabTeam;
 import me.bill.fakePlayerPlugin.util.FppLogger;
@@ -1768,6 +1770,7 @@ public class FakePlayerManager {
 
     trackedFallDistance.remove(target.getUuid());
     wasOnGround.remove(target.getUuid());
+    target.clearMetadata();
     var pathfinding = plugin.getPathfindingService();
     if (pathfinding != null) pathfinding.cancel(target.getUuid());
 
@@ -2384,8 +2387,12 @@ public class FakePlayerManager {
   public boolean teleportBot(FakePlayer fp, org.bukkit.Location destination) {
     Player body = fp.getPlayer();
     if (body == null || !body.isValid()) return false;
-    FppScheduler.teleportAsync(body, destination);
-    fp.setSpawnLocation(destination.clone());
+    var event = new FppBotTeleportEvent(
+        new FppBotImpl(fp), body.getLocation(), destination);
+    Bukkit.getPluginManager().callEvent(event);
+    if (event.isCancelled()) return false;
+    FppScheduler.teleportAsync(body, event.getTo());
+    fp.setSpawnLocation(event.getTo().clone());
     return true;
   }
 

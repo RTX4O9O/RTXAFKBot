@@ -28,6 +28,7 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.craftbukkit.entity.CraftPlayer;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
+import me.bill.fakePlayerPlugin.api.impl.FppApiImpl;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -529,6 +530,14 @@ public final class SleepCommand implements FppCommand {
     }
 
     if (slept) {
+      FppApiImpl.fireTaskEvent(fp, "sleep", me.bill.fakePlayerPlugin.api.event.FppBotTaskEvent.Action.START);
+      var sleepStartEvt = new me.bill.fakePlayerPlugin.api.event.FppBotSleepStartEvent(
+          new me.bill.fakePlayerPlugin.api.impl.FppBotImpl(fp), bedLoc);
+      org.bukkit.Bukkit.getPluginManager().callEvent(sleepStartEvt);
+      if (sleepStartEvt.isCancelled()) {
+        resumePreviousTask(fp);
+        return;
+      }
       fp.setSleeping(true);
       // Do NOT call lockForAction here. The action lock records the navigation
       // arrival location (≈1.5 blocks from the bed) and then teleports the bot
@@ -550,8 +559,12 @@ public final class SleepCommand implements FppCommand {
    */
   private void wakeBot(@NotNull FakePlayer fp, boolean resumeTask) {
     if (!fp.isSleeping()) return;
+    FppApiImpl.fireTaskEvent(fp, "sleep", me.bill.fakePlayerPlugin.api.event.FppBotTaskEvent.Action.STOP);
     UUID uuid = fp.getUuid();
 
+    var sleepEndEvt = new me.bill.fakePlayerPlugin.api.event.FppBotSleepEndEvent(
+        new me.bill.fakePlayerPlugin.api.impl.FppBotImpl(fp), bot != null ? bot.getLocation() : null);
+    org.bukkit.Bukkit.getPluginManager().callEvent(sleepEndEvt);
     fp.setSleeping(false);
     manager.unlockAction(uuid);
 

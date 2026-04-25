@@ -41,6 +41,11 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.jetbrains.annotations.NotNull;
 import me.bill.fakePlayerPlugin.api.event.FppBotDespawnEvent;
+import me.bill.fakePlayerPlugin.api.event.FppBotSettingChangeEvent;
+import me.bill.fakePlayerPlugin.api.impl.FppBotImpl;
+import java.util.concurrent.CopyOnWriteArrayList;
+import me.bill.fakePlayerPlugin.api.FppSettingsItem;
+import me.bill.fakePlayerPlugin.api.FppSettingsTab;
 
 public final class BotSettingGui implements Listener {
 
@@ -211,13 +216,49 @@ public final class BotSettingGui implements Listener {
 
   private final Map<UUID, Integer> editPauseCounts = new HashMap<>();
 
-  private final BotCategory[] categories;
+  private final List<BotCategory> categories;
+  private final CopyOnWriteArrayList<FppSettingsTab> extensionTabs = new CopyOnWriteArrayList<>();
 
   public BotSettingGui(FakePlayerPlugin plugin, FakePlayerManager manager) {
     this.plugin = plugin;
     this.manager = manager;
     this.renameHelper = new BotRenameHelper(plugin, manager);
-    this.categories = new BotCategory[] {general(), chat(), pve(), automation(), pathfinding(), pvp(), danger()};
+    this.categories = List.of(general(), chat(), pve(), automation(), pathfinding(), pvp(), danger());
+  }
+
+  public void registerExtensionTab(FppSettingsTab tab) {
+    extensionTabs.addIfAbsent(tab);
+  }
+
+  public void unregisterExtensionTab(FppSettingsTab tab) {
+    extensionTabs.remove(tab);
+  }
+
+  private List<BotCategory> allCategories(Player viewer) {
+    if (extensionTabs.isEmpty()) return categories;
+    List<BotCategory> all = new ArrayList<>(categories);
+    for (FppSettingsTab tab : extensionTabs) {
+      if (!tab.isVisible(viewer)) continue;
+      List<BotEntry> entries = new ArrayList<>();
+      int idx = 0;
+      for (FppSettingsItem item : tab.getItems(viewer)) {
+        entries.add(new BotEntry(
+            "ext:" + tab.getId() + ":" + idx,
+            item.getLabel(),
+            item.getDescription(),
+            item.getIcon(),
+            BotEntryType.ACTION,
+            false));
+        idx++;
+      }
+      all.add(new BotCategory(
+          tab.getLabel(),
+          tab.getActiveMaterial(),
+          tab.getInactiveMaterial(),
+          tab.getSeparatorGlass(),
+          entries));
+    }
+    return all;
   }
 
   public void open(Player player, FakePlayer bot) {
@@ -242,7 +283,7 @@ public final class BotSettingGui implements Listener {
   }
 
   public @NotNull List<String> getCategoryNames() {
-    List<String> names = new ArrayList<>(categories.length);
+    List<String> names = new ArrayList<>(categories.size());
     for (BotCategory category : categories) names.add(category.label());
     return Collections.unmodifiableList(names);
   }
@@ -286,7 +327,10 @@ public final class BotSettingGui implements Listener {
     int catIdx = state[0];
     int pageIdx = state[1];
     int catOffset = state[2];
-    BotCategory cat = categories[catIdx];
+    List<BotCategory> all = allCategories(player);
+    if (catIdx >= all.size()) catIdx = all.size() - 1;
+    state[0] = catIdx;
+    BotCategory cat = all.get(catIdx);
     boolean isOp = isOp(player);
 
     GuiHolder holder = new GuiHolder(uuid);
@@ -321,13 +365,13 @@ public final class BotSettingGui implements Listener {
       int ci = catOffset + i;
       inv.setItem(
           CAT_WINDOW_START + i,
-          ci < categories.length
-              ? buildCategoryTab(ci, ci == catIdx)
+          ci < all.size()
+              ? buildCategoryTab(all.get(ci), ci == catIdx)
               : glassFiller(Material.GRAY_STAINED_GLASS_PANE));
     }
     inv.setItem(
         SLOT_CAT_NEXT,
-        catOffset + CAT_WINDOW < categories.length
+        catOffset + CAT_WINDOW < all.size()
             ? buildCatArrow(true)
             : glassFiller(Material.GRAY_STAINED_GLASS_PANE));
     inv.setItem(SLOT_CLOSE, buildCloseButton());
@@ -401,7 +445,7 @@ public final class BotSettingGui implements Listener {
       return;
     }
     if (slot == SLOT_CAT_NEXT) {
-      if (catOffset + CAT_WINDOW < categories.length) {
+      if (catOffset + CAT_WINDOW < allCategories(player).size()) {
         playUiClick(player, 1.0f);
         state[2]++;
       }
@@ -415,7 +459,7 @@ public final class BotSettingGui implements Listener {
     }
     if (slot >= CAT_WINDOW_START && slot < CAT_WINDOW_START + CAT_WINDOW) {
       int ci = catOffset + (slot - CAT_WINDOW_START);
-      if (ci < categories.length) {
+      if (ci < allCategories(player).size()) {
         if (ci != catIdx) playUiClick(player, 1.3f);
         state[0] = ci;
         state[1] = 0;
@@ -424,7 +468,9 @@ public final class BotSettingGui implements Listener {
       return;
     }
     if (slot < 45) {
-      List<BotEntry> entries = visibleEntries(categories[catIdx], isOp);
+      List<BotCategory> allCats = allCategories(player);
+      if (catIdx >= allCats.size()) return;
+      List<BotEntry> entries = visibleEntries(allCats.get(catIdx), isOp);
       int entryIdx = state[1] * SETTINGS_PER_PAGE + slot;
       if (entryIdx >= entries.size()) return;
       handleEntryClick(player, bot, entries.get(entryIdx), isOp);
@@ -602,6 +648,23 @@ public final class BotSettingGui implements Listener {
         build(player);
       }
       case ACTION -> {
+        if (entry.id().startsWith("ext:")) {
+          String[] parts = entry.id().split(":");
+          if (parts.length >= 3) {
+            String tabId = parts[1];
+            int itemIdx = Integer.parseInt(parts[2]);
+            for (FppSettingsTab tab : extensionTabs) {
+              if (tab.getId().equals(tabId)) {
+                List<FppSettingsItem> items = tab.getItems(player);
+                if (itemIdx >= 0 && itemIdx < items.size()) {
+                  items.get(itemIdx).onClick(player);
+                }
+                break;
+              }
+            }
+          }
+          return;
+        }
         playUiClick(player, 1.0f);
         openChatInput(player, bot, entry);
       }
@@ -630,54 +693,80 @@ public final class BotSettingGui implements Listener {
     }
   }
 
+  private void fireSettingChange(FakePlayer bot, String key, Object oldValue, Object newValue) {
+    Bukkit.getPluginManager().callEvent(new FppBotSettingChangeEvent(new FppBotImpl(bot), key, oldValue, newValue));
+  }
+
   private boolean applyToggle(FakePlayer bot, String id) {
     return switch (id) {
       case "frozen" -> {
-        bot.setFrozen(!bot.isFrozen());
+        boolean old = bot.isFrozen();
+        bot.setFrozen(!old);
+        fireSettingChange(bot, "frozen", old, bot.isFrozen());
         yield bot.isFrozen();
       }
       case "head_ai_enabled" -> {
-        bot.setHeadAiEnabled(!bot.isHeadAiEnabled());
+        boolean old = bot.isHeadAiEnabled();
+        bot.setHeadAiEnabled(!old);
+        fireSettingChange(bot, "head_ai_enabled", old, bot.isHeadAiEnabled());
         yield bot.isHeadAiEnabled();
       }
       case "swim_ai_enabled" -> {
-        bot.setSwimAiEnabled(!bot.isSwimAiEnabled());
+        boolean old = bot.isSwimAiEnabled();
+        bot.setSwimAiEnabled(!old);
+        fireSettingChange(bot, "swim_ai_enabled", old, bot.isSwimAiEnabled());
         yield bot.isSwimAiEnabled();
       }
       case "nav_sprint_jump" -> {
-        bot.setNavSprintJump(!bot.isNavSprintJump());
+        boolean old = bot.isNavSprintJump();
+        bot.setNavSprintJump(!old);
+        fireSettingChange(bot, "nav_sprint_jump", old, bot.isNavSprintJump());
         yield bot.isNavSprintJump();
       }
       case "pickup_items" -> {
-        boolean v = !bot.isPickUpItemsEnabled();
+        boolean old = bot.isPickUpItemsEnabled();
+        boolean v = !old;
         bot.setPickUpItemsEnabled(v);
+        fireSettingChange(bot, "pickup_items", old, bot.isPickUpItemsEnabled());
 
         Player body = bot.getPlayer();
         if (body != null) body.setCanPickupItems(v);
         yield v;
       }
       case "pickup_xp" -> {
-        bot.setPickUpXpEnabled(!bot.isPickUpXpEnabled());
+        boolean old = bot.isPickUpXpEnabled();
+        bot.setPickUpXpEnabled(!old);
+        fireSettingChange(bot, "pickup_xp", old, bot.isPickUpXpEnabled());
         yield bot.isPickUpXpEnabled();
       }
       case "chat_enabled" -> {
-        bot.setChatEnabled(!bot.isChatEnabled());
+        boolean old = bot.isChatEnabled();
+        bot.setChatEnabled(!old);
+        fireSettingChange(bot, "chat_enabled", old, bot.isChatEnabled());
         yield bot.isChatEnabled();
       }
       case "nav_parkour" -> {
-        bot.setNavParkour(!bot.isNavParkour());
+        boolean old = bot.isNavParkour();
+        bot.setNavParkour(!old);
+        fireSettingChange(bot, "nav_parkour", old, bot.isNavParkour());
         yield bot.isNavParkour();
       }
       case "nav_break_blocks" -> {
-        bot.setNavBreakBlocks(!bot.isNavBreakBlocks());
+        boolean old = bot.isNavBreakBlocks();
+        bot.setNavBreakBlocks(!old);
+        fireSettingChange(bot, "nav_break_blocks", old, bot.isNavBreakBlocks());
         yield bot.isNavBreakBlocks();
       }
       case "nav_place_blocks" -> {
-        bot.setNavPlaceBlocks(!bot.isNavPlaceBlocks());
+        boolean old = bot.isNavPlaceBlocks();
+        bot.setNavPlaceBlocks(!old);
+        fireSettingChange(bot, "nav_place_blocks", old, bot.isNavPlaceBlocks());
         yield bot.isNavPlaceBlocks();
       }
       case "pve_enabled" -> {
-        bot.setPveEnabled(!bot.isPveEnabled());
+        boolean old = bot.isPveEnabled();
+        bot.setPveEnabled(!old);
+        fireSettingChange(bot, "pve_enabled", old, bot.isPveEnabled());
 
         var attackCmd = plugin.getAttackCommand();
         if (attackCmd != null) {
@@ -690,24 +779,31 @@ public final class BotSettingGui implements Listener {
         yield bot.isPveEnabled();
       }
       case "pve_move" -> {
-        bot.setPveMoveToTarget(!bot.isPveMoveToTarget());
+        boolean old = bot.isPveMoveToTarget();
+        bot.setPveMoveToTarget(!old);
+        fireSettingChange(bot, "pve_move", old, bot.isPveMoveToTarget());
         restartPveIfActive(bot);
         yield bot.isPveMoveToTarget();
       }
       case "auto_eat" -> {
-        bot.setAutoEatEnabled(!bot.isAutoEatEnabled());
+        boolean old = bot.isAutoEatEnabled();
+        bot.setAutoEatEnabled(!old);
+        fireSettingChange(bot, "auto_eat", old, bot.isAutoEatEnabled());
         yield bot.isAutoEatEnabled();
       }
       case "auto_place_bed" -> {
-        bot.setAutoPlaceBedEnabled(!bot.isAutoPlaceBedEnabled());
+        boolean old = bot.isAutoPlaceBedEnabled();
+        bot.setAutoPlaceBedEnabled(!old);
+        fireSettingChange(bot, "auto_place_bed", old, bot.isAutoPlaceBedEnabled());
         yield bot.isAutoPlaceBedEnabled();
       }
       case "follow_player" -> {
         var followCmd = plugin.getFollowCommand();
         if (followCmd == null) yield false;
-        boolean wasFollowing = followCmd.isFollowing(bot.getUuid());
-        if (wasFollowing) {
+        boolean old = followCmd.isFollowing(bot.getUuid());
+        if (old) {
           followCmd.stopFollowing(bot.getUuid());
+          fireSettingChange(bot, "follow_player", old, false);
           yield false;
         } else {
 
@@ -723,10 +819,12 @@ public final class BotSettingGui implements Listener {
               Player botPlayer = bot.getPlayer();
               if (botPlayer != null && botPlayer.getWorld().equals(target.getWorld())) {
                 followCmd.startFollowingFromSettings(bot, target);
+                fireSettingChange(bot, "follow_player", old, true);
                 yield true;
               }
             }
           }
+          fireSettingChange(bot, "follow_player", old, false);
           yield false;
         }
       }
@@ -735,6 +833,7 @@ public final class BotSettingGui implements Listener {
   }
 
   private void cycleTier(FakePlayer bot) {
+    String old = bot.getChatTier();
     bot.setChatTier(
         switch (bot.getChatTier() == null ? "random" : bot.getChatTier()) {
           case "random" -> "quiet";
@@ -744,6 +843,7 @@ public final class BotSettingGui implements Listener {
           case "active" -> "chatty";
           default -> null;
         });
+    fireSettingChange(bot, "chat_tier", old, bot.getChatTier());
   }
 
   private void restartPveIfActive(FakePlayer bot) {
@@ -756,8 +856,10 @@ public final class BotSettingGui implements Listener {
 
   private void cyclePersonality(FakePlayer bot) {
     me.bill.fakePlayerPlugin.ai.PersonalityRepository repo = plugin.getPersonalityRepository();
+    String old = bot.getAiPersonality();
     if (repo == null || repo.size() == 0) {
       bot.setAiPersonality(null);
+      fireSettingChange(bot, "ai_personality", old, bot.getAiPersonality());
       return;
     }
 
@@ -777,6 +879,7 @@ public final class BotSettingGui implements Listener {
         bot.setAiPersonality(names.get(idx + 1));
       }
     }
+    fireSettingChange(bot, "ai_personality", old, bot.getAiPersonality());
 
     if (plugin.getDatabaseManager() != null) {
       plugin
@@ -786,8 +889,10 @@ public final class BotSettingGui implements Listener {
   }
 
   private void cyclePriority(FakePlayer bot) {
+    String old = bot.getPvePriority();
     String current = bot.getPvePriority();
     bot.setPvePriority("nearest".equals(current) ? "lowest-health" : "nearest");
+    fireSettingChange(bot, "pve_priority", old, bot.getPvePriority());
   }
 
   private void applyImmediate(Player player, FakePlayer bot, String id) {}
@@ -868,7 +973,9 @@ public final class BotSettingGui implements Listener {
 
         if (val < -1) val = -1;
         if (val > globalMax && globalMax > 0) val = globalMax;
+        int old = bot.getChunkLoadRadius();
         bot.setChunkLoadRadius(val);
+        fireSettingChange(bot, "chunk_load_radius", old, bot.getChunkLoadRadius());
         manager.persistBotSettings(bot);
         String display =
             val == -1 ? "ɢʟᴏʙᴀʟ (" + globalMax + ")" : val == 0 ? "ᴅɪꜱᴀʙʟᴇᴅ" : val + " ᴄʜᴜɴᴋꜱ";
@@ -1301,6 +1408,7 @@ public final class BotSettingGui implements Listener {
   }
 
   private void resetBot(Player player, FakePlayer bot, boolean isOp) {
+    fireSettingChange(bot, "reset", null, null);
 
     bot.setFrozen(false);
     bot.setHeadAiEnabled(true);
@@ -1675,8 +1783,7 @@ public final class BotSettingGui implements Listener {
     };
   }
 
-  private ItemStack buildCategoryTab(int idx, boolean active) {
-    BotCategory cat = categories[idx];
+  private ItemStack buildCategoryTab(BotCategory cat, boolean active) {
     ItemStack item = new ItemStack(active ? cat.activeMat() : cat.inactiveMat());
     ItemMeta meta = item.getItemMeta();
     if (active) {

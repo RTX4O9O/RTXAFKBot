@@ -65,8 +65,6 @@ public final class StorageInteractionHelper {
                 transferFn.accept(liveHolder, liveBot);
                 liveBot.closeInventory();
                 manager.unlockAction(fp.getUuid());
-                if (plugin.getInventoryCommand() != null)
-                  plugin.getInventoryCommand().refreshOpenGui(fp.getUuid());
                 if (onFinally != null) onFinally.run();
               },
               3L);

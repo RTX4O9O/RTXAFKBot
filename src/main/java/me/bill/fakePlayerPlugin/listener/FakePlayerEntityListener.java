@@ -10,6 +10,8 @@ import me.bill.fakePlayerPlugin.fakeplayer.FakePlayer;
 import me.bill.fakePlayerPlugin.fakeplayer.FakePlayerBody;
 import me.bill.fakePlayerPlugin.fakeplayer.FakePlayerManager;
 import me.bill.fakePlayerPlugin.fakeplayer.PacketHelper;
+import me.bill.fakePlayerPlugin.api.event.FppBotDamageEvent;
+import me.bill.fakePlayerPlugin.api.impl.FppBotImpl;
 import me.bill.fakePlayerPlugin.util.FppScheduler;
 import me.bill.fakePlayerPlugin.util.WorldGuardHelper;
 import org.bukkit.Bukkit;
@@ -55,9 +57,28 @@ public class FakePlayerEntityListener implements Listener {
     }
   }
 
-  @EventHandler(priority = EventPriority.MONITOR)
+  @EventHandler(priority = EventPriority.LOW, ignoreCancelled = true)
   public void onEntityDamage(EntityDamageEvent event) {
     if (!isFakeBotBody(event.getEntity())) return;
+    if (!(event.getEntity() instanceof Player p)) return;
+    FakePlayer fp = manager.getByEntity(p);
+    if (fp == null) return;
+
+    Entity damager = null;
+    if (event instanceof EntityDamageByEntityEvent byEntity) {
+      damager = byEntity.getDamager();
+    }
+
+    var damageEvent = new FppBotDamageEvent(
+        new FppBotImpl(fp), event.getFinalDamage(), event.getCause(), damager);
+    Bukkit.getPluginManager().callEvent(damageEvent);
+    if (damageEvent.isCancelled()) {
+      event.setCancelled(true);
+      return;
+    }
+    if (damageEvent.getDamage() != event.getFinalDamage()) {
+      event.setDamage(damageEvent.getDamage());
+    }
 
     if (event instanceof EntityDamageByEntityEvent byEntity
         && byEntity.getDamager() instanceof Player attacker) {
@@ -69,19 +90,26 @@ public class FakePlayerEntityListener implements Listener {
     }
 
     if (!Config.bodyDamageable()) {
-
       if (event instanceof EntityDamageByEntityEvent) {
         event.setCancelled(true);
         return;
       }
     }
 
-    if (!event.isCancelled() && event.getEntity() instanceof Player p) {
-      FakePlayer fp = manager.getByEntity(p);
-      if (fp != null) {
-        fp.addDamageTaken(event.getFinalDamage());
-      }
+    if (!event.isCancelled()) {
+      fp.addDamageTaken(event.getFinalDamage());
     }
+  }
+
+  @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+  public void onEntityTarget(org.bukkit.event.entity.EntityTargetLivingEntityEvent event) {
+    if (!(event.getTarget() instanceof Player targetPlayer)) return;
+    FakePlayer fp = manager.getByEntity(targetPlayer);
+    if (fp == null) return;
+    var targetEvt = new me.bill.fakePlayerPlugin.api.event.FppBotTargetEvent(
+        new FppBotImpl(fp), event.getEntity());
+    Bukkit.getPluginManager().callEvent(targetEvt);
+    if (targetEvt.isCancelled()) event.setCancelled(true);
   }
 
   @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -279,17 +307,23 @@ public class FakePlayerEntityListener implements Listener {
     FakePlayer fp = manager.getByUuid(event.getEntity().getUniqueId());
     if (fp == null) return;
 
+    var invEvt = new me.bill.fakePlayerPlugin.api.event.FppBotInventoryEvent(
+        new FppBotImpl(fp),
+        me.bill.fakePlayerPlugin.api.event.FppBotInventoryEvent.Action.PICKUP,
+        event.getItem().getItemStack(),
+        -1);
+    Bukkit.getPluginManager().callEvent(invEvt);
+    if (invEvt.isCancelled()) {
+      event.setCancelled(true);
+      return;
+    }
+
     if (!Config.bodyPickUpItems() || !fp.isPickUpItemsEnabled()) {
       event.setCancelled(true);
       return;
     }
 
-    FppScheduler.runSync(
-        plugin,
-        () -> {
-          var invCmd = plugin.getInventoryCommand();
-          if (invCmd != null) invCmd.refreshOpenGui(fp.getUuid());
-        });
+    // Bot inventory is viewed natively; no manual refresh needed.
   }
 
   private boolean isFakeBotBody(Entity entity) {

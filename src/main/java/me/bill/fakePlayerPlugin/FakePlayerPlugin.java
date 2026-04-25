@@ -637,6 +637,8 @@ public final class FakePlayerPlugin extends JavaPlugin {
   public void onDisable() {
     Config.debugStartup("onDisable called.");
 
+    if (fppApi != null) fppApi.disableAllAddons();
+
     int botsRemoved = fakePlayerManager != null ? fakePlayerManager.getCount() : 0;
 
     if (chunkLoader != null) chunkLoader.releaseAll();

@@ -11,6 +11,7 @@ import me.bill.fakePlayerPlugin.fakeplayer.PathfindingService;
 import me.bill.fakePlayerPlugin.lang.Lang;
 import me.bill.fakePlayerPlugin.permission.Perm;
 import me.bill.fakePlayerPlugin.util.FppScheduler;
+import me.bill.fakePlayerPlugin.api.impl.FppApiImpl;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.phys.AABB;
@@ -478,6 +479,7 @@ public final class AttackCommand implements FppCommand {
   }
 
   private void lockAndStartClassic(FakePlayer fp, boolean once, Location lockLoc) {
+    FppApiImpl.fireTaskEvent(fp, "attack", me.bill.fakePlayerPlugin.api.event.FppBotTaskEvent.Action.START);
     UUID uuid = fp.getUuid();
     Player bot = fp.getPlayer();
     if (bot == null) return;
@@ -659,6 +661,11 @@ public final class AttackCommand implements FppCommand {
 
     b.swingMainHand();
 
+    var atkEvt = new me.bill.fakePlayerPlugin.api.event.FppBotAttackEvent(
+        new me.bill.fakePlayerPlugin.api.impl.FppBotImpl(fp), bukkit, 1.0);
+    org.bukkit.Bukkit.getPluginManager().callEvent(atkEvt);
+    if (atkEvt.isCancelled()) return;
+
     nms.attack(nmsEntity);
 
     state.cooldownTicks = getWeaponCooldown(weapon);
@@ -750,6 +757,12 @@ public final class AttackCommand implements FppCommand {
     if (nmsTarget == null) return;
 
     b.swingMainHand();
+
+    var atkEvt2 = new me.bill.fakePlayerPlugin.api.event.FppBotAttackEvent(
+        new me.bill.fakePlayerPlugin.api.impl.FppBotImpl(fp), currentTarget, 1.0);
+    org.bukkit.Bukkit.getPluginManager().callEvent(atkEvt2);
+    if (atkEvt2.isCancelled()) return;
+
     nms.attack(nmsTarget);
 
     ItemStack mainHand = b.getInventory().getItemInMainHand();
@@ -870,6 +883,10 @@ public final class AttackCommand implements FppCommand {
   }
 
   public void stopAttacking(UUID botUuid) {
+    FakePlayer fp = manager.getByUuid(botUuid);
+    if (fp != null) {
+      FppApiImpl.fireTaskEvent(fp, "attack", me.bill.fakePlayerPlugin.api.event.FppBotTaskEvent.Action.STOP);
+    }
     Integer taskId = attackTasks.remove(botUuid);
     if (taskId != null) FppScheduler.cancelTask(taskId);
 

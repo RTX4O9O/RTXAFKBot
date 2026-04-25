@@ -3,8 +3,12 @@ package me.bill.fakePlayerPlugin.api;
 import java.time.Duration;
 import java.util.Set;
 import java.util.UUID;
+import org.bukkit.GameMode;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.PlayerInventory;
+import org.bukkit.util.Vector;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -66,4 +70,81 @@ public interface FppBot {
   boolean isInLava();
   boolean isSprinting();
   int getPing();
+
+  // ── Health ────────────────────────────────────────────────────────────────
+  double getHealth();
+  void setHealth(double health);
+  double getMaxHealth();
+  void setMaxHealth(double health);
+  boolean isDead();
+
+  // ── GameMode ──────────────────────────────────────────────────────────────
+  @NotNull GameMode getGameMode();
+  void setGameMode(@NotNull GameMode mode);
+
+  // ── Inventory ─────────────────────────────────────────────────────────────
+  @Nullable PlayerInventory getInventory();
+  @Nullable ItemStack getItemInMainHand();
+  void setItemInMainHand(@Nullable ItemStack item);
+  @Nullable ItemStack getItemInOffHand();
+  void setItemInOffHand(@Nullable ItemStack item);
+
+  // ── Teleport / Movement ───────────────────────────────────────────────────
+  boolean teleport(@NotNull Location location);
+  @NotNull Location getEyeLocation();
+  void lookAt(@NotNull Location location);
+  @NotNull Vector getVelocity();
+  void setVelocity(@NotNull Vector velocity);
+
+  // ── Experience ────────────────────────────────────────────────────────────
+  int getLevel();
+  void setLevel(int level);
+  float getExp();
+  void setExp(float exp);
+  int getTotalExperience();
+  void setTotalExperience(int exp);
+
+  // ── Sleep ─────────────────────────────────────────────────────────────────
+  boolean isSleeping();
+  @Nullable Location getSleepOrigin();
+  void setSleepOrigin(@Nullable Location origin);
+  double getSleepRadius();
+  void setSleepRadius(double radius);
+
+  // ── Navigation ────────────────────────────────────────────────────────────
+  boolean isNavAvoidWater();
+  void setNavAvoidWater(boolean enabled);
+  boolean isNavAvoidLava();
+  void setNavAvoidLava(boolean enabled);
+
+  // ── Bot type / metadata ───────────────────────────────────────────────────
+  @NotNull String getBotTypeName();
+  void setBotTypeName(@NotNull String type);
+  @Nullable String getLuckpermsGroup();
+  void setLuckpermsGroup(@Nullable String group);
+
+  // ── Messaging / permissions ───────────────────────────────────────────────
+  void sendMessage(@NotNull String message);
+  boolean hasPermission(@NotNull String permission);
+  boolean isOnline();
+
+  // ── Animation / state ─────────────────────────────────────────────────────
+  void swingMainHand();
+  void swingOffHand();
+  boolean isSneaking();
+  void setSneaking(boolean sneaking);
+  void setSprinting(boolean sprinting);
+  boolean isOnGround();
+  boolean isClimbing();
+  boolean isPassenger();
+  boolean hasVehicle();
+  double getReachDistance();
+  void performRespawn();
+
+  // ── Addon metadata ────────────────────────────────────────────────────────
+  void setMetadata(@NotNull String key, @Nullable Object value);
+  @Nullable Object getMetadata(@NotNull String key);
+  boolean hasMetadata(@NotNull String key);
+  void removeMetadata(@NotNull String key);
+  @NotNull java.util.Map<String, Object> getMetadataMap();
 }

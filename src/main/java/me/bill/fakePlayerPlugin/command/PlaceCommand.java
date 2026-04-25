@@ -16,6 +16,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import me.bill.fakePlayerPlugin.api.FppBotBlockPlaceEvent;
+import me.bill.fakePlayerPlugin.api.impl.FppApiImpl;
 import me.bill.fakePlayerPlugin.api.impl.FppBotImpl;
 import me.bill.fakePlayerPlugin.FakePlayerPlugin;
 import me.bill.fakePlayerPlugin.config.Config;
@@ -432,6 +433,7 @@ public final class PlaceCommand implements FppCommand {
 
   private void lockAndStartPlacing(
       FakePlayer fp, boolean once, Location dest, float capturedYaw, float capturedPitch) {
+    FppApiImpl.fireTaskEvent(fp, "place", me.bill.fakePlayerPlugin.api.event.FppBotTaskEvent.Action.START);
     UUID uuid = fp.getUuid();
     Player bot = fp.getPlayer();
     if (bot == null) return;
@@ -646,6 +648,10 @@ public final class PlaceCommand implements FppCommand {
   }
 
   public void stopPlacing(UUID botUuid) {
+    FakePlayer fp = manager.getByUuid(botUuid);
+    if (fp != null) {
+      FppApiImpl.fireTaskEvent(fp, "place", me.bill.fakePlayerPlugin.api.event.FppBotTaskEvent.Action.STOP);
+    }
     Integer taskId = placingTasks.remove(botUuid);
     if (taskId != null) FppScheduler.cancelTask(taskId);
     manager.unlockAction(botUuid);
@@ -990,8 +996,6 @@ public final class PlaceCommand implements FppCommand {
                 fp.getDisplayName(),
                 "placed",
                 String.valueOf(job.blocksPlaced));
-          if (plugin.getInventoryCommand() != null)
-            plugin.getInventoryCommand().refreshOpenGui(fp.getUuid());
           return 1;
         } else {
 

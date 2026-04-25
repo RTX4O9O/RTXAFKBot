@@ -107,6 +107,13 @@ public class FreezeCommand implements FppCommand {
   }
 
   private static void applyFreeze(FakePlayer fp, boolean freeze) {
+    var api = me.bill.fakePlayerPlugin.FakePlayerPlugin.getInstance();
+    if (api != null) {
+      var freezeEvt = new me.bill.fakePlayerPlugin.api.event.FppBotFreezeEvent(
+          new me.bill.fakePlayerPlugin.api.impl.FppBotImpl(fp), freeze);
+      org.bukkit.Bukkit.getPluginManager().callEvent(freezeEvt);
+      if (freezeEvt.isCancelled()) return;
+    }
     fp.setFrozen(freeze);
     Player player = fp.getPlayer();
     if (player != null && player.isValid()) {

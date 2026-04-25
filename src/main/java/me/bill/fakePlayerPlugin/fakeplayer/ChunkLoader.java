@@ -95,6 +95,12 @@ public final class ChunkLoader {
         long key = packKey((int) coord[0], (int) coord[1]);
         if (state.keys.add(key)) {
           world.addPluginChunkTicket((int) coord[0], (int) coord[1], plugin);
+          if (world.isChunkLoaded((int) coord[0], (int) coord[1])) {
+            var chunkEvt = new me.bill.fakePlayerPlugin.api.event.FppBotChunkLoadEvent(
+                new me.bill.fakePlayerPlugin.api.impl.FppBotImpl(fp),
+                world.getChunkAt((int) coord[0], (int) coord[1]));
+            org.bukkit.Bukkit.getPluginManager().callEvent(chunkEvt);
+          }
         }
       }
 

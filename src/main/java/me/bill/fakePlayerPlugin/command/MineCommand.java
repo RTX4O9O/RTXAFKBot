@@ -10,6 +10,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import me.bill.fakePlayerPlugin.api.FppBotBlockBreakEvent;
+import me.bill.fakePlayerPlugin.api.impl.FppApiImpl;
 import me.bill.fakePlayerPlugin.api.impl.FppBotImpl;
 import me.bill.fakePlayerPlugin.FakePlayerPlugin;
 import me.bill.fakePlayerPlugin.config.Config;
@@ -465,6 +466,7 @@ public final class MineCommand implements FppCommand {
       Location lockLoc,
       BlockPos forcedTarget,
       boolean stopAfterForcedTarget) {
+    FppApiImpl.fireTaskEvent(fp, "mine", me.bill.fakePlayerPlugin.api.event.FppBotTaskEvent.Action.START);
     UUID uuid = fp.getUuid();
     Player bot = fp.getPlayer();
     if (bot == null) return;
@@ -526,6 +528,10 @@ public final class MineCommand implements FppCommand {
   }
 
   public void stopMining(UUID botUuid) {
+    FakePlayer fp = manager.getByUuid(botUuid);
+    if (fp != null) {
+      FppApiImpl.fireTaskEvent(fp, "mine", me.bill.fakePlayerPlugin.api.event.FppBotTaskEvent.Action.STOP);
+    }
     Integer taskId = miningTasks.remove(botUuid);
     if (taskId != null) FppScheduler.cancelTask(taskId);
 

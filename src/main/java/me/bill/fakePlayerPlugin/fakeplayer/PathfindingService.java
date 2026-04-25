@@ -197,6 +197,12 @@ public final class PathfindingService {
       return;
     }
 
+    var navStartEvt = new me.bill.fakePlayerPlugin.api.event.FppBotNavigationEvent(
+        new me.bill.fakePlayerPlugin.api.impl.FppBotImpl(fp),
+        me.bill.fakePlayerPlugin.api.event.FppBotNavigationEvent.Action.START,
+        initialDest);
+    org.bukkit.Bukkit.getPluginManager().callEvent(navStartEvt);
+
     primeInitialMovement(initialBot, initialDest, request.arrivalDistance());
 
     @SuppressWarnings("unchecked")
@@ -316,6 +322,11 @@ public final class PathfindingService {
 
             if (targetMoved || pathExhausted || heartbeat) {
               recalcIn[0] = Config.pathfindingRecalcInterval();
+              var navRecalcEvt = new me.bill.fakePlayerPlugin.api.event.FppBotNavigationEvent(
+                  new me.bill.fakePlayerPlugin.api.impl.FppBotImpl(fp),
+                  me.bill.fakePlayerPlugin.api.event.FppBotNavigationEvent.Action.RECALC,
+                  dest);
+              org.bukkit.Bukkit.getPluginManager().callEvent(navRecalcEvt);
 
               if (lastCalc[0] == null) {
                 lastCalc[0] = dest.clone();
@@ -765,16 +776,39 @@ public final class PathfindingService {
               taskIdRef[0] = -1;
             }
             if (arrived) {
-
+              FakePlayer navFp = manager.getByUuid(botUuid);
+              if (navFp != null) {
+                var navArriveEvt = new me.bill.fakePlayerPlugin.api.event.FppBotNavigationEvent(
+                    new me.bill.fakePlayerPlugin.api.impl.FppBotImpl(navFp),
+                    me.bill.fakePlayerPlugin.api.event.FppBotNavigationEvent.Action.ARRIVE,
+                    bot != null ? bot.getLocation() : null);
+                org.bukkit.Bukkit.getPluginManager().callEvent(navArriveEvt);
+              }
               if (request.lockOnArrival() != null) {
                 manager.lockForAction(botUuid, request.lockOnArrival());
               }
               if (request.onArrive() != null) request.onArrive().run();
             } else if (pathFailure) {
+              FakePlayer navFp = manager.getByUuid(botUuid);
+              if (navFp != null) {
+                var navFailEvt = new me.bill.fakePlayerPlugin.api.event.FppBotNavigationEvent(
+                    new me.bill.fakePlayerPlugin.api.impl.FppBotImpl(navFp),
+                    me.bill.fakePlayerPlugin.api.event.FppBotNavigationEvent.Action.FAIL,
+                    bot != null ? bot.getLocation() : null);
+                org.bukkit.Bukkit.getPluginManager().callEvent(navFailEvt);
+              }
               if (request.onPathFailure() != null) request.onPathFailure().run();
               else if (request.onCancel() != null) request.onCancel().run();
-            } else if (request.onCancel() != null) {
-              request.onCancel().run();
+            } else {
+              FakePlayer navFp = manager.getByUuid(botUuid);
+              if (navFp != null) {
+                var navCancelEvt = new me.bill.fakePlayerPlugin.api.event.FppBotNavigationEvent(
+                    new me.bill.fakePlayerPlugin.api.impl.FppBotImpl(navFp),
+                    me.bill.fakePlayerPlugin.api.event.FppBotNavigationEvent.Action.CANCEL,
+                    bot != null ? bot.getLocation() : null);
+                org.bukkit.Bukkit.getPluginManager().callEvent(navCancelEvt);
+              }
+              if (request.onCancel() != null) request.onCancel().run();
             }
           }
 

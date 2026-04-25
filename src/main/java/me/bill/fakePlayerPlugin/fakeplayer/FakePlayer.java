@@ -118,6 +118,9 @@ public final class FakePlayer {
 
   private volatile boolean tabListDirty = true;
 
+  /** Addon-attached metadata — transient, cleared on despawn. */
+  private final java.util.Map<String, Object> metadata = new java.util.concurrent.ConcurrentHashMap<>();
+
   // ── Sleep system ──────────────────────────────────────────────────────────
   /** Station location used as the center for bed searching. null = not configured. */
   private Location sleepOrigin = null;
@@ -685,5 +688,38 @@ public final class FakePlayer {
 
   public void setSleeping(boolean sleeping) {
     this.sleeping = sleeping;
+  }
+
+  // ── Addon metadata ────────────────────────────────────────────────────────
+
+  @org.jetbrains.annotations.Nullable
+  public Object getMetadata(String key) {
+    return key != null ? metadata.get(key) : null;
+  }
+
+  public void setMetadata(String key, Object value) {
+    if (key == null) return;
+    if (value == null) {
+      metadata.remove(key);
+    } else {
+      metadata.put(key, value);
+    }
+  }
+
+  public boolean hasMetadata(String key) {
+    return key != null && metadata.containsKey(key);
+  }
+
+  public void removeMetadata(String key) {
+    if (key != null) metadata.remove(key);
+  }
+
+  @NotNull
+  public java.util.Map<String, Object> getMetadataMap() {
+    return java.util.Map.copyOf(metadata);
+  }
+
+  public void clearMetadata() {
+    metadata.clear();
   }
 }

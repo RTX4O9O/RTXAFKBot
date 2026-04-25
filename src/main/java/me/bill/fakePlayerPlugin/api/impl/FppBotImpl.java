@@ -4,9 +4,14 @@ import java.time.Duration;
 import java.util.Set;
 import java.util.UUID;
 import me.bill.fakePlayerPlugin.api.FppBot;
+import me.bill.fakePlayerPlugin.fakeplayer.BotType;
 import me.bill.fakePlayerPlugin.fakeplayer.FakePlayer;
+import org.bukkit.GameMode;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.PlayerInventory;
+import org.bukkit.util.Vector;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -132,6 +137,213 @@ public final class FppBotImpl implements FppBot {
   }
 
   @Override public int getPing() { return fp.getPing(); }
+
+  // ── Health ──────────────────────────────────────────────────────────────────
+  @Override public double getHealth() {
+    Player ent = fp.getPhysicsEntity();
+    return ent != null ? ent.getHealth() : 0.0;
+  }
+  @Override public void setHealth(double health) {
+    Player ent = fp.getPhysicsEntity();
+    if (ent != null) ent.setHealth(health);
+  }
+  @Override public double getMaxHealth() {
+    Player ent = fp.getPhysicsEntity();
+    return ent != null ? ent.getMaxHealth() : 20.0;
+  }
+  @Override public void setMaxHealth(double health) {
+    Player ent = fp.getPhysicsEntity();
+    if (ent != null) ent.setMaxHealth(health);
+  }
+  @Override public boolean isDead() {
+    Player ent = fp.getPhysicsEntity();
+    return ent == null || ent.isDead();
+  }
+
+  // ── GameMode ───────────────────────────────────────────────────────────────
+  @Override public @NotNull GameMode getGameMode() {
+    Player ent = fp.getPhysicsEntity();
+    return ent != null ? ent.getGameMode() : GameMode.SURVIVAL;
+  }
+  @Override public void setGameMode(@NotNull GameMode mode) {
+    Player ent = fp.getPhysicsEntity();
+    if (ent == null) return;
+    GameMode old = ent.getGameMode();
+    if (old == mode) return;
+    var gmEvt = new me.bill.fakePlayerPlugin.api.event.FppBotGameModeChangeEvent(this, old, mode);
+    org.bukkit.Bukkit.getPluginManager().callEvent(gmEvt);
+    if (gmEvt.isCancelled()) return;
+    ent.setGameMode(gmEvt.getNewMode());
+  }
+
+  // ── Inventory ──────────────────────────────────────────────────────────────
+  @Override public @Nullable PlayerInventory getInventory() {
+    Player ent = fp.getPhysicsEntity();
+    return ent != null ? ent.getInventory() : null;
+  }
+  @Override public @Nullable ItemStack getItemInMainHand() {
+    Player ent = fp.getPhysicsEntity();
+    return ent != null ? ent.getInventory().getItemInMainHand() : null;
+  }
+  @Override public void setItemInMainHand(@Nullable ItemStack item) {
+    Player ent = fp.getPhysicsEntity();
+    if (ent != null) ent.getInventory().setItemInMainHand(item);
+  }
+  @Override public @Nullable ItemStack getItemInOffHand() {
+    Player ent = fp.getPhysicsEntity();
+    return ent != null ? ent.getInventory().getItemInOffHand() : null;
+  }
+  @Override public void setItemInOffHand(@Nullable ItemStack item) {
+    Player ent = fp.getPhysicsEntity();
+    if (ent != null) ent.getInventory().setItemInOffHand(item);
+  }
+
+  // ── Teleport / Movement ──────────────────────────────────────────────────
+  @Override public boolean teleport(@NotNull Location location) {
+    Player ent = fp.getPhysicsEntity();
+    return ent != null && ent.teleport(location);
+  }
+  @Override public @NotNull Location getEyeLocation() {
+    Player ent = fp.getPhysicsEntity();
+    return ent != null ? ent.getEyeLocation() : fp.getLiveLocation().clone().add(0, 1.62, 0);
+  }
+  @Override public void lookAt(@NotNull Location location) {
+    Player ent = fp.getPhysicsEntity();
+    if (ent != null) ent.teleport(ent.getLocation().setDirection(location.clone().subtract(ent.getLocation()).toVector()));
+  }
+  @Override public @NotNull Vector getVelocity() {
+    Player ent = fp.getPhysicsEntity();
+    return ent != null ? ent.getVelocity() : new Vector(0, 0, 0);
+  }
+  @Override public void setVelocity(@NotNull Vector velocity) {
+    Player ent = fp.getPhysicsEntity();
+    if (ent != null) ent.setVelocity(velocity);
+  }
+
+  // ── Experience ────────────────────────────────────────────────────────────
+  @Override public int getLevel() {
+    Player ent = fp.getPhysicsEntity();
+    return ent != null ? ent.getLevel() : 0;
+  }
+  @Override public void setLevel(int level) {
+    Player ent = fp.getPhysicsEntity();
+    if (ent != null) ent.setLevel(level);
+  }
+  @Override public float getExp() {
+    Player ent = fp.getPhysicsEntity();
+    return ent != null ? ent.getExp() : 0.0f;
+  }
+  @Override public void setExp(float exp) {
+    Player ent = fp.getPhysicsEntity();
+    if (ent != null) ent.setExp(exp);
+  }
+  @Override public int getTotalExperience() {
+    Player ent = fp.getPhysicsEntity();
+    return ent != null ? ent.getTotalExperience() : 0;
+  }
+  @Override public void setTotalExperience(int exp) {
+    Player ent = fp.getPhysicsEntity();
+    if (ent != null) ent.setTotalExperience(exp);
+  }
+
+  // ── Sleep ─────────────────────────────────────────────────────────────────
+  @Override public boolean isSleeping() { return fp.isSleeping(); }
+  @Override public @Nullable Location getSleepOrigin() { return fp.getSleepOrigin(); }
+  @Override public void setSleepOrigin(@Nullable Location origin) { fp.setSleepOrigin(origin); }
+  @Override public double getSleepRadius() { return fp.getSleepRadius(); }
+  @Override public void setSleepRadius(double radius) { fp.setSleepRadius(radius); }
+
+  // ── Navigation ─────────────────────────────────────────────────────────────
+  @Override public boolean isNavAvoidWater() { return fp.isNavAvoidWater(); }
+  @Override public void setNavAvoidWater(boolean enabled) { fp.setNavAvoidWater(enabled); }
+  @Override public boolean isNavAvoidLava() { return fp.isNavAvoidLava(); }
+  @Override public void setNavAvoidLava(boolean enabled) { fp.setNavAvoidLava(enabled); }
+
+  // ── Bot type / metadata ──────────────────────────────────────────────────
+  @Override public @NotNull String getBotTypeName() {
+    BotType type = fp.getBotType();
+    return type != null ? type.name() : "AFK";
+  }
+  @Override public void setBotTypeName(@NotNull String type) {
+    fp.setBotType(BotType.parse(type));
+  }
+  @Override public @Nullable String getLuckpermsGroup() { return fp.getLuckpermsGroup(); }
+  @Override public void setLuckpermsGroup(@Nullable String group) { fp.setLuckpermsGroup(group); }
+
+  // ── Messaging / permissions ─────────────────────────────────────────────
+  @Override public void sendMessage(@NotNull String message) {
+    Player ent = fp.getPhysicsEntity();
+    if (ent != null) ent.sendMessage(message);
+  }
+  @Override public boolean hasPermission(@NotNull String permission) {
+    Player ent = fp.getPhysicsEntity();
+    return ent != null && ent.hasPermission(permission);
+  }
+  @Override public boolean isOnline() {
+    Player ent = fp.getPhysicsEntity();
+    return ent != null && ent.isOnline();
+  }
+
+  // ── Addon metadata ────────────────────────────────────────────────────────
+  @Override public void setMetadata(@NotNull String key, @Nullable Object value) { fp.setMetadata(key, value); }
+  @Override public @Nullable Object getMetadata(@NotNull String key) { return fp.getMetadata(key); }
+  @Override public boolean hasMetadata(@NotNull String key) { return fp.hasMetadata(key); }
+  @Override public void removeMetadata(@NotNull String key) { fp.removeMetadata(key); }
+  @Override public @NotNull java.util.Map<String, Object> getMetadataMap() { return fp.getMetadataMap(); }
+
+  // ── Animation / state ─────────────────────────────────────────────────────
+  @Override public void swingMainHand() {
+    Player ent = fp.getPhysicsEntity();
+    if (ent != null) ent.swingMainHand();
+  }
+  @Override public void swingOffHand() {
+    Player ent = fp.getPhysicsEntity();
+    if (ent != null) ent.swingOffHand();
+  }
+  @Override public boolean isSneaking() {
+    Player ent = fp.getPhysicsEntity();
+    return ent != null && ent.isSneaking();
+  }
+  @Override public void setSneaking(boolean sneaking) {
+    Player ent = fp.getPhysicsEntity();
+    if (ent != null) ent.setSneaking(sneaking);
+  }
+  @Override public void setSprinting(boolean sprinting) {
+    Player ent = fp.getPhysicsEntity();
+    if (ent != null) ent.setSprinting(sprinting);
+  }
+  @Override public boolean isOnGround() {
+    Player ent = fp.getPhysicsEntity();
+    return ent != null && ent.isOnGround();
+  }
+  @Override public boolean isClimbing() {
+    Player ent = fp.getPhysicsEntity();
+    return ent != null && ent.isClimbing();
+  }
+  @Override public boolean isPassenger() {
+    Player ent = fp.getPhysicsEntity();
+    return ent != null && ent.isPassenger();
+  }
+  @Override public boolean hasVehicle() {
+    Player ent = fp.getPhysicsEntity();
+    return ent != null && ent.getVehicle() != null;
+  }
+  @Override public double getReachDistance() {
+    Player ent = fp.getPhysicsEntity();
+    if (ent == null) return 3.0;
+    double base = 3.0;
+    try {
+      var attr = ent.getAttribute(org.bukkit.attribute.Attribute.PLAYER_BLOCK_INTERACTION_RANGE);
+      if (attr != null) base = attr.getValue();
+    } catch (Exception ignored) {}
+    return base;
+  }
+  @Override public void performRespawn() {
+    Player ent = fp.getPhysicsEntity();
+    if (ent != null && ent.isDead()) {
+      ent.spigot().respawn();
+    }
+  }
 
   @Override public boolean equals(Object o) {
     if (this == o) return true;

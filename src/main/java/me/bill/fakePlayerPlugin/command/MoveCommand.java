@@ -20,6 +20,7 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import me.bill.fakePlayerPlugin.api.impl.FppApiImpl;
 
 public final class MoveCommand implements FppCommand {
 
@@ -596,6 +597,7 @@ public final class MoveCommand implements FppCommand {
     final UUID targetUuid = target.getUniqueId();
     FakePlayer fp = manager.getByUuid(botUuid);
     if (fp == null) return;
+    FppApiImpl.fireTaskEvent(fp, "patrol", me.bill.fakePlayerPlugin.api.event.FppBotTaskEvent.Action.START);
     pathfinding.navigate(
         fp,
         new PathfindingService.NavigationRequest(
@@ -617,6 +619,7 @@ public final class MoveCommand implements FppCommand {
     final UUID botUuid = bot.getUniqueId();
     FakePlayer fp = manager.getByUuid(botUuid);
     if (fp == null) return;
+    FppApiImpl.fireTaskEvent(fp, "move", me.bill.fakePlayerPlugin.api.event.FppBotTaskEvent.Action.START);
     final Location fixedDest = dest.clone();
     pathfinding.navigate(
         fp,
@@ -994,6 +997,10 @@ public final class MoveCommand implements FppCommand {
   }
 
   private void cancelNavigation(@NotNull UUID botUuid) {
+    FakePlayer fp = manager.getByUuid(botUuid);
+    if (fp != null) {
+      FppApiImpl.fireTaskEvent(fp, "move", me.bill.fakePlayerPlugin.api.event.FppBotTaskEvent.Action.STOP);
+    }
     pathfinding.cancel(botUuid);
     clearMoveState(botUuid);
   }
