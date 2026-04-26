@@ -70,7 +70,7 @@ public final class StopCommand implements FppCommand {
   @Override
   public boolean execute(CommandSender sender, String[] args) {
     // Default: stop all if no argument is supplied.
-    if (args.length == 0 || args[0].equalsIgnoreCase("all")) {
+    if (args.length == 0 || args[0].equalsIgnoreCase("--all")) {
       int stopped = stopAllBots();
       if (stopped == 0) {
         sender.sendMessage(Lang.get("stop-all-nothing"));
@@ -138,7 +138,7 @@ public final class StopCommand implements FppCommand {
     List<String> out = new ArrayList<>();
     if (args.length == 1) {
       String in = args[0].toLowerCase();
-      if ("all".startsWith(in)) out.add("all");
+      if ("--all".startsWith(in)) out.add("--all");
       for (FakePlayer fp : manager.getActivePlayers())
         if (fp.getName().toLowerCase().startsWith(in)) out.add(fp.getName());
     }

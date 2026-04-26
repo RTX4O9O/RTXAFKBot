@@ -24,6 +24,7 @@ import me.bill.fakePlayerPlugin.util.FppScheduler;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.messaging.PluginMessageListener;
+import org.jetbrains.annotations.NotNull;
 
 public final class VelocityChannel implements PluginMessageListener {
 
@@ -364,7 +365,7 @@ public final class VelocityChannel implements PluginMessageListener {
   }
 
   @Override
-  public void onPluginMessageReceived(String channel, Player player, byte[] message) {
+  public void onPluginMessageReceived(@NotNull String channel, @NotNull Player player, @NotNull byte[] message) {
     if (!CHANNEL.equals(channel)) return;
     try {
       DataInputStream in = new DataInputStream(new ByteArrayInputStream(message));
@@ -407,7 +408,7 @@ public final class VelocityChannel implements PluginMessageListener {
 
     Config.debugNetwork("[VelocityChannel] BOT_SPAWN '" + name + "' from '" + originServer + "'.");
 
-    String safePacketName = (packetName == null || packetName.isBlank()) ? name : packetName;
+    String safePacketName = packetName.isBlank() ? name : packetName;
 
     RemoteBotEntry entry =
         new RemoteBotEntry(

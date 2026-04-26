@@ -208,7 +208,7 @@ head-ai:
 # ── Swim AI ───────────────────────────────────────────────────────────────────
 # Bots automatically swim upward when submerged, mimicking a player holding Jump.
 swim-ai:
-  enabled: false  # controls passive upward swimming only; pathfinding water avoidance is enforced by default
+  enabled: true  # controls passive upward swimming only; pathfinding water avoidance is enforced by default
 
 # ── Collision & Push ──────────────────────────────────────────────────────────
 # Controls how hard players push bots on contact and how bots separate from each other.

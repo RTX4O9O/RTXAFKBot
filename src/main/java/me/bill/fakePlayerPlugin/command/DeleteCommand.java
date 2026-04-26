@@ -48,7 +48,7 @@ public class DeleteCommand implements FppCommand {
       return true;
     }
 
-    if (args[0].equalsIgnoreCase("all")) {
+    if (args[0].equalsIgnoreCase("--all")) {
       if (Perm.missing(sender, Perm.DELETE_ALL)) {
         sender.sendMessage(Lang.get("no-permission"));
         return true;
@@ -148,7 +148,7 @@ public class DeleteCommand implements FppCommand {
     if (args.length == 1) {
       List<String> suggestions = new java.util.ArrayList<>();
       String typed = args[0].toLowerCase();
-      if (Perm.has(sender, Perm.DELETE_ALL) && "all".startsWith(typed)) suggestions.add("all");
+      if (Perm.has(sender, Perm.DELETE_ALL) && "--all".startsWith(typed)) suggestions.add("--all");
       if (Perm.has(sender, Perm.DELETE)) {
         if ("--random".startsWith(typed)) suggestions.add("--random");
         if ("--count".startsWith(typed)) suggestions.add("--count");

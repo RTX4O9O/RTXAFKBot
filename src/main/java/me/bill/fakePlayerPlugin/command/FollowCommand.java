@@ -65,7 +65,7 @@ public final class FollowCommand implements FppCommand {
       return true;
     }
 
-    if (args[0].equalsIgnoreCase("all")) {
+    if (args[0].equalsIgnoreCase("--all")) {
       return executeAll(sender, args);
     }
 
@@ -122,12 +122,7 @@ public final class FollowCommand implements FppCommand {
   }
 
   private boolean executeAll(CommandSender sender, String[] args) {
-    if (args.length < 2) {
-      sender.sendMessage(Lang.get("follow-usage"));
-      return true;
-    }
-
-    if (args[1].equalsIgnoreCase("--stop")) {
+    if (args.length >= 2 && args[1].equalsIgnoreCase("--stop")) {
       int stopped = 0;
       for (FakePlayer fp : manager.getActivePlayers()) {
         if (isFollowing(fp.getUuid())) {
@@ -140,7 +135,7 @@ public final class FollowCommand implements FppCommand {
     }
 
     Player target;
-    if (!args[1].equalsIgnoreCase("--start")) {
+    if (args.length >= 2 && !args[1].equalsIgnoreCase("--start")) {
       target = Bukkit.getPlayer(args[1]);
       if (target == null) {
         sender.sendMessage(Lang.get("player-not-found", "player", args[1]));
@@ -283,7 +278,7 @@ public final class FollowCommand implements FppCommand {
     List<String> out = new ArrayList<>();
     if (args.length == 1) {
       String in = args[0].toLowerCase();
-      if ("all".startsWith(in)) out.add("all");
+      if ("--all".startsWith(in)) out.add("--all");
       for (FakePlayer fp : manager.getActivePlayers())
         if (fp.getName().toLowerCase().startsWith(in)) out.add(fp.getName());
     } else if (args.length == 2) {

@@ -93,7 +93,7 @@ public final class MoveCommand implements FppCommand {
       return true;
     }
 
-    if (args[0].equalsIgnoreCase("all")) {
+    if (args[0].equalsIgnoreCase("--all")) {
       return executeAll(sender, args);
     }
 
@@ -1042,7 +1042,7 @@ public final class MoveCommand implements FppCommand {
     if (args.length == 1) {
       String in = args[0].toLowerCase();
 
-      if ("all".startsWith(in)) out.add("all");
+      if ("--all".startsWith(in)) out.add("--all");
       for (FakePlayer fp : manager.getActivePlayers())
         if (fp.getName().toLowerCase().startsWith(in)) out.add(fp.getName());
     } else if (args.length == 2) {
@@ -1051,7 +1051,7 @@ public final class MoveCommand implements FppCommand {
       for (String flag : List.of("--to", "--coords", "--pos", "--wp", "--roam", "--stop"))
         if (flag.startsWith(in)) out.add(flag);
 
-      if (!args[0].equalsIgnoreCase("all")) {
+      if (!args[0].equalsIgnoreCase("--all")) {
         for (Player p : Bukkit.getOnlinePlayers()) {
           if (manager.getByName(p.getName()) == null && p.getName().toLowerCase().startsWith(in))
             out.add(p.getName());

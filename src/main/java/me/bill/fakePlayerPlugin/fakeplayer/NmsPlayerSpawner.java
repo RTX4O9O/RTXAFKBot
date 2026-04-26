@@ -17,6 +17,7 @@ import org.bukkit.Location;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.World;
 import org.bukkit.entity.Player;
+import org.bukkit.util.Vector;
 
 public final class NmsPlayerSpawner {
 
@@ -1012,6 +1013,53 @@ public final class NmsPlayerSpawner {
       }
     } catch (Exception e) {
       FppLogger.debug("NmsPlayerSpawner.startUsingMainHandItem failed: " + e.getMessage());
+    }
+  }
+
+  public static void interactBlock(Player bot, org.bukkit.block.Block block) {
+    if (!initialized || craftPlayerGetHandleMethod == null) return;
+    try {
+      Object nmsPlayer = craftPlayerGetHandleMethod.invoke(bot);
+      ClassLoader cl = nmsPlayer.getClass().getClassLoader();
+
+      Class<?> interactionHandClass = cl.loadClass("net.minecraft.world.InteractionHand");
+      Object[] hands = interactionHandClass.getEnumConstants();
+      if (hands == null || hands.length == 0) return;
+      Object mainHand = hands[0];
+
+      Class<?> blockPosClass = cl.loadClass("net.minecraft.core.BlockPos");
+      Class<?> directionClass = cl.loadClass("net.minecraft.core.Direction");
+      Class<?> blockHitResultClass = cl.loadClass("net.minecraft.world.phys.BlockHitResult");
+
+      Object blockPos = blockPosClass.getConstructor(int.class, int.class, int.class)
+          .newInstance(block.getX(), block.getY(), block.getZ());
+
+      Object direction = directionClass.getMethod("getNearest", float.class, float.class, float.class)
+          .invoke(null, 0f, -1f, 0f);
+
+      Object blockHit = blockHitResultClass.getConstructor(
+              Vector.class, directionClass, blockPosClass, boolean.class)
+          .newInstance(new Vector(0.5, 0.5, 0.5), direction, blockPos, false);
+
+      Object gameMode = nmsPlayer.getClass().getMethod("gameMode").invoke(nmsPlayer);
+      Object level = nmsPlayer.getClass().getMethod("level").invoke(nmsPlayer);
+      Object itemStack = nmsPlayer.getClass().getMethod("getItemInHand", interactionHandClass)
+          .invoke(nmsPlayer, mainHand);
+
+      Object result = gameMode.getClass().getMethod("useItemOn",
+              nmsPlayer.getClass(), level.getClass(),
+              cl.loadClass("net.minecraft.world.item.ItemStack"), interactionHandClass, blockHitResultClass)
+          .invoke(gameMode, nmsPlayer, level, itemStack, mainHand, blockHit);
+
+      if (result != null) {
+        Method consumesAction = result.getClass().getMethod("consumesAction");
+        if ((boolean) consumesAction.invoke(result)) {
+          Method swing = nmsPlayer.getClass().getMethod("swing", interactionHandClass);
+          swing.invoke(nmsPlayer, mainHand);
+        }
+      }
+    } catch (Exception e) {
+      FppLogger.debug("NmsPlayerSpawner.interactBlock failed: " + e.getMessage());
     }
   }
 

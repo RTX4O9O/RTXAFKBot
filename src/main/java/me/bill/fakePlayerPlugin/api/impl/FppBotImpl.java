@@ -147,11 +147,16 @@ public final class FppBotImpl implements FppBot {
   }
   @Override public double getMaxHealth() {
     Player ent = fp.getPhysicsEntity();
-    return ent != null ? ent.getMaxHealth() : 20.0;
+    if (ent == null) return 20.0;
+    var attr = ent.getAttribute(me.bill.fakePlayerPlugin.util.AttributeCompat.maxHealth());
+    return attr != null ? attr.getValue() : 20.0;
   }
   @Override public void setMaxHealth(double health) {
     Player ent = fp.getPhysicsEntity();
-    if (ent != null) ent.setMaxHealth(health);
+    if (ent != null) {
+      var attr = ent.getAttribute(me.bill.fakePlayerPlugin.util.AttributeCompat.maxHealth());
+      if (attr != null) attr.setBaseValue(health);
+    }
   }
   @Override public boolean isDead() {
     Player ent = fp.getPhysicsEntity();
@@ -316,6 +321,7 @@ public final class FppBotImpl implements FppBot {
     Player ent = fp.getPhysicsEntity();
     if (ent != null) ent.setSprinting(sprinting);
   }
+  @SuppressWarnings("deprecation")
   @Override public boolean isOnGround() {
     Player ent = fp.getPhysicsEntity();
     return ent != null && ent.isOnGround();

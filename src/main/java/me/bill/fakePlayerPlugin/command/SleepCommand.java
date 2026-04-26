@@ -146,7 +146,7 @@ public final class SleepCommand implements FppCommand {
       return true;
     }
 
-    boolean isAll = args[0].equalsIgnoreCase("all");
+    boolean isAll = args[0].equalsIgnoreCase("--all");
 
     // ── --stop variant ────────────────────────────────────────────────────
     if (args[1].equalsIgnoreCase("--stop")) {
@@ -801,7 +801,7 @@ public final class SleepCommand implements FppCommand {
     List<String> out = new ArrayList<>();
     if (args.length == 1) {
       String in = args[0].toLowerCase();
-      if ("all".startsWith(in)) out.add("all");
+      if ("--all".startsWith(in)) out.add("--all");
       for (FakePlayer fp : manager.getActivePlayers())
         if (fp.getName().toLowerCase().startsWith(in)) out.add(fp.getName());
     } else if (args.length == 2) {

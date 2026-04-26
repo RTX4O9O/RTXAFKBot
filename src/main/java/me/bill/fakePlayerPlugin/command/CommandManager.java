@@ -162,7 +162,7 @@ public class CommandManager implements CommandExecutor, TabCompleter {
         && sender instanceof org.bukkit.entity.Player player
         && subArgs.length > 0
         && !subArgs[0].startsWith("--")
-        && !subArgs[0].equalsIgnoreCase("all")) {
+        && !subArgs[0].equalsIgnoreCase("--all")) {
       me.bill.fakePlayerPlugin.fakeplayer.FakePlayer fp =
           plugin.getFakePlayerManager().getByName(subArgs[0]);
       if (fp != null && !BotAccess.canAdminister(player, fp)) {
@@ -213,7 +213,7 @@ public class CommandManager implements CommandExecutor, TabCompleter {
       return true;
     }
 
-    if (subArgs[0].equalsIgnoreCase("all") && shouldExpandAll(subName)) {
+    if (subArgs[0].equalsIgnoreCase("--all") && shouldExpandAll(subName)) {
       String[] rest = Arrays.copyOfRange(subArgs, 1, subArgs.length);
       int started = 0;
       for (me.bill.fakePlayerPlugin.fakeplayer.FakePlayer fp : plugin.getFakePlayerManager().getActivePlayers()) {

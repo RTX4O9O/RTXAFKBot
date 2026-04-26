@@ -49,7 +49,7 @@ public class FreezeCommand implements FppCommand {
     String target = args[0];
     String statArg = args.length >= 2 ? args[1].toLowerCase() : null;
 
-    if (target.equalsIgnoreCase("all")) {
+    if (target.equalsIgnoreCase("--all")) {
       return handleFreezeAll(sender, statArg);
     }
 
@@ -132,7 +132,7 @@ public class FreezeCommand implements FppCommand {
           manager.getActiveNames().stream()
               .filter(n -> n.toLowerCase().startsWith(prefix))
               .collect(Collectors.toList());
-      if ("all".startsWith(prefix)) names.add(0, "all");
+      if ("--all".startsWith(prefix)) names.add(0, "--all");
       return names;
     }
     if (args.length == 2) {

@@ -70,7 +70,7 @@ public class TphCommand implements FppCommand {
       return true;
     }
 
-    if (args.length > 0 && args[0].equalsIgnoreCase("all")) {
+    if (args.length > 0 && args[0].equalsIgnoreCase("--all")) {
       if (!Perm.has(sender, Perm.USER_TPH_ALL)) {
         sender.sendMessage(Lang.get("no-permission"));
         return true;
@@ -151,11 +151,11 @@ public class TphCommand implements FppCommand {
         new ArrayList<>(
             pool.stream()
                 .map(FakePlayer::getName)
-                .filter(n -> !n.equalsIgnoreCase("all"))
+                .filter(n -> !n.equalsIgnoreCase("--all"))
                 .filter(n -> n.toLowerCase().startsWith(prefix))
                 .toList());
-    if (Perm.has(sender, Perm.USER_TPH_ALL) && "all".startsWith(prefix)) {
-      completions.add(0, "all");
+    if (Perm.has(sender, Perm.USER_TPH_ALL) && "--all".startsWith(prefix)) {
+      completions.add(0, "--all");
     }
     return completions;
   }

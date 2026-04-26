@@ -271,6 +271,7 @@ public class FakePlayerManager {
                         isNavigating && navJumpHolding.getOrDefault(fp.getUuid(), 0) > 0;
                     PathfindingService.tickSwimAi(bot, navJump, isNavigating);
                   }
+                  navJumpHolding.computeIfPresent(fp.getUuid(), (k, v) -> v > 1 ? v - 1 : null);
 
                   if (fp.isAutoEatEnabled()) {
                     tickAutoEat(bot);
@@ -460,7 +461,7 @@ public class FakePlayerManager {
       wasOnGround.add(uuid);
       return;
     }
-    boolean onGround = bot.isOnGround();
+    boolean onGround = !bot.getLocation().clone().subtract(0, 0.05, 0).getBlock().isPassable();
     if (!before.getWorld().equals(after.getWorld())) {
       trackedFallDistance.remove(uuid);
       if (onGround) wasOnGround.add(uuid);

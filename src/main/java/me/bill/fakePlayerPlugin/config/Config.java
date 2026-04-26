@@ -402,7 +402,7 @@ public final class Config {
   }
 
   public static boolean swimAiEnabled() {
-    return cfg.getBoolean("swim-ai.enabled", false);
+    return cfg.getBoolean("swim-ai.enabled", true);
   }
 
   public static boolean pathfindingParkour() {

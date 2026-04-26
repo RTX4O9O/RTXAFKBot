@@ -271,7 +271,7 @@ public final class AttackCommand implements FppCommand {
                 huntMode)
             : null;
 
-    if (botName.equalsIgnoreCase("all")) {
+    if (botName.equalsIgnoreCase("--all")) {
       if (stop) {
         stopAll();
         sender.sendMessage(Lang.get("attack-stopped-all"));
@@ -373,7 +373,7 @@ public final class AttackCommand implements FppCommand {
     if (args.length == 1) {
       String prefix = args[0].toLowerCase();
       List<String> out = new ArrayList<>();
-      for (String s : List.of("--stop", "stop", "all")) if (s.startsWith(prefix)) out.add(s);
+      for (String s : List.of("--stop", "stop", "--all")) if (s.startsWith(prefix)) out.add(s);
       for (FakePlayer fp : manager.getActivePlayers())
         if (fp.getName().toLowerCase().startsWith(prefix)) out.add(fp.getName());
       return out;
