@@ -6,7 +6,9 @@
       "Bash(java -version)",
       "Bash(mvn clean *)",
       "Bash(grep -n \"^  }$\\\\|^  {$\\\\|^  public\\\\|^  private\\\\|^  void\\\\|^  int\\\\|^  boolean\\\\|^  double\\\\|^  String\\\\|^  List\\\\|^  Map\\\\|^  FakePlayer\\\\|^  BotType\\\\|^  if \\(\\\\|^  for \\(\\\\|^  while \\(\" /var/home/admin/IdeaProjects/fake-player-plugin/src/main/java/me/bill/fakePlayerPlugin/fakeplayer/FakePlayerManager.java)",
-      "Bash(python3 *)"
+      "Bash(python3 *)",
+      "Bash(xargs ls *)",
+      "Bash(xargs cat *)"
     ]
   }
 }
