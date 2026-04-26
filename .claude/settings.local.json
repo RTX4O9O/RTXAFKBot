@@ -15,7 +15,13 @@
       "Bash(javac -cp target/classes:/home/admin/.m2/repository/io/papermc/paper/paper-api/1.21.11-R0.1-SNAPSHOT/paper-api-1.21.11-R0.1-SNAPSHOT.jar:/var/home/admin/IdeaProjects/fake-player-plugin/libs/paper-1.21.11-mojang-mapped.jar:/var/home/admin/IdeaProjects/fake-player-plugin/libs/api-5.5.jar:/var/home/admin/IdeaProjects/fake-player-plugin/libs/authlib-4.0.43.jar:/var/home/admin/IdeaProjects/fake-player-plugin/libs/faststats-bukkit-0.18.1.jar:/var/home/admin/IdeaProjects/fake-player-plugin/libs/faststats-core-0.18.1.jar:/var/home/admin/IdeaProjects/fake-player-plugin/libs/placeholderapi-2.11.6.jar:/var/home/admin/IdeaProjects/fake-player-plugin/libs/com/github/retrooper/packetevents-spigot/2.11.2/packetevents-spigot-2.11.2.jar -d target/classes src/main/java/me/bill/fakePlayerPlugin/fakeplayer/BotPathfinder.java src/main/java/me/bill/fakePlayerPlugin/fakeplayer/PathfindingService.java)",
       "Bash(javac -cp target/classes:/home/admin/.m2/repository/io/papermc/paper/paper-api/1.21.11-R0.1-SNAPSHOT/paper-api-1.21.11-R0.1-SNAPSHOT.jar:/var/home/admin/IdeaProjects/fake-player-plugin/libs/paper-1.21.11-mojang-mapped.jar:/home/admin/.m2/repository/org/jetbrains/annotations/26.0.2/annotations-26.0.2.jar:/var/home/admin/IdeaProjects/fake-player-plugin/libs/api-5.5.jar:/var/home/admin/IdeaProjects/fake-player-plugin/libs/authlib-4.0.43.jar:/var/home/admin/IdeaProjects/fake-player-plugin/libs/faststats-bukkit-0.18.1.jar:/var/home/admin/IdeaProjects/fake-player-plugin/libs/faststats-core-0.18.1.jar:/var/home/admin/IdeaProjects/fake-player-plugin/libs/placeholderapi-2.11.6.jar:/var/home/admin/IdeaProjects/fake-player-plugin/libs/com/github/retrooper/packetevents-spigot/2.11.2/packetevents-spigot-2.11.2.jar -d target/classes src/main/java/me/bill/fakePlayerPlugin/fakeplayer/BotPathfinder.java src/main/java/me/bill/fakePlayerPlugin/fakeplayer/PathfindingService.java)",
       "Bash(grep -n \"\\\\`all\\\\`\" /home/admin/IdeaProjects/fake-player-plugin/AGENTS.md)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(sed -i '75,92d' frontend/wiki/Changelog.md)",
+      "Bash(sed -n '72,78p' frontend/wiki/Changelog.md)",
+      "Bash(sed -i '367,386d' README.md)",
+      "Bash(sed -n '363,370p' README.md)",
+      "Bash(sed -i '366d' README.md)",
+      "Bash(sed -n '362,368p' README.md)"
     ]
   }
 }
