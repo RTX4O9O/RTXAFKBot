@@ -4,6 +4,7 @@ import java.lang.reflect.Field;
 import me.bill.fakePlayerPlugin.FakePlayerPlugin;
 import me.bill.fakePlayerPlugin.config.Config;
 import me.bill.fakePlayerPlugin.fakeplayer.FakePlayer;
+import me.bill.fakePlayerPlugin.fakeplayer.BotBroadcast;
 import me.bill.fakePlayerPlugin.fakeplayer.FakePlayerManager;
 import me.bill.fakePlayerPlugin.util.FppScheduler;
 import org.bukkit.Bukkit;
@@ -77,10 +78,10 @@ public class PlayerJoinListener implements Listener {
   @EventHandler(priority = EventPriority.LOWEST)
   public void onQuitEarly(PlayerQuitEvent event) {
 
-    // Do not suppress quit messages here for plugin-driven despawns.
-    // The MONITOR handler below decides based on config + rename/transition state.
-    // If we null it here, bots never show leave messages even when enabled.
-    if (manager.isDespawning(event.getPlayer().getUniqueId())) return;
+    if (manager.isDespawning(event.getPlayer().getUniqueId())) {
+      event.quitMessage(null);
+      return;
+    }
 
     if (manager.getCount() == 0) return;
 
@@ -281,8 +282,15 @@ public class PlayerJoinListener implements Listener {
     java.util.UUID uuid = event.getPlayer().getUniqueId();
 
     if (manager.isDespawning(uuid)) {
-
-      if (!Config.leaveMessage() || manager.isRenaming(uuid)) event.quitMessage(null);
+      event.quitMessage(null);
+      if (Config.leaveMessage()
+          && !manager.isRenaming(uuid)
+          && !manager.hasBroadcastedDespawnLeave(uuid)) {
+        String displayName = manager.getDespawningDisplayName(uuid);
+        if (displayName != null) {
+          BotBroadcast.broadcastLeaveByDisplayName(displayName);
+        }
+      }
       return;
     }
 

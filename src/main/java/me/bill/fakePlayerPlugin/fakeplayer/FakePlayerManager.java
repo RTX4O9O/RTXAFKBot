@@ -76,6 +76,7 @@ public class FakePlayerManager {
   private final Set<UUID> navLockedBots = ConcurrentHashMap.newKeySet();
 
   private final ConcurrentHashMap<UUID, String> despawningBotIds = new ConcurrentHashMap<>();
+  private final Set<UUID> despawnLeaveBroadcastedIds = ConcurrentHashMap.newKeySet();
 
   private final Set<UUID> renamingBotIds = ConcurrentHashMap.newKeySet();
 
@@ -554,6 +555,10 @@ public class FakePlayerManager {
 
   public String getDespawningDisplayName(UUID uuid) {
     return despawningBotIds.get(uuid);
+  }
+
+  public boolean hasBroadcastedDespawnLeave(UUID uuid) {
+    return despawnLeaveBroadcastedIds.contains(uuid);
   }
 
   public void markRenaming(UUID uuid) {
@@ -1496,11 +1501,16 @@ public class FakePlayerManager {
             }
 
             String despawnName = resolveDespawnDisplayName(target);
+            boolean broadcastLeave = Config.leaveMessage() && !renamingBotIds.contains(target.getUuid());
             despawningBotIds.put(target.getUuid(), despawnName);
+            if (broadcastLeave) {
+              despawnLeaveBroadcastedIds.add(target.getUuid());
+              BotBroadcast.broadcastLeaveByDisplayName(despawnName);
+            }
             try {
               FakePlayerBody.removeAll(target);
             } finally {
-              despawningBotIds.remove(target.getUuid());
+              clearDespawnTrackingNextTick(target.getUuid());
             }
             if (chunkLoader != null) chunkLoader.releaseForBot(target);
 
@@ -1509,9 +1519,9 @@ public class FakePlayerManager {
             List<Player> snapshot = new ArrayList<>(Bukkit.getOnlinePlayers());
             for (Player online : snapshot) PacketHelper.sendTabListRemove(online, target);
 
-            if (Config.leaveMessage()) {
+            if (broadcastLeave) {
               var vc = plugin.getVelocityChannel();
-              if (vc != null) vc.broadcastLeaveToNetwork(target.getDisplayName());
+              if (vc != null) vc.broadcastLeaveToNetwork(despawnName);
             }
             if (db != null) db.recordRemoval(target.getUuid(), "DELETED");
 
@@ -1845,12 +1855,17 @@ public class FakePlayerManager {
           }
 
           String despawnName = resolveDespawnDisplayName(target);
+          boolean broadcastLeave = Config.leaveMessage() && !renamingBotIds.contains(target.getUuid());
           despawningBotIds.put(target.getUuid(), despawnName);
+          if (broadcastLeave) {
+            despawnLeaveBroadcastedIds.add(target.getUuid());
+            BotBroadcast.broadcastLeaveByDisplayName(despawnName);
+          }
           try {
 
             FakePlayerBody.removeAll(target);
           } finally {
-            despawningBotIds.remove(target.getUuid());
+            clearDespawnTrackingNextTick(target.getUuid());
           }
           if (chunkLoader != null) chunkLoader.releaseForBot(target);
 
@@ -1859,9 +1874,9 @@ public class FakePlayerManager {
           List<Player> snapshot = new ArrayList<>(Bukkit.getOnlinePlayers());
           for (Player online : snapshot) PacketHelper.sendTabListRemove(online, target);
 
-          if (Config.leaveMessage() && !renamingBotIds.contains(target.getUuid())) {
+          if (broadcastLeave) {
             var vc = plugin.getVelocityChannel();
-            if (vc != null) vc.broadcastLeaveToNetwork(target.getDisplayName());
+            if (vc != null) vc.broadcastLeaveToNetwork(despawnName);
           }
           if (db != null) db.recordRemoval(target.getUuid(), "DELETED");
 
@@ -2579,6 +2594,16 @@ public class FakePlayerManager {
       return fp.getNameTagNick();
     }
     return fp.getDisplayName();
+  }
+
+  private void clearDespawnTrackingNextTick(UUID uuid) {
+    FppScheduler.runSyncLater(
+        plugin,
+        () -> {
+          despawningBotIds.remove(uuid);
+          despawnLeaveBroadcastedIds.remove(uuid);
+        },
+        1L);
   }
 
   private String pickRandomSkinName() {
