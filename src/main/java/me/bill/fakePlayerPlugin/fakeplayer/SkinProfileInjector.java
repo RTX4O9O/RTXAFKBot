@@ -7,6 +7,7 @@ import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.UUID;
 
 public final class SkinProfileInjector {
 
@@ -30,6 +31,25 @@ public final class SkinProfileInjector {
     if (tryApply(propertyMap, property)) return;
 
     throw new IllegalStateException("Could not find a writable PropertyMap in GameProfile");
+  }
+
+  public static Object createGameProfile(Class<?> gameProfileClass, UUID uuid, String name, SkinProfile skin)
+      throws Exception {
+    if (skin == null || !skin.isValid()) {
+      Constructor<?> ctor = gameProfileClass.getConstructor(UUID.class, String.class);
+      return ctor.newInstance(uuid, name);
+    }
+
+    ClassLoader cl = gameProfileClass.getClassLoader();
+    Class<?> propertyMapClass = cl.loadClass("com.mojang.authlib.properties.PropertyMap");
+    Class<?> multimapClass = cl.loadClass("com.google.common.collect.Multimap");
+    Class<?> arrayListMultimapClass = cl.loadClass("com.google.common.collect.ArrayListMultimap");
+    Object multimap = arrayListMultimapClass.getMethod("create").invoke(null);
+    Object propertyMap = propertyMapClass.getConstructor(multimapClass).newInstance(multimap);
+    Constructor<?> ctor = gameProfileClass.getConstructor(UUID.class, String.class, propertyMapClass);
+    Object profile = ctor.newInstance(uuid, name, propertyMap);
+    apply(profile, skin);
+    return profile;
   }
 
   private static Object createProperty(Class<?> propertyClass, String value, String signature)

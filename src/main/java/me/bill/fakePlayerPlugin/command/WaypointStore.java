@@ -4,6 +4,7 @@ import java.io.File;
 import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import me.bill.fakePlayerPlugin.util.BotDataYaml;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.World;
@@ -12,6 +13,8 @@ import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.plugin.java.JavaPlugin;
 
 public final class WaypointStore {
+
+  private static final String ROOT = "waypoints.routes";
 
   private final JavaPlugin plugin;
 
@@ -24,13 +27,42 @@ public final class WaypointStore {
 
   public void load() {
     file = new File(plugin.getDataFolder(), "data/waypoints.yml");
-    if (!file.exists()) return;
+    YamlConfiguration unified = BotDataYaml.load(plugin);
+    ConfigurationSection root = unified.getConfigurationSection(ROOT);
+    if (root == null && file.exists()) {
+      YamlConfiguration legacy = YamlConfiguration.loadConfiguration(file);
+      root = legacy;
+      if (!legacy.getKeys(false).isEmpty()) {
+        final YamlConfiguration migrated = legacy;
+        try {
+          BotDataYaml.replaceSection(
+              plugin,
+              ROOT,
+              section -> {
+                for (String routeName : migrated.getKeys(false)) {
+                  ConfigurationSection routeSection = migrated.getConfigurationSection(routeName);
+                  if (routeSection == null) continue;
+                  for (String i : routeSection.getKeys(false)) {
+                    ConfigurationSection pos = routeSection.getConfigurationSection(i);
+                    if (pos == null) continue;
+                    for (String key : pos.getKeys(false)) {
+                      section.set(routeName + "." + i + "." + key, pos.get(key));
+                    }
+                  }
+                }
+              });
+          if (file.exists()) file.delete();
+        } catch (IOException ex) {
+          plugin.getLogger().warning("[FPP] Failed to migrate waypoints.yml: " + ex.getMessage());
+        }
+      }
+    }
+    if (root == null) return;
 
-    YamlConfiguration yaml = YamlConfiguration.loadConfiguration(file);
     int routeCount = 0, posCount = 0;
 
-    for (String routeName : yaml.getKeys(false)) {
-      ConfigurationSection routeSection = yaml.getConfigurationSection(routeName);
+    for (String routeName : root.getKeys(false)) {
+      ConfigurationSection routeSection = root.getConfigurationSection(routeName);
       if (routeSection == null) continue;
 
       List<Location> positions = new ArrayList<>();
@@ -71,30 +103,29 @@ public final class WaypointStore {
   }
 
   public void save() {
-    if (file == null) {
-      file = new File(plugin.getDataFolder(), "data/waypoints.yml");
-    }
-    file.getParentFile().mkdirs();
-
-    YamlConfiguration yaml = new YamlConfiguration();
-    for (Map.Entry<String, List<Location>> e : routes.entrySet()) {
-      String routeName = e.getKey();
-      List<Location> positions = e.getValue();
-      for (int i = 0; i < positions.size(); i++) {
-        Location loc = positions.get(i);
-        String prefix = routeName + "." + i + ".";
-        yaml.set(prefix + "world", loc.getWorld() != null ? loc.getWorld().getName() : "world");
-        yaml.set(prefix + "x", loc.getX());
-        yaml.set(prefix + "y", loc.getY());
-        yaml.set(prefix + "z", loc.getZ());
-        yaml.set(prefix + "yaw", (double) loc.getYaw());
-        yaml.set(prefix + "pitch", (double) loc.getPitch());
-      }
-    }
     try {
-      yaml.save(file);
+      BotDataYaml.replaceSection(
+          plugin,
+          ROOT,
+          section -> {
+            for (Map.Entry<String, List<Location>> e : routes.entrySet()) {
+              String routeName = e.getKey();
+              List<Location> positions = e.getValue();
+              for (int i = 0; i < positions.size(); i++) {
+                Location loc = positions.get(i);
+                String prefix = routeName + "." + i + ".";
+                section.set(prefix + "world", loc.getWorld() != null ? loc.getWorld().getName() : "world");
+                section.set(prefix + "x", loc.getX());
+                section.set(prefix + "y", loc.getY());
+                section.set(prefix + "z", loc.getZ());
+                section.set(prefix + "yaw", (double) loc.getYaw());
+                section.set(prefix + "pitch", (double) loc.getPitch());
+              }
+            }
+          });
+      if (file != null && file.exists()) file.delete();
     } catch (IOException ex) {
-      plugin.getLogger().warning("[FPP] Could not save waypoints.yml: " + ex.getMessage());
+      plugin.getLogger().warning("[FPP] Could not save " + BotDataYaml.FILE_NAME + " waypoints section: " + ex.getMessage());
     }
   }
 

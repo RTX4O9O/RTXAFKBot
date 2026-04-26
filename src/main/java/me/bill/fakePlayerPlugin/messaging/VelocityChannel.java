@@ -13,14 +13,18 @@ import me.bill.fakePlayerPlugin.config.Config;
 import me.bill.fakePlayerPlugin.fakeplayer.BotBroadcast;
 import me.bill.fakePlayerPlugin.fakeplayer.BotChatAI;
 import me.bill.fakePlayerPlugin.fakeplayer.FakePlayer;
+import me.bill.fakePlayerPlugin.fakeplayer.FakePlayerBody;
 import me.bill.fakePlayerPlugin.fakeplayer.FakePlayerManager;
 import me.bill.fakePlayerPlugin.fakeplayer.PacketHelper;
 import me.bill.fakePlayerPlugin.fakeplayer.RemoteBotCache;
 import me.bill.fakePlayerPlugin.fakeplayer.RemoteBotEntry;
+import org.bukkit.persistence.PersistentDataType;
 import me.bill.fakePlayerPlugin.util.FppLogger;
+import me.bill.fakePlayerPlugin.util.FppScheduler;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.messaging.PluginMessageListener;
+import org.jetbrains.annotations.NotNull;
 
 public final class VelocityChannel implements PluginMessageListener {
 
@@ -47,6 +51,8 @@ public final class VelocityChannel implements PluginMessageListener {
 
   private final java.util.Set<String> recentIds = ConcurrentHashMap.newKeySet();
 
+  private final java.util.Set<UUID> pendingProxyDespawnUuids = ConcurrentHashMap.newKeySet();
+
   private volatile boolean pendingResync = false;
 
   private volatile boolean pendingProxyBroadcast = false;
@@ -61,7 +67,7 @@ public final class VelocityChannel implements PluginMessageListener {
   private String generateAndTrackId() {
     String id = System.currentTimeMillis() + "-" + ThreadLocalRandom.current().nextInt(1_000_000);
     recentIds.add(id);
-    Bukkit.getScheduler().runTaskLater(plugin, () -> recentIds.remove(id), 100L);
+    FppScheduler.runSyncLater(plugin, () -> recentIds.remove(id), 100L);
     return id;
   }
 
@@ -71,14 +77,21 @@ public final class VelocityChannel implements PluginMessageListener {
 
   private void trackIncoming(String msgId) {
     recentIds.add(msgId);
-    Bukkit.getScheduler().runTaskLater(plugin, () -> recentIds.remove(msgId), 100L);
+    FppScheduler.runSyncLater(plugin, () -> recentIds.remove(msgId), 100L);
   }
 
   private Player findRealCarrierPlayer() {
     for (Player p : Bukkit.getOnlinePlayers()) {
-      if (manager.getByUuid(p.getUniqueId()) == null) {
-        return p;
+      if (manager.getByUuid(p.getUniqueId()) != null) continue;
+      // Guard against bots whose bodies are still online after activePlayers was cleared
+      // (e.g. during bulk despawn). Skip any player with the fake-player PDC tag.
+      if (FakePlayerManager.FAKE_PLAYER_KEY != null) {
+        String pdc =
+            p.getPersistentDataContainer()
+                .get(FakePlayerManager.FAKE_PLAYER_KEY, PersistentDataType.STRING);
+        if (pdc != null && pdc.startsWith(FakePlayerBody.VISUAL_PDC_VALUE)) continue;
       }
+      return p;
     }
     return null;
   }
@@ -118,12 +131,12 @@ public final class VelocityChannel implements PluginMessageListener {
     }
   }
 
-  public void sendDirectToProxy(String subchannel, String... data) {
+  public boolean sendDirectToProxy(String subchannel, String... data) {
     Player carrier = findRealCarrierPlayer();
     if (carrier == null) {
       Config.debugNetwork(
           "[VelocityChannel] fpp:proxy send dropped (no real carrier): " + subchannel);
-      return;
+      return false;
     }
     try {
       ByteArrayOutputStream buf = new ByteArrayOutputStream();
@@ -140,9 +153,11 @@ public final class VelocityChannel implements PluginMessageListener {
               + " bytes) via "
               + carrier.getName()
               + ".");
+      return true;
     } catch (IOException e) {
       FppLogger.warn(
           "[FPP-Proxy] sendDirectToProxy failed for '" + subchannel + "': " + e.getMessage());
+      return false;
     }
   }
 
@@ -206,7 +221,11 @@ public final class VelocityChannel implements PluginMessageListener {
   public void broadcastBotDespawn(UUID uuid) {
     String msgId = generateAndTrackId();
 
-    sendDirectToProxy(SUBCHANNEL_BOT_DESPAWN, msgId, Config.serverId(), uuid.toString());
+    boolean sent = sendDirectToProxy(SUBCHANNEL_BOT_DESPAWN, msgId, Config.serverId(), uuid.toString());
+    if (!sent) {
+      pendingProxyDespawnUuids.add(uuid);
+      scheduleProxyRetryIfNeeded();
+    }
 
     if (Config.isNetworkMode()) {
       sendPluginMessage(SUBCHANNEL_BOT_DESPAWN, msgId, Config.serverId(), uuid.toString());
@@ -263,11 +282,10 @@ public final class VelocityChannel implements PluginMessageListener {
     String msgId =
         System.currentTimeMillis() + "-" + ThreadLocalRandom.current().nextInt(1_000_000);
 
-    try {
-      sendDirectToProxy(SUBCHANNEL_SERVER_OFFLINE, msgId, Config.serverId());
-    } catch (Exception e) {
+    boolean sent = sendDirectToProxy(SUBCHANNEL_SERVER_OFFLINE, msgId, Config.serverId());
+    if (!sent) {
       Config.debugNetwork(
-          "[VelocityChannel] SERVER_OFFLINE fpp:proxy send failed: " + e.getMessage());
+          "[VelocityChannel] SERVER_OFFLINE fpp:proxy send failed (no real carrier).");
     }
 
     if (Config.isNetworkMode()) {
@@ -301,12 +319,14 @@ public final class VelocityChannel implements PluginMessageListener {
   private void scheduleProxyRetryIfNeeded() {
     if (retryTaskRunning) return;
     retryTaskRunning = true;
-    Bukkit.getScheduler()
-        .runTaskTimer(
+    final int[] retryTaskId = {-1};
+    retryTaskId[0] =
+        FppScheduler.runSyncRepeatingWithId(
             plugin,
-            task -> {
-              if (!pendingProxyBroadcast) {
-                task.cancel();
+            () -> {
+              boolean nothingToDo = !pendingProxyBroadcast && pendingProxyDespawnUuids.isEmpty();
+              if (nothingToDo) {
+                FppScheduler.cancelTask(retryTaskId[0]);
                 retryTaskRunning = false;
                 return;
               }
@@ -315,12 +335,29 @@ public final class VelocityChannel implements PluginMessageListener {
                 return;
               }
 
-              task.cancel();
-              retryTaskRunning = false;
-              pendingProxyBroadcast = false;
-              for (me.bill.fakePlayerPlugin.fakeplayer.FakePlayer botFp :
-                  manager.getActivePlayers()) {
-                broadcastBotSpawn(botFp);
+              // Flush any pending despawns first
+              if (!pendingProxyDespawnUuids.isEmpty()) {
+                java.util.Set<UUID> copy = new java.util.HashSet<>(pendingProxyDespawnUuids);
+                pendingProxyDespawnUuids.clear();
+                for (UUID pendingUuid : copy) {
+                  String msgId = generateAndTrackId();
+                  sendDirectToProxy(
+                      SUBCHANNEL_BOT_DESPAWN, msgId, Config.serverId(), pendingUuid.toString());
+                }
+              }
+
+              // Then flush pending spawns
+              if (pendingProxyBroadcast) {
+                pendingProxyBroadcast = false;
+                for (me.bill.fakePlayerPlugin.fakeplayer.FakePlayer botFp :
+                    manager.getActivePlayers()) {
+                  broadcastBotSpawn(botFp);
+                }
+              }
+
+              if (pendingProxyDespawnUuids.isEmpty() && !pendingProxyBroadcast) {
+                FppScheduler.cancelTask(retryTaskId[0]);
+                retryTaskRunning = false;
               }
             },
             60L,
@@ -328,7 +365,7 @@ public final class VelocityChannel implements PluginMessageListener {
   }
 
   @Override
-  public void onPluginMessageReceived(String channel, Player player, byte[] message) {
+  public void onPluginMessageReceived(@NotNull String channel, @NotNull Player player, @NotNull byte[] message) {
     if (!CHANNEL.equals(channel)) return;
     try {
       DataInputStream in = new DataInputStream(new ByteArrayInputStream(message));
@@ -371,7 +408,7 @@ public final class VelocityChannel implements PluginMessageListener {
 
     Config.debugNetwork("[VelocityChannel] BOT_SPAWN '" + name + "' from '" + originServer + "'.");
 
-    String safePacketName = (packetName == null || packetName.isBlank()) ? name : packetName;
+    String safePacketName = packetName.isBlank() ? name : packetName;
 
     RemoteBotEntry entry =
         new RemoteBotEntry(
@@ -528,22 +565,21 @@ public final class VelocityChannel implements PluginMessageListener {
       var csm = plugin.getConfigSyncManager();
       if (csm != null) {
 
-        Bukkit.getScheduler()
-            .runTaskAsynchronously(
-                plugin,
-                () -> {
-                  boolean pulled = csm.pull(value, false);
-                  if (pulled) {
-                    FppLogger.info(
-                        "[ConfigSync] Reactive pull applied for '"
-                            + value
-                            + "' (pushed by "
-                            + originServer
-                            + ").");
+        FppScheduler.runAsync(
+            plugin,
+            () -> {
+              boolean pulled = csm.pull(value, false);
+              if (pulled) {
+                FppLogger.info(
+                    "[ConfigSync] Reactive pull applied for '"
+                        + value
+                        + "' (pushed by "
+                        + originServer
+                        + ").");
 
-                    Bukkit.getScheduler().runTask(plugin, () -> reloadSubsystemForFile(value));
-                  }
-                });
+                FppScheduler.runSync(plugin, () -> reloadSubsystemForFile(value));
+              }
+            });
       }
     }
   }
@@ -563,14 +599,13 @@ public final class VelocityChannel implements PluginMessageListener {
             + originServer
             + "' — re-broadcasting local bots.");
 
-    Bukkit.getScheduler()
-        .runTask(
-            plugin,
-            () -> {
-              for (me.bill.fakePlayerPlugin.fakeplayer.FakePlayer fp : manager.getActivePlayers()) {
-                broadcastBotSpawn(fp);
-              }
-            });
+    FppScheduler.runSync(
+        plugin,
+        () -> {
+          for (me.bill.fakePlayerPlugin.fakeplayer.FakePlayer fp : manager.getActivePlayers()) {
+            broadcastBotSpawn(fp);
+          }
+        });
   }
 
   private void handleServerOffline(DataInputStream in) throws IOException {
@@ -599,22 +634,21 @@ public final class VelocityChannel implements PluginMessageListener {
     cache.removeAllFromServer(originServer);
 
     if (!evicted.isEmpty() && Config.tabListEnabled()) {
-      Bukkit.getScheduler()
-          .runTask(
-              plugin,
-              () -> {
-                for (Player online : Bukkit.getOnlinePlayers()) {
-                  for (UUID uuid : evicted) {
-                    PacketHelper.sendTabListRemoveByUuid(online, uuid);
-                  }
-                }
-                Config.debugNetwork(
-                    "[VelocityChannel] Removed "
-                        + evicted.size()
-                        + " tab entries for offline server '"
-                        + originServer
-                        + "'.");
-              });
+      FppScheduler.runSync(
+          plugin,
+          () -> {
+            for (Player online : Bukkit.getOnlinePlayers()) {
+              for (UUID uuid : evicted) {
+                PacketHelper.sendTabListRemoveByUuid(online, uuid);
+              }
+            }
+            Config.debugNetwork(
+                "[VelocityChannel] Removed "
+                    + evicted.size()
+                    + " tab entries for offline server '"
+                    + originServer
+                    + "'.");
+          });
     }
   }
 

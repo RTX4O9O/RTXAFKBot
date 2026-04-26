@@ -55,19 +55,19 @@ public final class HelpGui implements Listener {
         CAT_CORE,
         Material.NETHER_STAR,
         Material.GRAY_DYE,
-        "ꜱᴘᴀᴡɴ, ᴅᴇꜱᴘᴀᴡɴ, ꜱᴡᴀᴘ, ᴘᴇᴀᴋꜱ & ᴍᴏʀᴇ."),
+        "ꜱᴘᴀᴡɴ, ᴅᴇꜱᴘᴀᴡɴ, ꜱᴀᴠᴇ, ꜱᴡᴀᴘ, ᴘᴇᴀᴋꜱ & ᴍᴏʀᴇ."),
     BOTS(
         "ʙᴏᴛꜱ",
         CAT_BOT,
         Material.PLAYER_HEAD,
         Material.SKELETON_SKULL,
-        "ᴘᴇʀ-ʙᴏᴛ ᴍᴀɴᴀɢᴇᴍᴇɴᴛ & ʀᴀɴᴋꜱ."),
+        "ᴘᴇʀ-ʙᴏᴛ ᴍᴀɴᴀɢᴇᴍᴇɴᴛ, ɪɴᴠᴇɴᴛᴏʀʏ & ʀᴀɴᴋꜱ."),
     ACTIONS(
         "ᴀᴄᴛɪᴏɴꜱ",
         CAT_ACTION,
         Material.DIAMOND_PICKAXE,
         Material.IRON_PICKAXE,
-        "ɴᴀᴠ, ᴍɪɴɪɴɢ, ᴘʟᴀᴄɪɴɢ & ᴜꜱᴇ."),
+        "ɴᴀᴠ, ᴍɪɴɪɴɢ, ꜰɪɴᴅ, ꜰᴏʟʟᴏᴡ, ꜱʟᴇᴇᴘ & ᴍᴏʀᴇ."),
     CHAT("ᴄʜᴀᴛ", CAT_CHAT, Material.WRITABLE_BOOK, Material.BOOK, "ᴄʜᴀᴛ, ᴀɪ & ꜰɪʟᴛᴇʀꜱ.");
 
     final String label;
@@ -415,21 +415,39 @@ public final class HelpGui implements Listener {
           "swap",
           "peaks",
           "sync",
-          "alert" ->
+          "alert",
+          "save" ->
           Category.CORE;
       case "tp",
           "tph",
           "freeze",
           "rename",
-          "ping",
           "inventory",
           "inv",
           "cmd",
           "xp",
           "rank",
-          "lpinfo" ->
+          "lpinfo",
+          "bots",
+          "mybots",
+          "botmenu",
+          "setowner",
+          "groups",
+          "group",
+          "botgroups" ->
           Category.BOTS;
-      case "move", "mine", "place", "use", "storage", "waypoint", "wp", "attack" ->
+      case "move",
+          "mine",
+          "place",
+          "use",
+          "storage",
+          "waypoint",
+          "wp",
+          "attack",
+          "find",
+          "follow",
+          "sleep",
+          "stop" ->
           Category.ACTIONS;
       case "chat", "personality", "persona", "badword" -> Category.CHAT;
       default -> Category.CORE;
@@ -462,15 +480,22 @@ public final class HelpGui implements Listener {
       case "settings" -> Material.COMPARATOR;
       case "migrate" -> Material.ANVIL;
       case "sync" -> Material.OBSERVER;
+      case "save" -> Material.ENDER_CHEST;
       case "alert" -> Material.BELL;
       case "xp" -> Material.EXPERIENCE_BOTTLE;
-      case "ping" -> Material.LIME_DYE;
       case "badword" -> Material.BARRIER;
       case "rename" -> Material.NAME_TAG;
       case "personality", "persona" -> Material.WRITABLE_BOOK;
       case "waypoint", "wp" -> Material.LODESTONE;
       case "storage" -> Material.BARREL;
       case "place" -> Material.OAK_PLANKS;
+      case "find" -> Material.COMPASS;
+      case "follow" -> Material.LEAD;
+      case "sleep" -> Material.RED_BED;
+      case "stop" -> Material.BARRIER;
+      case "bots", "mybots", "botmenu" -> Material.PLAYER_HEAD;
+      case "groups", "group", "botgroups" -> Material.CHEST;
+      case "setowner" -> Material.NAME_TAG;
       default -> Material.PAPER;
     };
   }

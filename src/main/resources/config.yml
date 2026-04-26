@@ -5,7 +5,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Internal — managed automatically. Do NOT edit.
-config-version: 65
+config-version: 67
 language: en
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -50,6 +50,11 @@ leave-delay:
 # Placeholders: {bot_name}  {spawner}  {num}
 # Colors:  <#0079FF>{bot_name}</#0079FF>  or  <gray>{bot_name}</gray>
 bot-name:
+  # Name source for auto-generated bot names (no --name flag).
+  #   pool   — pick from bot-names.yml (requires names in the file)
+  #   random — generate a realistic Minecraft-style username on the fly (default)
+  mode: random
+
   admin-format: '{bot_name}'           # Used for /fpp spawn (admin)
   user-format:  'bot-{spawner}-{num}'  # Used for /fpp spawn (user tier)
 
@@ -173,6 +178,15 @@ chunk-loading:
                    #      N   = fixed radius of N chunks (e.g. 4, 6, 10)
   update-interval: 20  # Ticks between position re-checks. 20 = 1 second.
                        # Lower = more responsive, higher = less overhead.
+  mass-disable-threshold: 100  # 0 = never auto-disable. When active bots reach this count,
+                               # plugin chunk tickets are released to avoid mass-bot lag.
+                                # Pathfinding can still plan through unloaded chunks.
+
+# ── Automation Defaults ───────────────────────────────────────────────────────
+# Defaults copied to newly spawned/restored bots. Existing bots keep per-bot values.
+automation:
+  auto-eat: true        # Bots eat food from inventory when hunger prevents sprinting.
+  auto-place-bed: true  # Bots may place a bed from inventory for auto-sleep, then break it after waking.
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -194,7 +208,7 @@ head-ai:
 # ── Swim AI ───────────────────────────────────────────────────────────────────
 # Bots automatically swim upward when submerged, mimicking a player holding Jump.
 swim-ai:
-  enabled: true   # false = bots sink and drown instead of swimming up
+  enabled: true  # controls passive upward swimming only; pathfinding water avoidance is enforced by default
 
 # ── Collision & Push ──────────────────────────────────────────────────────────
 # Controls how hard players push bots on contact and how bots separate from each other.
@@ -224,10 +238,11 @@ pathfinding:
   waypoint-arrival-distance: 0.65 # Active path waypoint snap radius
   sprint-distance: 6.0           # Start sprinting when farther than this many blocks
   follow-recalc-distance: 3.5    # Moving targets force a recalc after moving this far
+  follow-recalc-interval: 100    # Follow heartbeat recalc interval in ticks
   recalc-interval: 60            # Heartbeat recalc interval in ticks
 
   # ── Stuck Detection ────────────────────────────────────────────────────────
-  stuck-ticks: 8                 # Low-movement ticks before a bot is considered stuck
+  stuck-ticks: 5                 # Low-movement ticks before a bot is considered stuck
   stuck-threshold: 0.04          # Min horizontal movement per tick before triggering stuck logic
 
   # ── Block Interaction ──────────────────────────────────────────────────────
@@ -236,43 +251,9 @@ pathfinding:
 
   # ── Search Limits ─────────────────────────────────────────────────────────
   max-range: 64                  # Max straight-line search range in blocks
-  max-nodes: 2000                # Node cap for plain searches
-  max-nodes-extended: 4000       # Node cap when parkour/break/place are enabled
+  max-nodes: 900                 # Node cap for plain searches
+  max-nodes-extended: 1800       # Node cap when parkour/break/place are enabled
   max-fall: 3                    # Max blocks the bot will fall during navigation (1-16)
-
-# ── PVP AI  ·  ⚠ COMING SOON ─────────────────────────────────────────────────
-# Restricted to internal testing — all settings below are locked to their defaults.
-# Editing them has no effect until the PVP system is publicly released.
-pvp-ai:
-  pvp: false          # Master switch. Forced false — dev-only until public release.
-
-  # Core
-  difficulty: medium  # easy · medium · hard · tier1 · hacker
-  combat-mode: crystal  # crystal = end-crystal PvP · sword = melee
-  gear: netherite     # diamond or netherite
-  defensive-mode: true  # true = retaliate only when attacked · false = aggressive
-  detect-range: 32.0  # How far (blocks) the bot scans for targets
-  kit: kit1           # Kit preset at spawn: kit1 / kit2 / kit3 / kit4
-
-  # Techniques
-  critting: true          # Land critical hits by falling during attacks
-  s-tapping: true         # Tap S mid-swing to reset attack cooldown
-  strafing: true          # Circle the target while fighting
-  shielding: false        # Equip and use a shield to block hits
-  speed-buffs: true       # Active Speed & Strength effects
-  jump-reset: true        # W-tap for knockback bonus on hits
-  random: false           # Randomise techniques each round
-  sprint: true            # Sprint toward the target during combat
-  walk-backwards: false   # Back away while swinging to control knockback
-
-  # Abilities
-  pearl: true             # Throw ender pearls to close gaps / escape
-  pearl-spam: false       # Spam pearls in bursts for aggressive gap-closing
-  hole-mode: false        # Pathfind to an obsidian hole for cover
-  auto-refill: true       # Re-equip a totem after popping one
-  auto-respawn: true      # Automatically respawn and rejoin after death
-  spawn-protection: true  # Stay invulnerable during a short grace period at spawn
-
 
 # ═════════════════════════════════════════════════════════════════════════════
 #  5 · BOT CHAT
@@ -404,7 +385,6 @@ fake-chat:
     enabled: false
     keywords: {}
     # Example:
-    #   pvp: "pvp-reactions"
     #   trade: "trade-reactions"
     #   help: "help-reactions"
 

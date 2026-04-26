@@ -11,6 +11,7 @@ import me.bill.fakePlayerPlugin.FakePlayerPlugin;
 import me.bill.fakePlayerPlugin.config.Config;
 import me.bill.fakePlayerPlugin.database.DatabaseManager;
 import me.bill.fakePlayerPlugin.util.FppLogger;
+import me.bill.fakePlayerPlugin.util.FppScheduler;
 import org.bukkit.Bukkit;
 import org.bukkit.configuration.file.YamlConfiguration;
 
@@ -54,19 +55,17 @@ public final class ConfigSyncManager {
 
     if (Config.configSyncMode().equalsIgnoreCase("AUTO_PULL")
         || Config.configSyncMode().equalsIgnoreCase("AUTO_PUSH")) {
-      Bukkit.getScheduler()
-          .runTaskLater(
-              plugin,
-              () -> {
-                try {
-                  pullAll(true);
-                  Config.debugConfigSync(
-                      "[ConfigSync] Auto-pulled latest configs from" + " network.");
-                } catch (Exception e) {
-                  FppLogger.warn("[ConfigSync] Auto-pull failed: " + e.getMessage());
-                }
-              },
-              40L);
+      FppScheduler.runSyncLater(
+          plugin,
+          () -> {
+            try {
+              pullAll(true);
+              Config.debugConfigSync("[ConfigSync] Auto-pulled latest configs from" + " network.");
+            } catch (Exception e) {
+              FppLogger.warn("[ConfigSync] Auto-pull failed: " + e.getMessage());
+            }
+          },
+          40L);
     }
   }
 
@@ -146,7 +145,7 @@ public final class ConfigSyncManager {
 
       var vc = plugin.getVelocityChannel();
       if (vc != null) {
-        Bukkit.getScheduler().runTask(plugin, () -> vc.broadcastConfigUpdated(fileName));
+        FppScheduler.runSync(plugin, () -> vc.broadcastConfigUpdated(fileName));
       }
 
       return true;

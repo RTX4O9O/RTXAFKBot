@@ -4,8 +4,8 @@ FPP is configured through `plugins/FakePlayerPlugin/config.yml`.
 
 Most changes apply after running `/fpp reload` — no full restart needed.
 
-> **Bundled config stamp:** `63`  
-> **Current migration target:** `63`  
+> **Bundled config stamp:** `67`  
+> **Current migration target:** `67`  
 > The bundled file in the jar and the runtime migrator target are now in sync.
 
 ---
@@ -45,6 +45,8 @@ Most changes apply after running `/fpp reload` — no full restart needed.
 | `server-list` | Server-list player count settings (`count-bots`, `include-remote-bots`) |
 | `performance` | Position packet culling |
 | `nametag-integration` | NameTag plugin soft-dependency settings |
+| `automation` | `auto-eat`, `auto-place-bed` — realistic bot survival defaults |
+| `attack-mob` | PvE auto-targeting defaults (`default-range`, `default-priority`, etc.) |
 | `debug` / `logging.debug.*` | Debug logging |
 | `update-checker` | Update notifications |
 | `metrics` | FastStats telemetry opt-in/out |
@@ -142,12 +144,14 @@ Used to stagger mass spawn / mass despawn actions so they look more natural.
 
 ```yaml
 bot-name:
+  mode: random
   admin-format: '{bot_name}'
   user-format: 'bot-{spawner}-{num}'
 ```
 
 | Key | Description |
 |-----|-------------|
+| `mode` | Name source: `random` (generate realistic usernames on the fly) or `pool` (pick from `bot-names.yml`) |
 | `admin-format` | Name format for admin-spawned bots |
 | `user-format` | Name format for user-tier bots |
 
@@ -354,6 +358,21 @@ Important `radius` behavior in current config:
 
 Per-bot override: each bot has its own `chunkLoadRadius` field (`-1` = follow global, `0` = disable, `1-N` = fixed). Editable in `BotSettingGui` General tab.
 
+New key:
+- `mass-disable-threshold: 100` — when active bots reach this count, plugin chunk tickets are released to avoid mass-bot lag. `0` = never auto-disable.
+
+---
+
+## `automation`
+
+```yaml
+automation:
+  auto-eat: true        # Bots eat food from inventory when hunger prevents sprinting
+  auto-place-bed: true  # Bots may place a bed from inventory for auto-sleep, then break it after waking
+```
+
+Defaults copied to newly spawned/restored bots. Existing bots keep per-bot values.
+
 ---
 
 ## `head-ai`
@@ -418,14 +437,15 @@ pathfinding:
   waypoint-arrival-distance: 0.65
   sprint-distance: 6.0
   follow-recalc-distance: 3.5
+  follow-recalc-interval: 100
   recalc-interval: 60
-  stuck-ticks: 8
+  stuck-ticks: 5
   stuck-threshold: 0.04
   break-ticks: 15
   place-ticks: 5
   max-range: 64
-  max-nodes: 2000
-  max-nodes-extended: 4000
+  max-nodes: 900
+  max-nodes-extended: 1800
   max-fall: 3
 ```
 
@@ -446,6 +466,7 @@ Feature flags:
 Tuning:
 - `arrival-distance`, `patrol-arrival-distance`, `waypoint-arrival-distance`
 - `follow-recalc-distance` — how far target must move before path recalculates
+- `follow-recalc-interval` — heartbeat recalc interval in ticks for follow mode
 - stuck detection thresholds
 - block interaction timings
 - node/range caps

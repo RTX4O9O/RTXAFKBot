@@ -3,6 +3,7 @@ package me.bill.fakePlayerPlugin.command;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import me.bill.fakePlayerPlugin.FakePlayerPlugin;
+import me.bill.fakePlayerPlugin.config.Config;
 import me.bill.fakePlayerPlugin.fakeplayer.FakePlayer;
 import me.bill.fakePlayerPlugin.fakeplayer.FakePlayerManager;
 import me.bill.fakePlayerPlugin.fakeplayer.PathfindingService;
@@ -13,12 +14,11 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import me.bill.fakePlayerPlugin.api.impl.FppApiImpl;
 
 public final class FollowCommand implements FppCommand {
 
   private static final double FOLLOW_DISTANCE = 2.0;
-
-  private static final double RECALC_DISTANCE = 3.5;
 
   private final FakePlayerPlugin plugin;
   private final FakePlayerManager manager;
@@ -40,7 +40,7 @@ public final class FollowCommand implements FppCommand {
 
   @Override
   public String getUsage() {
-    return "<bot|all> <player>  |  <bot|all> --stop";
+    return "<bot|all> <player|--start>  |  <bot|all> --stop";
   }
 
   @Override
@@ -65,7 +65,7 @@ public final class FollowCommand implements FppCommand {
       return true;
     }
 
-    if (args[0].equalsIgnoreCase("all")) {
+    if (args[0].equalsIgnoreCase("--all")) {
       return executeAll(sender, args);
     }
 
@@ -122,12 +122,7 @@ public final class FollowCommand implements FppCommand {
   }
 
   private boolean executeAll(CommandSender sender, String[] args) {
-    if (args.length < 2) {
-      sender.sendMessage(Lang.get("follow-usage"));
-      return true;
-    }
-
-    if (args[1].equalsIgnoreCase("--stop")) {
+    if (args.length >= 2 && args[1].equalsIgnoreCase("--stop")) {
       int stopped = 0;
       for (FakePlayer fp : manager.getActivePlayers()) {
         if (isFollowing(fp.getUuid())) {
@@ -140,7 +135,7 @@ public final class FollowCommand implements FppCommand {
     }
 
     Player target;
-    if (!args[1].equalsIgnoreCase("--start")) {
+    if (args.length >= 2 && !args[1].equalsIgnoreCase("--start")) {
       target = Bukkit.getPlayer(args[1]);
       if (target == null) {
         sender.sendMessage(Lang.get("player-not-found", "player", args[1]));
@@ -182,6 +177,12 @@ public final class FollowCommand implements FppCommand {
   }
 
   private void startFollowing(@NotNull FakePlayer fp, @NotNull Player target) {
+    FppApiImpl.fireTaskEvent(fp, "follow", me.bill.fakePlayerPlugin.api.event.FppBotTaskEvent.Action.START);
+    var followEvt = new me.bill.fakePlayerPlugin.api.event.FppBotFollowEvent(
+        new me.bill.fakePlayerPlugin.api.impl.FppBotImpl(fp),
+        me.bill.fakePlayerPlugin.api.event.FppBotFollowEvent.Action.START,
+        target);
+    org.bukkit.Bukkit.getPluginManager().callEvent(followEvt);
     final UUID botUuid = fp.getUuid();
     final UUID targetUuid = target.getUniqueId();
     activeFollows.put(botUuid, targetUuid);
@@ -205,30 +206,23 @@ public final class FollowCommand implements FppCommand {
               return liveTarget.getLocation();
             },
             FOLLOW_DISTANCE,
-            RECALC_DISTANCE,
+            Config.pathfindingFollowRecalcDistance(),
             Integer.MAX_VALUE,
-            () -> {
-              if (activeFollows.containsKey(botUuid)) {
-                Bukkit.getScheduler()
-                    .runTaskLater(
-                        plugin,
-                        () -> {
-                          if (!activeFollows.containsKey(botUuid)) return;
-                          FakePlayer liveFp = manager.getByUuid(botUuid);
-                          if (liveFp == null) {
-                            cleanupFollow(botUuid);
-                            return;
-                          }
-                          scheduleNavigation(liveFp, botUuid, targetUuid);
-                        },
-                        5L);
-              }
-            },
+            null,
             () -> cleanupFollow(botUuid),
             null));
   }
 
   public void stopFollowing(@NotNull UUID botUuid) {
+    FakePlayer fp = manager.getByUuid(botUuid);
+    if (fp != null) {
+      FppApiImpl.fireTaskEvent(fp, "follow", me.bill.fakePlayerPlugin.api.event.FppBotTaskEvent.Action.STOP);
+      var followEvt = new me.bill.fakePlayerPlugin.api.event.FppBotFollowEvent(
+          new me.bill.fakePlayerPlugin.api.impl.FppBotImpl(fp),
+          me.bill.fakePlayerPlugin.api.event.FppBotFollowEvent.Action.STOP,
+          null);
+      org.bukkit.Bukkit.getPluginManager().callEvent(followEvt);
+    }
     if (activeFollows.remove(botUuid) != null) {
       pathfinding.cancel(botUuid);
     }
@@ -254,6 +248,14 @@ public final class FollowCommand implements FppCommand {
     startFollowing(fp, target);
   }
 
+  public void resumeFollowing(@NotNull FakePlayer fp) {
+    UUID uuid = fp.getUuid();
+    UUID targetUuid = getFollowTarget(uuid);
+    if (targetUuid != null) {
+      resumeFollowing(fp, targetUuid);
+    }
+  }
+
   public void resumeFollowing(@NotNull FakePlayer fp, @NotNull UUID targetUuid) {
     Player target = Bukkit.getPlayer(targetUuid);
     if (target == null || !target.isOnline()) return;
@@ -276,7 +278,7 @@ public final class FollowCommand implements FppCommand {
     List<String> out = new ArrayList<>();
     if (args.length == 1) {
       String in = args[0].toLowerCase();
-      if ("all".startsWith(in)) out.add("all");
+      if ("--all".startsWith(in)) out.add("--all");
       for (FakePlayer fp : manager.getActivePlayers())
         if (fp.getName().toLowerCase().startsWith(in)) out.add(fp.getName());
     } else if (args.length == 2) {

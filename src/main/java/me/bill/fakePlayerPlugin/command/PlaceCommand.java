@@ -15,6 +15,9 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import me.bill.fakePlayerPlugin.api.FppBotBlockPlaceEvent;
+import me.bill.fakePlayerPlugin.api.impl.FppApiImpl;
+import me.bill.fakePlayerPlugin.api.impl.FppBotImpl;
 import me.bill.fakePlayerPlugin.FakePlayerPlugin;
 import me.bill.fakePlayerPlugin.config.Config;
 import me.bill.fakePlayerPlugin.fakeplayer.BotNavUtil;
@@ -26,6 +29,7 @@ import me.bill.fakePlayerPlugin.fakeplayer.PathfindingService;
 import me.bill.fakePlayerPlugin.fakeplayer.StorageInteractionHelper;
 import me.bill.fakePlayerPlugin.lang.Lang;
 import me.bill.fakePlayerPlugin.permission.Perm;
+import me.bill.fakePlayerPlugin.util.FppScheduler;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerPlayer;
@@ -104,9 +108,9 @@ public final class PlaceCommand implements FppCommand {
   }
 
   @Override
-  public String getUsage() {
-    return "<bot> [--once|--stop]  |  --stop";
-  }
+   public String getUsage() {
+      return "<bot> [--once|--stop]  |  --stop";
+   }
 
   @Override
   public String getDescription() {
@@ -170,24 +174,38 @@ public final class PlaceCommand implements FppCommand {
         }
 
         case "--pos1", "pos1" -> {
-          if (!(sender instanceof Player player)) {
-            sender.sendMessage(Lang.get("player-only"));
-            return true;
+          Location posLoc;
+          if (args.length >= 5) {
+            Location senderLoc = (sender instanceof Player pl) ? pl.getLocation() : bot.getLocation();
+            try {
+              int px = (int) Math.floor(parseCoord(args[2], senderLoc.getX()));
+              int py = (int) Math.floor(parseCoord(args[3], senderLoc.getY()));
+              int pz = (int) Math.floor(parseCoord(args[4], senderLoc.getZ()));
+              posLoc = new Location(bot.getWorld(), px, py, pz);
+            } catch (NumberFormatException e) {
+              sender.sendMessage(Lang.get("mine-coords-invalid"));
+              return true;
+            }
+          } else {
+            if (!(sender instanceof Player player)) {
+              sender.sendMessage(Lang.get("player-only"));
+              return true;
+            }
+            posLoc = player.getLocation().getBlock().getLocation();
           }
-          Block target = player.getLocation().getBlock();
           AreaSelection sel = selections.computeIfAbsent(fp.getUuid(), k -> new AreaSelection());
-          sel.pos1 = target.getLocation();
+          sel.pos1 = posLoc;
           sender.sendMessage(
               Lang.get(
                   "place-pos1-set",
                   "name",
                   fp.getDisplayName(),
                   "x",
-                  String.valueOf(target.getX()),
+                  String.valueOf(posLoc.getBlockX()),
                   "y",
-                  String.valueOf(target.getY()),
+                  String.valueOf(posLoc.getBlockY()),
                   "z",
-                  String.valueOf(target.getZ())));
+                  String.valueOf(posLoc.getBlockZ())));
           if (sel.isComplete())
             sender.sendMessage(
                 Lang.get(
@@ -200,24 +218,38 @@ public final class PlaceCommand implements FppCommand {
         }
 
         case "--pos2", "pos2" -> {
-          if (!(sender instanceof Player player)) {
-            sender.sendMessage(Lang.get("player-only"));
-            return true;
+          Location posLoc;
+          if (args.length >= 5) {
+            Location senderLoc = (sender instanceof Player pl) ? pl.getLocation() : bot.getLocation();
+            try {
+              int px = (int) Math.floor(parseCoord(args[2], senderLoc.getX()));
+              int py = (int) Math.floor(parseCoord(args[3], senderLoc.getY()));
+              int pz = (int) Math.floor(parseCoord(args[4], senderLoc.getZ()));
+              posLoc = new Location(bot.getWorld(), px, py, pz);
+            } catch (NumberFormatException e) {
+              sender.sendMessage(Lang.get("mine-coords-invalid"));
+              return true;
+            }
+          } else {
+            if (!(sender instanceof Player player)) {
+              sender.sendMessage(Lang.get("player-only"));
+              return true;
+            }
+            posLoc = player.getLocation().getBlock().getLocation();
           }
-          Block target = player.getLocation().getBlock();
           AreaSelection sel = selections.computeIfAbsent(fp.getUuid(), k -> new AreaSelection());
-          sel.pos2 = target.getLocation();
+          sel.pos2 = posLoc;
           sender.sendMessage(
               Lang.get(
                   "place-pos2-set",
                   "name",
                   fp.getDisplayName(),
                   "x",
-                  String.valueOf(target.getX()),
+                  String.valueOf(posLoc.getBlockX()),
                   "y",
-                  String.valueOf(target.getY()),
+                  String.valueOf(posLoc.getBlockY()),
                   "z",
-                  String.valueOf(target.getZ())));
+                  String.valueOf(posLoc.getBlockZ())));
           if (sel.isComplete())
             sender.sendMessage(
                 Lang.get(
@@ -379,6 +411,16 @@ public final class PlaceCommand implements FppCommand {
   }
 
   private void startNavigation(FakePlayer fp, Location dest, Runnable onArrive) {
+    // Force placeBlocks=true so the bot can bridge gaps en-route to its target.
+    me.bill.fakePlayerPlugin.fakeplayer.BotPathfinder.PathOptions baseOpts =
+        me.bill.fakePlayerPlugin.fakeplayer.PathfindingService.resolvePathOptions(fp);
+    me.bill.fakePlayerPlugin.fakeplayer.BotPathfinder.PathOptions opts =
+        new me.bill.fakePlayerPlugin.fakeplayer.BotPathfinder.PathOptions(
+            fp.isNavParkour(),
+            fp.isNavBreakBlocks(),
+            true,
+            baseOpts.avoidWater(),
+            baseOpts.avoidLava());
     pathfinding.navigate(
         fp,
         new PathfindingService.NavigationRequest(
@@ -390,11 +432,13 @@ public final class PlaceCommand implements FppCommand {
             onArrive,
             null,
             null,
-            null));
+            null,
+            opts));
   }
 
   private void lockAndStartPlacing(
       FakePlayer fp, boolean once, Location dest, float capturedYaw, float capturedPitch) {
+    FppApiImpl.fireTaskEvent(fp, "place", me.bill.fakePlayerPlugin.api.event.FppBotTaskEvent.Action.START);
     UUID uuid = fp.getUuid();
     Player bot = fp.getPlayer();
     if (bot == null) return;
@@ -402,7 +446,7 @@ public final class PlaceCommand implements FppCommand {
     Location lockLoc = dest.clone();
     lockLoc.setYaw(capturedYaw);
     lockLoc.setPitch(capturedPitch);
-    bot.teleport(lockLoc);
+    FppScheduler.teleportAsync(bot, lockLoc);
     bot.setRotation(capturedYaw, capturedPitch);
     NmsPlayerSpawner.setHeadYaw(bot, capturedYaw);
     NmsPlayerSpawner.setMovementForward(bot, 0f);
@@ -418,20 +462,18 @@ public final class PlaceCommand implements FppCommand {
     placeStates.put(uuid, state);
 
     int taskId =
-        Bukkit.getScheduler()
-            .runTaskTimer(
-                plugin,
-                () -> {
-                  Player b = fp.getPlayer();
-                  if (b == null || !b.isOnline()) {
-                    stopPlacing(uuid);
-                    return;
-                  }
-                  tickPlacing(fp, state);
-                },
-                0L,
-                1L)
-            .getTaskId();
+        FppScheduler.runSyncRepeatingWithId(
+            plugin,
+            () -> {
+              Player b = fp.getPlayer();
+              if (b == null || !b.isOnline()) {
+                stopPlacing(uuid);
+                return;
+              }
+              tickPlacing(fp, state);
+            },
+            0L,
+            1L);
 
     placingTasks.put(uuid, taskId);
   }
@@ -463,6 +505,7 @@ public final class PlaceCommand implements FppCommand {
       Block hitBlock = hit.getHitBlock();
       BlockFace face = hit.getHitBlockFace();
       placeBlockNms(
+          fp,
           bot,
           new BlockPos(hitBlock.getX(), hitBlock.getY(), hitBlock.getZ()),
           toNmsDirection(face));
@@ -482,9 +525,10 @@ public final class PlaceCommand implements FppCommand {
     state.freeze = PLACE_COOLDOWN;
   }
 
-  private void placeBlockNms(Player bot, BlockPos faceBlockPos, Direction faceDir) {
+  private void placeBlockNms(FakePlayer fp, Player bot, BlockPos faceBlockPos, Direction faceDir) {
     try {
       ServerPlayer nms = ((CraftPlayer) bot).getHandle();
+      if (!fireBlockPlaceHook(fp, faceBlockPos)) return;
       Vec3 hitVec =
           new Vec3(
               faceBlockPos.getX() + 0.5 + faceDir.getStepX() * 0.5,
@@ -515,6 +559,17 @@ public final class PlaceCommand implements FppCommand {
       case WEST -> Direction.WEST;
       default -> Direction.UP;
     };
+  }
+
+  private boolean fireBlockPlaceHook(FakePlayer fp, BlockPos pos) {
+    if (fp == null || pos == null) return false;
+    Player bot = fp.getPlayer();
+    if (bot == null || bot.getWorld() == null) return false;
+    var event =
+        new FppBotBlockPlaceEvent(
+            new FppBotImpl(fp), bot.getWorld().getBlockAt(pos.getX(), pos.getY(), pos.getZ()));
+    Bukkit.getPluginManager().callEvent(event);
+    return !event.isCancelled();
   }
 
   private PlacementInfo findBestPlacement(
@@ -598,8 +653,12 @@ public final class PlaceCommand implements FppCommand {
   }
 
   public void stopPlacing(UUID botUuid) {
+    FakePlayer fp = manager.getByUuid(botUuid);
+    if (fp != null) {
+      FppApiImpl.fireTaskEvent(fp, "place", me.bill.fakePlayerPlugin.api.event.FppBotTaskEvent.Action.STOP);
+    }
     Integer taskId = placingTasks.remove(botUuid);
-    if (taskId != null) Bukkit.getScheduler().cancelTask(taskId);
+    if (taskId != null) FppScheduler.cancelTask(taskId);
     manager.unlockAction(botUuid);
     manager.unlockNavigation(botUuid);
     placeStates.remove(botUuid);
@@ -614,6 +673,19 @@ public final class PlaceCommand implements FppCommand {
   public boolean isActivePlaceOnce(UUID botUuid) {
     PlaceState state = placeStates.get(botUuid);
     return state != null && state.once;
+  }
+
+  public boolean isPlacing(UUID botUuid) {
+    return placeStates.containsKey(botUuid);
+  }
+
+  public void resumePlacing(FakePlayer fp) {
+    UUID uuid = fp.getUuid();
+    Location placeLoc = getActivePlaceLocation(uuid);
+    boolean once = isActivePlaceOnce(uuid);
+    if (placeLoc != null) {
+      resumePlacing(fp, once, placeLoc);
+    }
   }
 
   public void resumePlacing(FakePlayer fp, boolean once, Location loc) {
@@ -741,13 +813,19 @@ public final class PlaceCommand implements FppCommand {
     PlaceJob job = new PlaceJob(sel.copy(), spec, fillable, sender);
     placeJobs.put(fp.getUuid(), job);
     int taskId =
-        Bukkit.getScheduler()
-            .runTaskTimer(plugin, () -> tickPlaceJob(fp.getUuid()), 0L, CONTROLLER_PERIOD)
-            .getTaskId();
+        FppScheduler.runSyncRepeatingWithId(
+            plugin, () -> tickPlaceJob(fp.getUuid()), 0L, CONTROLLER_PERIOD);
     placeTasks.put(fp.getUuid(), taskId);
     sender.sendMessage(
         Lang.get(
             "place-area-started", "name", fp.getDisplayName(), "count", String.valueOf(fillable)));
+  }
+
+  public void applyWorldEditSelection(FakePlayer fp, Location pos1, Location pos2, CommandSender sender) {
+    AreaSelection weAreaSel = selections.computeIfAbsent(fp.getUuid(), k -> new AreaSelection());
+    weAreaSel.pos1 = pos1;
+    weAreaSel.pos2 = pos2;
+    startAreaPlacing(sender, fp);
   }
 
   private void tickPlaceJob(UUID botUuid) {
@@ -907,7 +985,7 @@ public final class PlaceCommand implements FppCommand {
         bot.setRotation(faceLoc.getYaw(), faceLoc.getPitch());
         NmsPlayerSpawner.setHeadYaw(bot, faceLoc.getYaw());
 
-        placeBlockNms(bot, pt.faceBlockPos(), pt.faceDir());
+        placeBlockNms(fp, bot, pt.faceBlockPos(), pt.faceDir());
 
         Block after = world.getBlockAt(x, y, z);
         if (!needsFilling(after)) {
@@ -923,8 +1001,6 @@ public final class PlaceCommand implements FppCommand {
                 fp.getDisplayName(),
                 "placed",
                 String.valueOf(job.blocksPlaced));
-          if (plugin.getInventoryCommand() != null)
-            plugin.getInventoryCommand().refreshOpenGui(fp.getUuid());
           return 1;
         } else {
 
@@ -1012,6 +1088,16 @@ public final class PlaceCommand implements FppCommand {
       Location dest,
       @org.jetbrains.annotations.Nullable Location lockOnArrival,
       Runnable onArrive) {
+    // Force placeBlocks=true so the bot can bridge gaps en-route to its target.
+    me.bill.fakePlayerPlugin.fakeplayer.BotPathfinder.PathOptions baseOpts =
+        me.bill.fakePlayerPlugin.fakeplayer.PathfindingService.resolvePathOptions(fp);
+    me.bill.fakePlayerPlugin.fakeplayer.BotPathfinder.PathOptions opts =
+        new me.bill.fakePlayerPlugin.fakeplayer.BotPathfinder.PathOptions(
+            fp.isNavParkour(),
+            fp.isNavBreakBlocks(),
+            true,
+            baseOpts.avoidWater(),
+            baseOpts.avoidLava());
     pathfinding.navigate(
         fp,
         new PathfindingService.NavigationRequest(
@@ -1023,7 +1109,8 @@ public final class PlaceCommand implements FppCommand {
             onArrive,
             null,
             null,
-            lockOnArrival));
+            lockOnArrival,
+            opts));
   }
 
   private Location findNavigationDest(World world, AreaSelection sel, AreaBlock target) {
@@ -1521,7 +1608,7 @@ public final class PlaceCommand implements FppCommand {
       Location faceLoc = BotNavUtil.faceToward(bot.getLocation(), faceCenter);
       bot.setRotation(faceLoc.getYaw(), faceLoc.getPitch());
       NmsPlayerSpawner.setHeadYaw(bot, faceLoc.getYaw());
-      placeBlockNms(bot, new BlockPos(px, y, pz), Direction.UP);
+      placeBlockNms(fp, bot, new BlockPos(px, y, pz), Direction.UP);
       Block placed = world.getBlockAt(px, y + 1, pz);
       if (!placed.getType().isAir()) job.scaffoldBlocks.add(new AreaBlock(px, y + 1, pz));
     }
@@ -1585,7 +1672,7 @@ public final class PlaceCommand implements FppCommand {
 
   private void stopPlaceJob(UUID botUuid, boolean notify) {
     Integer taskId = placeTasks.remove(botUuid);
-    if (taskId != null) Bukkit.getScheduler().cancelTask(taskId);
+    if (taskId != null) FppScheduler.cancelTask(taskId);
     PlaceJob job = placeJobs.remove(botUuid);
     manager.unlockAction(botUuid);
     manager.unlockNavigation(botUuid);
@@ -1722,5 +1809,20 @@ public final class PlaceCommand implements FppCommand {
     float capturedPitch;
 
     Location destination;
+  }
+
+  /**
+   * Parses a single coordinate token.  Supports:
+   *   "~"         → {@code base}
+   *   "~<offset>" → {@code base + offset}
+   *   "<number>"  → absolute value
+   * Throws {@link NumberFormatException} if the token is unrecognisable.
+   */
+  static double parseCoord(String token, double base) {
+    if (token.startsWith("~")) {
+      String rest = token.substring(1);
+      return rest.isEmpty() ? base : base + Double.parseDouble(rest);
+    }
+    return Double.parseDouble(token);
   }
 }

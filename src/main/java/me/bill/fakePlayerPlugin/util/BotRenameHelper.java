@@ -18,7 +18,6 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.PlayerInventory;
-import org.bukkit.scheduler.BukkitRunnable;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -56,7 +55,7 @@ public final class BotRenameHelper {
       return ValidationResult.failure(messages, Lang.get("rename-invalid-name"));
     }
 
-    ResolvedName resolved = resolveTarget(bot.getBotType(), requestedName);
+    ResolvedName resolved = resolveTarget(requestedName);
     Component availabilityProblem = validateAvailability(bot, resolved.finalName());
     if (availabilityProblem != null) {
       return ValidationResult.failure(messages, availabilityProblem);
@@ -90,7 +89,7 @@ public final class BotRenameHelper {
                   badword != null ? badword : "???"));
         }
 
-        resolved = resolveTarget(bot.getBotType(), sanitized);
+        resolved = resolveTarget(sanitized);
         availabilityProblem = validateAvailability(bot, resolved.finalName());
         if (availabilityProblem != null) {
           return ValidationResult.failure(messages, availabilityProblem);
@@ -139,7 +138,7 @@ public final class BotRenameHelper {
         continue;
       }
 
-      ResolvedName resolved = resolveTarget(bot.getBotType(), trimmed);
+      ResolvedName resolved = resolveTarget(trimmed);
       if (!BadwordFilter.isAllowed(resolved.spawnArg())) {
         continue;
       }
@@ -167,40 +166,37 @@ public final class BotRenameHelper {
     manager.markRenaming(oldUuid);
     manager.delete(oldName);
 
-    plugin
-        .getServer()
-        .getScheduler()
-        .runTaskLater(
-            plugin,
-            () -> {
-              if (loc == null) {
-                manager.unmarkRenaming(oldUuid);
-                sender.sendMessage(Lang.get("rename-failed-no-location", "name", finalName));
-                return;
-              }
+    FppScheduler.runSyncLater(
+        plugin,
+        () -> {
+          if (loc == null) {
+            manager.unmarkRenaming(oldUuid);
+            sender.sendMessage(Lang.get("rename-failed-no-location", "name", finalName));
+            return;
+          }
 
-              int result = manager.spawn(loc, 1, null, spawnArg, true, botType);
-              if (result <= 0) {
-                manager.unmarkRenaming(oldUuid);
-                sender.sendMessage(
-                    Lang.get(
-                        "rename-failed-spawn",
-                        "name",
-                        finalName,
-                        "reason",
-                        spawnFailureReason(result)));
-                return;
-              }
+          int result = manager.spawn(loc, 1, null, spawnArg, true, botType);
+          if (result <= 0) {
+            manager.unmarkRenaming(oldUuid);
+            sender.sendMessage(
+                Lang.get(
+                    "rename-failed-spawn",
+                    "name",
+                    finalName,
+                    "reason",
+                    spawnFailureReason(result)));
+            return;
+          }
 
-              FakePlayer newBotRef = manager.getByName(finalName);
-              UUID newUuid = newBotRef != null ? newBotRef.getUuid() : null;
-              if (newUuid != null) {
-                manager.markRenaming(newUuid);
-              }
+          FakePlayer newBotRef = manager.getByName(finalName);
+          UUID newUuid = newBotRef != null ? newBotRef.getUuid() : null;
+          if (newUuid != null) {
+            manager.markRenaming(newUuid);
+          }
 
-              scheduleRestore(sender, snapshot, finalName, oldName, oldUuid, newUuid);
-            },
-            12L);
+          scheduleRestore(sender, snapshot, finalName, oldName, oldUuid, newUuid);
+        },
+        12L);
   }
 
   private void scheduleRestore(
@@ -210,85 +206,86 @@ public final class BotRenameHelper {
       @NotNull String oldName,
       @NotNull UUID oldUuid,
       @Nullable UUID newUuid) {
-    new BukkitRunnable() {
-      int elapsed = 0;
+    final int[] elapsed = {0};
+    final int[] pollTaskId = {-1};
 
-      @Override
-      public void run() {
-        elapsed += (int) POLL_TICKS;
+    Runnable poll =
+        () -> {
+          elapsed[0] += (int) POLL_TICKS;
 
-        if (elapsed > POLL_TIMEOUT) {
-          cancel();
-          manager.unmarkRenaming(oldUuid);
-          if (newUuid != null) {
-            manager.unmarkRenaming(newUuid);
+          if (elapsed[0] > POLL_TIMEOUT) {
+            if (pollTaskId[0] != -1) {
+              FppScheduler.cancelTask(pollTaskId[0]);
+              pollTaskId[0] = -1;
+            }
+            manager.unmarkRenaming(oldUuid);
+            if (newUuid != null) {
+              manager.unmarkRenaming(newUuid);
+            }
+            sender.sendMessage(Lang.get("rename-timeout", "name", newName));
+            return;
           }
-          sender.sendMessage(Lang.get("rename-timeout", "name", newName));
-          return;
-        }
 
-        FakePlayer newFp = manager.getByName(newName);
-        if (newFp == null) {
-          return;
-        }
-        if (!newFp.isBodyless() && newFp.getPlayer() == null) {
-          return;
-        }
+          FakePlayer newFp = manager.getByName(newName);
+          if (newFp == null) {
+            return;
+          }
+          if (!newFp.isBodyless() && newFp.getPlayer() == null) {
+            return;
+          }
 
-        cancel();
-        snap.applyState(newFp);
-        newFp.setSpawnedBy(snap.spawnerName(), snap.spawnerUuid());
+          if (pollTaskId[0] != -1) {
+            FppScheduler.cancelTask(pollTaskId[0]);
+            pollTaskId[0] = -1;
+          }
+          snap.applyState(newFp);
+          newFp.setSpawnedBy(snap.spawnerName(), snap.spawnerUuid());
 
-        if (newFp.getPlayer() != null) {
-          snap.applyInventoryAndXp(newFp.getPlayer());
-        }
+          if (newFp.getPlayer() != null) {
+            snap.applyInventoryAndXp(newFp.getPlayer());
+          }
 
-        if (plugin.getDatabaseManager() != null) {
-          plugin
-              .getDatabaseManager()
-              .updateBotPickupSettings(
-                  newFp.getUuid().toString(),
-                  newFp.isPickUpItemsEnabled(),
-                  newFp.isPickUpXpEnabled());
-          plugin
-              .getDatabaseManager()
-              .updateBotAiPersonality(newFp.getUuid().toString(), newFp.getAiPersonality());
-        }
+          if (plugin.getDatabaseManager() != null) {
+            plugin
+                .getDatabaseManager()
+                .updateBotPickupSettings(
+                    newFp.getUuid().toString(),
+                    newFp.isPickUpItemsEnabled(),
+                    newFp.isPickUpXpEnabled());
+            plugin
+                .getDatabaseManager()
+                .updateBotAiPersonality(newFp.getUuid().toString(), newFp.getAiPersonality());
+          }
 
-        if (snap.lpGroup() != null && plugin.isLuckPermsAvailable()) {
-          plugin
-              .getServer()
-              .getScheduler()
-              .runTaskLater(
-                  plugin,
-                  () -> {
-                    FakePlayer fp = manager.getByName(newName);
-                    if (fp == null) {
-                      cleanupRenameState(oldUuid, newUuid);
-                      return;
-                    }
-                    LuckPermsHelper.applyGroupToOnlineUser(fp.getUuid(), snap.lpGroup());
-                    fp.setLuckpermsGroup(snap.lpGroup());
-                    plugin
-                        .getServer()
-                        .getScheduler()
-                        .runTaskLater(
-                            plugin,
-                            () -> {
-                              FakePlayer refreshed = manager.getByName(newName);
-                              if (refreshed != null) {
-                                manager.refreshLpDisplayName(refreshed);
-                              }
-                              finishRename(sender, oldName, newName, oldUuid, newUuid);
-                            },
-                            2L);
-                  },
-                  5L);
-        } else {
-          finishRename(sender, oldName, newName, oldUuid, newUuid);
-        }
-      }
-    }.runTaskTimer(plugin, POLL_TICKS, POLL_TICKS);
+          if (snap.lpGroup() != null && plugin.isLuckPermsAvailable()) {
+            FppScheduler.runSyncLater(
+                plugin,
+                () -> {
+                  FakePlayer fp = manager.getByName(newName);
+                  if (fp == null) {
+                    cleanupRenameState(oldUuid, newUuid);
+                    return;
+                  }
+                  LuckPermsHelper.applyGroupToOnlineUser(fp.getUuid(), snap.lpGroup());
+                  fp.setLuckpermsGroup(snap.lpGroup());
+                  FppScheduler.runSyncLater(
+                      plugin,
+                      () -> {
+                        FakePlayer refreshed = manager.getByName(newName);
+                        if (refreshed != null) {
+                          manager.refreshLpDisplayName(refreshed);
+                        }
+                        finishRename(sender, oldName, newName, oldUuid, newUuid);
+                      },
+                      2L);
+                },
+                5L);
+          } else {
+            finishRename(sender, oldName, newName, oldUuid, newUuid);
+          }
+        };
+
+    pollTaskId[0] = FppScheduler.runSyncRepeatingWithId(plugin, poll, POLL_TICKS, POLL_TICKS);
   }
 
   private void finishRename(
@@ -315,6 +312,17 @@ public final class BotRenameHelper {
   }
 
   private void broadcastRename(@NotNull String oldName, @NotNull String newName) {
+    // Fire API rename event.
+    var fppApi = plugin.getFppApi();
+    if (fppApi != null) {
+      FakePlayer renamedFp = manager.getByName(newName);
+      if (renamedFp != null) {
+        me.bill.fakePlayerPlugin.api.event.FppBotRenameEvent renameEvt =
+            new me.bill.fakePlayerPlugin.api.event.FppBotRenameEvent(
+                new me.bill.fakePlayerPlugin.api.impl.FppBotImpl(renamedFp), oldName, newName);
+        Bukkit.getPluginManager().callEvent(renameEvt);
+      }
+    }
     Component msg = Lang.get("bot-rename", "old", oldName, "new", newName);
     Bukkit.getOnlinePlayers().forEach(player -> player.sendMessage(msg));
     Bukkit.getConsoleSender().sendMessage(msg);
@@ -329,16 +337,8 @@ public final class BotRenameHelper {
     };
   }
 
-  private ResolvedName resolveTarget(@NotNull BotType botType, @NotNull String requestedName) {
-    String spawnArg = requestedName;
-    String finalName = requestedName;
-    if (botType == BotType.PVP) {
-      if (spawnArg.toLowerCase().startsWith("pvp_")) {
-        spawnArg = spawnArg.substring(4);
-      }
-      finalName = "pvp_" + spawnArg;
-    }
-    return new ResolvedName(spawnArg, finalName);
+  private ResolvedName resolveTarget(@NotNull String requestedName) {
+    return new ResolvedName(requestedName, requestedName);
   }
 
   private record ResolvedName(String spawnArg, String finalName) {}

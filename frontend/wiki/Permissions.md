@@ -1,6 +1,6 @@
 # ?? Permissions
 
-> **Complete permission reference - v1.6.6.2**  
+> **Complete permission reference - v1.6.6.7**  
 > FPP uses **`fpp.op`** (alias **`fpp.admin`**) for admins and **`fpp.use`** for user-tier access.  
 > All nodes are declared in `plugin.yml` so they appear in LuckPerms tab-completion.
 
@@ -46,6 +46,7 @@ Current nodes are:
 | `fpp.freeze` | `/fpp freeze` | Freeze / unfreeze any bot |
 | `fpp.tp` | `/fpp tp` | Teleport to a bot |
 | `fpp.tph` | `/fpp tph` | Teleport any bot to you |
+| `fpp.tph.all` | `/fpp tph all` | Teleport all accessible bots to you at once |
 | `fpp.stats` | `/fpp stats` | Open live stats panel |
 | `fpp.reload` | `/fpp reload` | Reload config and subsystems |
 | `fpp.migrate` | `/fpp migrate` | Backup, export, migration tools |
@@ -68,7 +69,9 @@ Current nodes are:
 | `fpp.inventory` | `/fpp inventory` | Open any bot inventory GUI |
 | `fpp.move` | `/fpp move` | Navigate bots / patrol routes |
 | `fpp.mine` | `/fpp mine` | Mining and area-mining |
+| `fpp.mine.wesel` | `/fpp mine --wesel` | Use WorldEdit selection as mine area |
 | `fpp.place` | `/fpp place` | Block placing automation |
+| `fpp.place.wesel` | `/fpp place --wesel` | Use WorldEdit selection as place fill area |
 | `fpp.storage` | `/fpp storage` | Supply container management |
 | `fpp.useitem` | `/fpp use` | Use / activate looked-at block |
 | `fpp.cmd` | `/fpp cmd` | Execute or store RC commands |
@@ -82,7 +85,12 @@ Current nodes are:
 | `fpp.ping.random` | `/fpp ping --random` | Assign random ping distribution |
 | `fpp.ping.bulk` | `/fpp ping --count <n>` | Target multiple bots at once |
 | `fpp.attack` | `/fpp attack` | PvE attack � walk to sender, attack entities (classic & mob-targeting modes) |
+| `fpp.attack.hunt` | `/fpp attack --hunt` | Roaming mob hunt mode |
 | `fpp.follow` | `/fpp follow` | Follow-target bot automation (continuous following, persistent across restarts) |
+| `fpp.find` | `/fpp find` | Bot block-finding and progressive mining |
+| `fpp.sleep` | `/fpp sleep` | Set bot sleep-origin for night auto-sleep |
+| `fpp.stop` | `/fpp stop` | Cancel all active tasks for one or all bots |
+| `fpp.groups` | `/fpp groups` | Personal bot groups with GUI management |
 
 ### Network / proxy
 

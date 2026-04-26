@@ -149,8 +149,7 @@ messages:
   - "whats the discord?"
   - "is this survival?"
   - "what mode is this?"
-  - "pvp on?"
-  - "is pvp enabled?"
+  - "survival mode on?"
   - "are creepers on?"
   - "do mobs spawn here?"
   - "is griefing allowed?"
@@ -281,7 +280,6 @@ messages:
   - "got mending!"
   - "brewing potions"
   - "making a strength pot"
-  - "prepping for pvp"
   - "ready to fight"
   - "going raiding"
 
@@ -347,13 +345,6 @@ messages:
   - "foxes are so fast"
 
   # ── PvP / Combat ──────────────────────────────────────────────────────────
-  - "anyone want to duel?"
-  - "1v1 me"
-  - "who wants to pvp?"
-  - "pvp anyone?"
-  - "practice pvp?"
-  - "i'm rusty at pvp"
-  - "haven't pvped in a while"
   - "just warming up"
   - "that combo was clean"
   - "w taps are essential"
@@ -455,7 +446,6 @@ messages:
   # ── Java vs Bedrock ───────────────────────────────────────────────────────
   - "java is better"
   - "bedrock has better performance tho"
-  - "java pvp is smoother"
   - "bedrock has cross-platform"
   - "both are good honestly"
   - "java is the original"
@@ -748,7 +738,6 @@ messages:
   - "full beacon pyramid"
   - "speed beacon is the move"
   - "haste 2 is amazing for mining"
-  - "strength beacon for pvp"
   - "regen beacon for survival"
   - "conduit is a water beacon basically"
   - "conduit range is good"
@@ -833,7 +822,6 @@ messages:
   - "bundle fits so many items"
   - "backpack mod is better"
   - "inventory management is an art"
-  - "clearing hotbar for pvp"
   - "hotbar setup matters"
   - "sword shield gap bow pearl totem"
   - "totem in offhand always"
@@ -845,7 +833,6 @@ messages:
   - "sword vs axe debate"
   - "axe has higher base damage"
   - "sword attacks faster"
-  - "sword is generally better in pvp"
   - "depends on the situation"
   - "adapt your strategy"
   - "use terrain to your advantage"
@@ -984,7 +971,6 @@ messages:
   - "powdered snow is dangerous"
   - "leather boots for powdered snow"
   - "snow layers for decoration"
-  - "snowball fight pvp"
   - "snowballs stun blazes"
   - "snowball damage to blazes"
   - "iron golem protects village"
@@ -1225,22 +1211,12 @@ leave-reactions:
 #  KEYWORD REACTIONS
 #  Used when a real player says a configured keyword (fake-chat.keyword-reactions).
 #  Add sections here matching the pool-key names in your config.yml.
-#  Example: if config maps "pvp" → "pvp-reactions", add a pvp-reactions section.
+#  Example: if config maps "trade" → "trade-reactions", add a trade-reactions section.
 #
 #  To enable: set fake-chat.keyword-reactions.enabled: true in config.yml and
 #  add keyword → pool-key pairs under fake-chat.keyword-reactions.keywords.
 # ─────────────────────────────────────────────────────────────────────────────
 keyword-reactions:
-
-  pvp-reactions:
-    - "anyone want to duel?"
-    - "pvp scene is active rn"
-    - "1v1 me"
-    - "who's the best pvper here?"
-    - "pvp is so fun on this server"
-    - "just warming up for pvp"
-    - "pvp practice let's go"
-    - "the pvp here is actually good"
 
   trade-reactions:
     - "anyone want to trade?"

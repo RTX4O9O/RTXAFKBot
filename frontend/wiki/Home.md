@@ -1,7 +1,7 @@
 # 🎮 Fake Player Plugin - Wiki
 
 > **The Ultimate Bot Spoofing Plugin for Paper 1.21+**  
-> **Version:** 1.6.6.2 · **Platform:** Paper 1.21.x (up to 1.21.11) · **Author:** Bill_Hub · **License:** [MIT (Open Source)](https://github.com/Pepe-tf/fake-player-plugin)
+> **Version:** 1.6.6.7 · **Platform:** Paper / Folia 1.21.x (up to 1.21.11) · **Author:** Bill_Hub · **License:** [MIT (Open Source)](https://github.com/Pepe-tf/fake-player-plugin)
 
 ---
 
@@ -36,6 +36,13 @@
 - 🎯 **LuckPerms integration** - Prefix/suffix, group assignment, weighted ordering
 - 🏃 **Follow-target automation** - Bots continuously follow any online player with `/fpp follow`; persists across restarts
 - ⚔️ **Per-bot PvE settings** - `pveEnabled`, `pveRange`, `pvePriority`, `pveMobTypes` per-bot via `BotSettingGui`
+- 📦 **Extension API** - Drop `.jar` files into `plugins/FakePlayerPlugin/extensions/` to load third-party addons
+- 🔤 **Random name generator** - `bot-name.mode: random` generates realistic Minecraft-style usernames on the fly
+- 🔍 **Find command** - Bots scan nearby chunks for target blocks and mine them progressively
+- 👥 **Bot groups** - Personal bot groups with GUI management for bulk commands
+- 🧱 **WorldEdit integration** - `--wesel` flag for mine/place uses your WorldEdit selection
+- 🤖 **Automation** - `auto-eat` and `auto-place-bed` defaults for realistic bot survival behaviour
+- 🍃 **Folia support** - Compatible with Folia's regionised threading model
 
 ---
 
@@ -91,6 +98,12 @@
 | [🌐 Proxy Support](Proxy-Support) | Velocity & BungeeCord multi-server networks |
 | [🔄 Config Sync](./Config-Sync) | Synchronize configs across the proxy network |
 | [🔧 Migration](Migration) | Updating and data migration |
+| [📦 Extensions](Extensions) | Addon API for third-party developers |
+| [🔍 Find Command](Find-Command) | Bot block-finding and progressive mining |
+| [👥 Bot Groups](Bot-Groups) | Personal bot groups with GUI management |
+| [🍃 Folia Support](Folia-Support) | Folia regionised threading compatibility |
+| [😴 Sleep Command](Sleep-Command) | Night auto-sleep with temporary bed placement |
+| [🛑 Stop Command](Stop-Command) | Cancel all active bot tasks instantly |
 
 ---
 

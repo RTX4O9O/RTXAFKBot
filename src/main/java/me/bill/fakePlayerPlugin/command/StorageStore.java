@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
+import me.bill.fakePlayerPlugin.util.BotDataYaml;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.World;
@@ -20,6 +21,8 @@ import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.plugin.java.JavaPlugin;
 
 public final class StorageStore {
+
+  private static final String ROOT = "storages.by-bot";
 
   private final JavaPlugin plugin;
 
@@ -33,11 +36,40 @@ public final class StorageStore {
 
   public void load() {
     file = new File(plugin.getDataFolder(), "data/storages.yml");
-    if (!file.exists()) return;
+    YamlConfiguration unified = BotDataYaml.load(plugin);
+    ConfigurationSection root = unified.getConfigurationSection(ROOT);
+    if (root == null && file.exists()) {
+      YamlConfiguration legacy = YamlConfiguration.loadConfiguration(file);
+      root = legacy;
+      if (!legacy.getKeys(false).isEmpty()) {
+        final YamlConfiguration migrated = legacy;
+        try {
+          BotDataYaml.replaceSection(
+              plugin,
+              ROOT,
+              section -> {
+                for (String botKey : migrated.getKeys(false)) {
+                  ConfigurationSection botSec = migrated.getConfigurationSection(botKey);
+                  if (botSec == null) continue;
+                  for (String storageKey : botSec.getKeys(false)) {
+                    ConfigurationSection sec = botSec.getConfigurationSection(storageKey);
+                    if (sec == null) continue;
+                    for (String key : sec.getKeys(false)) {
+                      section.set(botKey + "." + storageKey + "." + key, sec.get(key));
+                    }
+                  }
+                }
+              });
+          if (file.exists()) file.delete();
+        } catch (IOException ex) {
+          plugin.getLogger().warning("[FPP] Failed to migrate storages.yml: " + ex.getMessage());
+        }
+      }
+    }
+    if (root == null) return;
 
-    YamlConfiguration yaml = YamlConfiguration.loadConfiguration(file);
-    for (String botKey : yaml.getKeys(false)) {
-      ConfigurationSection botSec = yaml.getConfigurationSection(botKey);
+    for (String botKey : root.getKeys(false)) {
+      ConfigurationSection botSec = root.getConfigurationSection(botKey);
       if (botSec == null) continue;
 
       LinkedHashMap<String, StoragePoint> botMap = new LinkedHashMap<>();
@@ -56,7 +88,8 @@ public final class StorageStore {
                 (float) sec.getDouble("yaw"),
                 (float) sec.getDouble("pitch"));
         String displayName = sec.getString("display-name", storageKey);
-        botMap.put(storageKey.toLowerCase(Locale.ROOT), new StoragePoint(displayName, loc));
+        boolean enabled = sec.getBoolean("enabled", true);
+        botMap.put(storageKey.toLowerCase(Locale.ROOT), new StoragePoint(displayName, loc, enabled));
       }
       if (!botMap.isEmpty()) {
         storages.put(botKey.toLowerCase(Locale.ROOT), botMap);
@@ -65,30 +98,31 @@ public final class StorageStore {
   }
 
   public void save() {
-    if (file == null) file = new File(plugin.getDataFolder(), "data/storages.yml");
-    if (file.getParentFile() != null) file.getParentFile().mkdirs();
-
-    YamlConfiguration yaml = new YamlConfiguration();
-    for (Map.Entry<String, LinkedHashMap<String, StoragePoint>> botEntry : storages.entrySet()) {
-      String botKey = botEntry.getKey();
-      for (Map.Entry<String, StoragePoint> storageEntry : botEntry.getValue().entrySet()) {
-        String key = botKey + "." + storageEntry.getKey() + ".";
-        StoragePoint point = storageEntry.getValue();
-        Location loc = point.location();
-        yaml.set(key + "display-name", point.name());
-        yaml.set(key + "world", loc.getWorld() != null ? loc.getWorld().getName() : null);
-        yaml.set(key + "x", loc.getX());
-        yaml.set(key + "y", loc.getY());
-        yaml.set(key + "z", loc.getZ());
-        yaml.set(key + "yaw", (double) loc.getYaw());
-        yaml.set(key + "pitch", (double) loc.getPitch());
-      }
-    }
-
     try {
-      yaml.save(file);
+      BotDataYaml.replaceSection(
+          plugin,
+          ROOT,
+          section -> {
+            for (Map.Entry<String, LinkedHashMap<String, StoragePoint>> botEntry : storages.entrySet()) {
+              String botKey = botEntry.getKey();
+              for (Map.Entry<String, StoragePoint> storageEntry : botEntry.getValue().entrySet()) {
+                String key = botKey + "." + storageEntry.getKey() + ".";
+                StoragePoint point = storageEntry.getValue();
+                Location loc = point.location();
+                section.set(key + "display-name", point.name());
+                section.set(key + "world", loc.getWorld() != null ? loc.getWorld().getName() : null);
+                section.set(key + "x", loc.getX());
+                section.set(key + "y", loc.getY());
+                section.set(key + "z", loc.getZ());
+                section.set(key + "yaw", (double) loc.getYaw());
+                section.set(key + "pitch", (double) loc.getPitch());
+                section.set(key + "enabled", point.enabled());
+              }
+            }
+          });
+      if (file != null && file.exists()) file.delete();
     } catch (IOException ex) {
-      plugin.getLogger().warning("[FPP] Could not save storages.yml: " + ex.getMessage());
+      plugin.getLogger().warning("[FPP] Could not save " + BotDataYaml.FILE_NAME + " storages section: " + ex.getMessage());
     }
   }
 
@@ -97,14 +131,15 @@ public final class StorageStore {
     String storageKey = storageName.toLowerCase(Locale.ROOT);
     LinkedHashMap<String, StoragePoint> botMap =
         storages.computeIfAbsent(botKey, k -> new LinkedHashMap<>());
-    botMap.put(storageKey, new StoragePoint(storageName, loc.clone()));
+    botMap.put(storageKey, new StoragePoint(storageName, loc.clone(), true));
     save();
   }
 
   public List<StoragePoint> getStorages(String botName) {
     LinkedHashMap<String, StoragePoint> botMap = storages.get(botName.toLowerCase(Locale.ROOT));
     if (botMap == null || botMap.isEmpty()) return List.of();
-    List<StoragePoint> out = new ArrayList<>(botMap.values());
+    List<StoragePoint> out = new ArrayList<>();
+    for (StoragePoint point : botMap.values()) if (point.enabled()) out.add(point);
     out.sort(
         Comparator.comparingInt((StoragePoint p) -> numericName(p.name()))
             .thenComparing(p -> p.name().toLowerCase(Locale.ROOT)));
@@ -117,6 +152,23 @@ public final class StorageStore {
     Set<String> out = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
     for (StoragePoint point : botMap.values()) out.add(point.name());
     return Collections.unmodifiableSet(out);
+  }
+
+  public List<StoragePoint> getAllStorages(String botName) {
+    LinkedHashMap<String, StoragePoint> botMap = storages.get(botName.toLowerCase(Locale.ROOT));
+    if (botMap == null || botMap.isEmpty()) return List.of();
+    return List.copyOf(botMap.values());
+  }
+
+  public boolean setEnabled(String botName, String storageName, boolean enabled) {
+    LinkedHashMap<String, StoragePoint> botMap = storages.get(botName.toLowerCase(Locale.ROOT));
+    if (botMap == null) return false;
+    String key = storageName.toLowerCase(Locale.ROOT);
+    StoragePoint point = botMap.get(key);
+    if (point == null) return false;
+    botMap.put(key, new StoragePoint(point.name(), point.location(), enabled));
+    save();
+    return true;
   }
 
   public boolean removeStorage(String botName, String storageName) {
@@ -177,5 +229,5 @@ public final class StorageStore {
     }
   }
 
-  public record StoragePoint(String name, Location location) {}
+  public record StoragePoint(String name, Location location, boolean enabled) {}
 }

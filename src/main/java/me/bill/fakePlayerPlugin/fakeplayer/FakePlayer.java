@@ -6,11 +6,13 @@ import java.time.Instant;
 import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import me.bill.fakePlayerPlugin.config.Config;
 import me.bill.fakePlayerPlugin.database.BotRecord;
 import org.bukkit.Location;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
+import org.jetbrains.annotations.NotNull;
 
 @SuppressWarnings("unused")
 public final class FakePlayer {
@@ -65,6 +67,9 @@ public final class FakePlayer {
 
   private boolean bodyless = false;
 
+  /** True when this bot was spawned via {@code spawnRestored} (server restart persistence). */
+  private boolean restoredSpawn = false;
+
   private String luckpermsGroup = null;
 
   private BotType botType = BotType.AFK;
@@ -89,20 +94,71 @@ public final class FakePlayer {
 
   private boolean navPlaceBlocks = Config.pathfindingPlaceBlocks();
 
+  private boolean navAvoidWater = false;
+
+  private boolean navAvoidLava = false;
+
+  private boolean defaultWaterPathAvoidanceEnabled = true;
+
   private boolean swimAiEnabled = Config.swimAiEnabled();
 
   private int chunkLoadRadius = -1;
 
-  private boolean pveEnabled = false;
+  public enum PveSmartAttackMode {
+    OFF,
+    ON_NO_MOVE,
+    ON_MOVE;
+
+    public boolean isEnabled() {
+      return this != OFF;
+    }
+
+    public boolean movesWhileAttacking() {
+      return this == ON_MOVE;
+    }
+
+    public PveSmartAttackMode next() {
+      return switch (this) {
+        case OFF -> ON_NO_MOVE;
+        case ON_NO_MOVE -> ON_MOVE;
+        case ON_MOVE -> OFF;
+      };
+    }
+
+    public static PveSmartAttackMode fromStoredValue(String raw) {
+      if (raw == null || raw.isBlank()) return OFF;
+      return switch (raw.trim().toUpperCase(java.util.Locale.ROOT)) {
+        case "ON", "ON_WITHOUT_MOVEMENT", "ON_NO_MOVE", "NO_MOVE", "WITHOUT_MOVEMENT" -> ON_NO_MOVE;
+        case "ON_MOVE", "MOVE", "ON_WITH_MOVEMENT", "WITH_MOVEMENT" -> ON_MOVE;
+        default -> OFF;
+      };
+    }
+  }
+
+  private PveSmartAttackMode pveSmartAttackMode = PveSmartAttackMode.OFF;
   private double pveRange = Config.attackMobDefaultRange();
   private String pvePriority = Config.attackMobDefaultPriority();
   private Set<String> pveMobTypes = new LinkedHashSet<>();
+  private final Set<UUID> sharedControllers = ConcurrentHashMap.newKeySet();
+  private boolean autoEatEnabled = Config.autoEatEnabled();
+  private boolean autoPlaceBedEnabled = Config.autoPlaceBedEnabled();
 
   private volatile String nameTagNick = null;
 
   private int ping = -1;
 
   private volatile boolean tabListDirty = true;
+
+  /** Addon-attached metadata — transient, cleared on despawn. */
+  private final java.util.Map<String, Object> metadata = new java.util.concurrent.ConcurrentHashMap<>();
+
+  // ── Sleep system ──────────────────────────────────────────────────────────
+  /** Station location used as the center for bed searching. null = not configured. */
+  private Location sleepOrigin = null;
+  /** Bed-search radius in blocks. 0 = sleep disabled for this bot. */
+  private double sleepRadius = 0.0;
+  /** True while the bot is currently in the sleeping state. */
+  private boolean sleeping = false;
 
   public FakePlayer(UUID uuid, String name, PlayerProfile profile) {
     this.uuid = uuid;
@@ -147,7 +203,7 @@ public final class FakePlayer {
   }
 
   public Location getLiveLocation() {
-    if (player != null && player.isValid()) return player.getLocation();
+    if (player != null && player.isOnline() && !player.isDead()) return player.getLocation();
     return spawnLocation;
   }
 
@@ -392,6 +448,30 @@ public final class FakePlayer {
     this.navPlaceBlocks = v;
   }
 
+  public boolean isNavAvoidWater() {
+    return navAvoidWater;
+  }
+
+  public void setNavAvoidWater(boolean v) {
+    this.navAvoidWater = v;
+  }
+
+  public boolean isNavAvoidLava() {
+    return navAvoidLava;
+  }
+
+  public void setNavAvoidLava(boolean v) {
+    this.navAvoidLava = v;
+  }
+
+  public boolean isDefaultWaterPathAvoidanceEnabled() {
+    return defaultWaterPathAvoidanceEnabled;
+  }
+
+  public void setDefaultWaterPathAvoidanceEnabled(boolean v) {
+    this.defaultWaterPathAvoidanceEnabled = v;
+  }
+
   public boolean isSwimAiEnabled() {
     return swimAiEnabled;
   }
@@ -489,6 +569,14 @@ public final class FakePlayer {
     this.bodyless = bodyless;
   }
 
+  public boolean isRestoredSpawn() {
+    return restoredSpawn;
+  }
+
+  public void setRestoredSpawn(boolean restoredSpawn) {
+    this.restoredSpawn = restoredSpawn;
+  }
+
   public Entity getNametagEntity() {
     return nametagEntity;
   }
@@ -507,11 +595,15 @@ public final class FakePlayer {
   }
 
   public boolean isPveEnabled() {
-    return pveEnabled;
+    return pveSmartAttackMode.isEnabled();
   }
 
   public void setPveEnabled(boolean v) {
-    this.pveEnabled = v;
+    if (!v) {
+      this.pveSmartAttackMode = PveSmartAttackMode.OFF;
+    } else if (this.pveSmartAttackMode == PveSmartAttackMode.OFF) {
+      this.pveSmartAttackMode = PveSmartAttackMode.ON_NO_MOVE;
+    }
   }
 
   public double getPveRange() {
@@ -528,6 +620,26 @@ public final class FakePlayer {
 
   public void setPvePriority(String v) {
     this.pvePriority = v;
+  }
+
+  public PveSmartAttackMode getPveSmartAttackMode() {
+    return pveSmartAttackMode;
+  }
+
+  public void setPveSmartAttackMode(PveSmartAttackMode mode) {
+    this.pveSmartAttackMode = mode != null ? mode : PveSmartAttackMode.OFF;
+  }
+
+  public void setPveSmartAttackMode(String mode) {
+    this.pveSmartAttackMode = PveSmartAttackMode.fromStoredValue(mode);
+  }
+
+  public boolean isPveMoveToTarget() {
+    return pveSmartAttackMode.movesWhileAttacking();
+  }
+
+  public void setPveMoveToTarget(boolean v) {
+    this.pveSmartAttackMode = v ? PveSmartAttackMode.ON_MOVE : PveSmartAttackMode.ON_NO_MOVE;
   }
 
   public String getPveMobType() {
@@ -564,5 +676,97 @@ public final class FakePlayer {
 
   public boolean hasPveMobType(String type) {
     return pveMobTypes.contains(type);
+  }
+
+  public Set<UUID> getSharedControllers() {
+    return Set.copyOf(sharedControllers);
+  }
+
+  public boolean hasSharedController(UUID uuid) {
+    return uuid != null && sharedControllers.contains(uuid);
+  }
+
+  public boolean addSharedController(UUID uuid) {
+    return uuid != null && !uuid.equals(spawnedByUuid) && sharedControllers.add(uuid);
+  }
+
+  public boolean removeSharedController(UUID uuid) {
+    return uuid != null && sharedControllers.remove(uuid);
+  }
+
+  public boolean isAutoEatEnabled() {
+    return autoEatEnabled;
+  }
+
+  public void setAutoEatEnabled(boolean autoEatEnabled) {
+    this.autoEatEnabled = autoEatEnabled;
+  }
+
+  public boolean isAutoPlaceBedEnabled() {
+    return autoPlaceBedEnabled;
+  }
+
+  public void setAutoPlaceBedEnabled(boolean autoPlaceBedEnabled) {
+    this.autoPlaceBedEnabled = autoPlaceBedEnabled;
+  }
+
+  // ── Sleep system accessors ────────────────────────────────────────────────
+
+  @org.jetbrains.annotations.Nullable
+  public Location getSleepOrigin() {
+    return sleepOrigin;
+  }
+
+  public void setSleepOrigin(@org.jetbrains.annotations.Nullable Location origin) {
+    this.sleepOrigin = origin != null ? origin.clone() : null;
+  }
+
+  public double getSleepRadius() {
+    return sleepRadius;
+  }
+
+  public void setSleepRadius(double radius) {
+    this.sleepRadius = radius;
+  }
+
+  public boolean isSleeping() {
+    return sleeping;
+  }
+
+  public void setSleeping(boolean sleeping) {
+    this.sleeping = sleeping;
+  }
+
+  // ── Addon metadata ────────────────────────────────────────────────────────
+
+  @org.jetbrains.annotations.Nullable
+  public Object getMetadata(String key) {
+    return key != null ? metadata.get(key) : null;
+  }
+
+  public void setMetadata(String key, Object value) {
+    if (key == null) return;
+    if (value == null) {
+      metadata.remove(key);
+    } else {
+      metadata.put(key, value);
+    }
+  }
+
+  public boolean hasMetadata(String key) {
+    return key != null && metadata.containsKey(key);
+  }
+
+  public void removeMetadata(String key) {
+    if (key != null) metadata.remove(key);
+  }
+
+  @NotNull
+  public java.util.Map<String, Object> getMetadataMap() {
+    return java.util.Map.copyOf(metadata);
+  }
+
+  public void clearMetadata() {
+    metadata.clear();
   }
 }

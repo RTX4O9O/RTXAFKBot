@@ -47,17 +47,16 @@ public final class AttributionApiManager {
   private AttributionApiManager() {}
 
   public static void init(Plugin plugin) {
-    Bukkit.getScheduler()
-        .runTaskAsynchronously(
-            plugin,
-            () -> {
+    FppScheduler.runAsync(
+        plugin,
+        () -> {
               AttributionData data = fetchFromApi();
               if (data != null) {
                 apiData = data;
                 apiFetched = true;
                 apiReachable = true;
                 saveCache(plugin, data);
-                Bukkit.getScheduler().runTask(plugin, () -> compareAndRestore(data));
+                FppScheduler.runSync(plugin, () -> compareAndRestore(data));
               } else {
 
                 AttributionData cached = loadCache(plugin);
@@ -65,7 +64,7 @@ public final class AttributionApiManager {
                   apiData = cached;
                   apiFetched = true;
                   apiReachable = false;
-                  Bukkit.getScheduler().runTask(plugin, () -> compareAndRestore(cached));
+                  FppScheduler.runSync(plugin, () -> compareAndRestore(cached));
                 } else {
                   apiFetched = false;
                   apiReachable = false;

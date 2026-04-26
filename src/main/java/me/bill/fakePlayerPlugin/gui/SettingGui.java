@@ -3,12 +3,16 @@ package me.bill.fakePlayerPlugin.gui;
 import com.destroystokyo.paper.profile.PlayerProfile;
 import io.papermc.paper.event.player.AsyncChatEvent;
 import java.util.*;
+import java.util.concurrent.CopyOnWriteArrayList;
 import me.bill.fakePlayerPlugin.FakePlayerPlugin;
+import me.bill.fakePlayerPlugin.api.FppSettingsItem;
+import me.bill.fakePlayerPlugin.api.FppSettingsTab;
 import me.bill.fakePlayerPlugin.config.Config;
 import me.bill.fakePlayerPlugin.fakeplayer.FakePlayer;
 import me.bill.fakePlayerPlugin.fakeplayer.FakePlayerManager;
 import me.bill.fakePlayerPlugin.fakeplayer.NmsPlayerSpawner;
 import me.bill.fakePlayerPlugin.permission.Perm;
+import me.bill.fakePlayerPlugin.util.FppScheduler;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextColor;
@@ -80,10 +84,12 @@ public final class SettingGui implements Listener {
 
   private final Category[] categories;
 
+  private final CopyOnWriteArrayList<FppSettingsTab> extensionTabs = new CopyOnWriteArrayList<>();
+
   public SettingGui(FakePlayerPlugin plugin) {
     this.plugin = plugin;
     this.categories =
-        new Category[] {general(), body(), chat(), swap(), peaks(), pvp(), pathfinding()};
+        new Category[] {general(), body(), chat(), swap(), peaks(), pathfinding()};
 
     if (!me.bill.fakePlayerPlugin.util.AttributionManager.quickAuthorCheck()) {
       me.bill.fakePlayerPlugin.util.FppLogger.warn(
@@ -94,6 +100,14 @@ public final class SettingGui implements Listener {
   public void open(Player player) {
     sessions.put(player.getUniqueId(), new int[] {0, 0, 0});
     build(player);
+  }
+
+  public void registerExtensionTab(FppSettingsTab tab) {
+    extensionTabs.addIfAbsent(tab);
+  }
+
+  public void unregisterExtensionTab(FppSettingsTab tab) {
+    extensionTabs.remove(tab);
   }
 
   @EventHandler
@@ -109,10 +123,15 @@ public final class SettingGui implements Listener {
     int[] state = sessions.get(holder.uuid);
     if (state == null) return;
 
+    List<SettingsTabRef> tabs = visibleTabs(player);
+    if (tabs.isEmpty()) return;
+
     int slot = event.getSlot();
     int catIdx = state[0];
     int pageIdx = state[1];
     int catOffset = state[2];
+    if (catIdx >= tabs.size()) catIdx = tabs.size() - 1;
+    SettingsTabRef currentTab = tabs.get(catIdx);
 
     if (slot == SLOT_RESET) {
       playUiClick(player, 0.6f);
@@ -130,7 +149,7 @@ public final class SettingGui implements Listener {
     }
 
     if (slot == SLOT_CAT_NEXT) {
-      if (catOffset + CAT_WINDOW < categories.length) {
+      if (catOffset + CAT_WINDOW < tabs.size()) {
         playUiClick(player, 1.0f);
         state[2]++;
       }
@@ -146,7 +165,7 @@ public final class SettingGui implements Listener {
 
     if (slot >= CAT_WINDOW_START && slot < CAT_WINDOW_START + CAT_WINDOW) {
       int ci = catOffset + (slot - CAT_WINDOW_START);
-      if (ci < categories.length) {
+      if (ci < tabs.size()) {
         if (ci != catIdx) playUiClick(player, 1.3f);
         state[0] = ci;
         state[1] = 0;
@@ -157,7 +176,7 @@ public final class SettingGui implements Listener {
 
     int settingIdx = slotToSettingIdx(slot);
     if (settingIdx >= 0) {
-      List<SettingEntry> settings = categories[catIdx].settings;
+      List<SettingEntry> settings = currentTab.entries(player);
       int entryIdx = pageIdx * SETTINGS_PER_PAGE + settingIdx;
       if (entryIdx >= settings.size()) return;
 
@@ -181,7 +200,11 @@ public final class SettingGui implements Listener {
         return;
       }
 
-      if (entry.type == SettingType.TOGGLE) {
+      if (entry.type == SettingType.ACTION) {
+        if (entry.clickAction != null) entry.clickAction.run();
+        else handleAction(player, entry.configKey);
+        build(player);
+      } else if (entry.type == SettingType.TOGGLE) {
         entry.apply(plugin);
         plugin.saveConfig();
         Config.reload();
@@ -227,38 +250,39 @@ public final class SettingGui implements Listener {
     if (ses == null) return;
 
     event.setCancelled(true);
-    Bukkit.getScheduler().cancelTask(ses.cleanupTaskId);
+    handleChatInput(uuid, ses, PlainTextComponentSerializer.plainText().serialize(event.message()).trim());
+  }
 
-    String raw = PlainTextComponentSerializer.plainText().serialize(event.message()).trim();
+  private void handleChatInput(UUID uuid, ChatInputSession ses, String raw) {
+    FppScheduler.cancelTask(ses.cleanupTaskId);
 
     sessions.put(uuid, ses.guiState);
-    Bukkit.getScheduler()
-        .runTask(
-            plugin,
-            () -> {
-              Player p = Bukkit.getPlayer(uuid);
-              if (p == null) return;
+    FppScheduler.runSync(
+        plugin,
+        () -> {
+          Player p = Bukkit.getPlayer(uuid);
+          if (p == null) return;
 
-              if (raw.equalsIgnoreCase("cancel")) {
-                p.sendMessage(
-                    Component.empty()
-                        .decoration(TextDecoration.ITALIC, false)
-                        .append(Component.text("✦ ").color(ACCENT))
-                        .append(
-                            Component.text("ᴄᴀɴᴄᴇʟʟᴇᴅ - ʀᴇᴛᴜʀɴɪɴɢ ᴛᴏ" + " ꜱᴇᴛᴛɪɴɢꜱ.").color(GRAY)));
-                build(p);
-                return;
-              }
+          if (raw.equalsIgnoreCase("cancel")) {
+            p.sendMessage(
+                Component.empty()
+                    .decoration(TextDecoration.ITALIC, false)
+                    .append(Component.text("✦ ").color(ACCENT))
+                    .append(
+                        Component.text("ᴄᴀɴᴄᴇʟʟᴇᴅ - ʀᴇᴛᴜʀɴɪɴɢ ᴛᴏ" + " ꜱᴇᴛᴛɪɴɢꜱ.").color(GRAY)));
+            build(p);
+            return;
+          }
 
-              boolean ok = tryApply(p, ses.entry, raw);
-              if (ok) {
-                plugin.saveConfig();
-                Config.reload();
-                applyLiveEffect(ses.entry.configKey);
-                sendActionBarConfirm(p, ses.entry.label, ses.entry.currentValueString(plugin));
-              }
-              build(p);
-            });
+          boolean ok = tryApply(p, ses.entry, raw);
+          if (ok) {
+            plugin.saveConfig();
+            Config.reload();
+            applyLiveEffect(ses.entry.configKey);
+            sendActionBarConfirm(p, ses.entry.label, ses.entry.currentValueString(plugin));
+          }
+          build(p);
+        });
   }
 
   @EventHandler
@@ -268,7 +292,7 @@ public final class SettingGui implements Listener {
     pendingChatInput.remove(uuid);
     ChatInputSession ses = chatSessions.remove(uuid);
     if (ses != null) {
-      Bukkit.getScheduler().cancelTask(ses.cleanupTaskId);
+      FppScheduler.cancelTask(ses.cleanupTaskId);
     }
   }
 
@@ -331,29 +355,27 @@ public final class SettingGui implements Listener {
     player.sendMessage(Component.empty());
 
     int taskId =
-        Bukkit.getScheduler()
-            .runTaskLater(
-                plugin,
-                () -> {
-                  ChatInputSession stale = chatSessions.remove(uuid);
-                  if (stale != null) {
-                    sessions.put(uuid, stale.guiState);
-                    Player p = Bukkit.getPlayer(uuid);
-                    if (p != null) {
-                      p.sendMessage(
-                          Component.empty()
-                              .decoration(TextDecoration.ITALIC, false)
-                              .append(Component.text("✦ ").color(ACCENT))
-                              .append(
-                                  Component.text(
-                                          "ɪɴᴘᴜᴛ ᴛɪᴍᴇᴅ" + " ᴏᴜᴛ -" + " ʀᴇᴛᴜʀɴɪɴɢ" + " ᴛᴏ ꜱᴇᴛᴛɪɴɢꜱ.")
-                                      .color(GRAY)));
-                      build(p);
-                    }
-                  }
-                },
-                20L * 60)
-            .getTaskId();
+        FppScheduler.runSyncLaterWithId(
+            plugin,
+            () -> {
+              ChatInputSession stale = chatSessions.remove(uuid);
+              if (stale != null) {
+                sessions.put(uuid, stale.guiState);
+                Player p = Bukkit.getPlayer(uuid);
+                if (p != null) {
+                  p.sendMessage(
+                      Component.empty()
+                          .decoration(TextDecoration.ITALIC, false)
+                          .append(Component.text("✦ ").color(ACCENT))
+                          .append(
+                              Component.text(
+                                      "ɪɴᴘᴜᴛ ᴛɪᴍᴇᴅ" + " ᴏᴜᴛ -" + " ʀᴇᴛᴜʀɴɪɴɢ" + " ᴛᴏ ꜱᴇᴛᴛɪɴɢꜱ.")
+                                  .color(GRAY)));
+                  build(p);
+                }
+              }
+            },
+            20L * 60);
 
     chatSessions.put(uuid, new ChatInputSession(entry, guiState, taskId));
   }
@@ -415,7 +437,11 @@ public final class SettingGui implements Listener {
     int catIdx = state[0];
     int pageIdx = state[1];
     int catOffset = state[2];
-    Category cat = categories[catIdx];
+    List<SettingsTabRef> tabs = visibleTabs(player);
+    if (tabs.isEmpty()) return;
+    if (catIdx >= tabs.size()) catIdx = tabs.size() - 1;
+    state[0] = catIdx;
+    SettingsTabRef tab = tabs.get(catIdx);
 
     GuiHolder holder = new GuiHolder(uuid);
     Component title =
@@ -424,19 +450,20 @@ public final class SettingGui implements Listener {
             .append(Component.text("[").color(DARK_GRAY))
             .append(Component.text("ꜰᴘᴘ").color(ACCENT))
             .append(Component.text("] ").color(DARK_GRAY))
-            .append(Component.text(cat.label).color(DARK_GRAY));
+            .append(Component.text(tab.label()).color(DARK_GRAY));
 
     Inventory inv = Bukkit.createInventory(holder, SIZE, title);
 
-    int settingsCount = cat.settings.size();
-    int totalPages = totalPagesForCat(cat);
+    List<SettingEntry> settings = tab.entries(player);
+    int settingsCount = settings.size();
+    int totalPages = Math.max(1, (int) Math.ceil(settingsCount / (double) SETTINGS_PER_PAGE));
     pageIdx = Math.min(pageIdx, Math.max(0, totalPages - 1));
     state[1] = pageIdx;
 
     int startIdx = pageIdx * SETTINGS_PER_PAGE;
     int endIdx = Math.min(startIdx + SETTINGS_PER_PAGE, settingsCount);
     for (int i = startIdx; i < endIdx; i++) {
-      inv.setItem(i - startIdx, buildSettingItem(cat.settings.get(i)));
+      inv.setItem(i - startIdx, buildSettingItem(settings.get(i)));
     }
 
     inv.setItem(SLOT_RESET, buildResetAllButton());
@@ -449,14 +476,14 @@ public final class SettingGui implements Listener {
       int ci = catOffset + i;
       inv.setItem(
           CAT_WINDOW_START + i,
-          ci < categories.length
-              ? buildCategoryTab(ci, ci == catIdx)
+          ci < tabs.size()
+              ? buildCategoryTab(tabs.get(ci), ci == catIdx)
               : glassFiller(Material.GRAY_STAINED_GLASS_PANE));
     }
 
     inv.setItem(
         SLOT_CAT_NEXT,
-        catOffset + CAT_WINDOW < categories.length
+        catOffset + CAT_WINDOW < tabs.size()
             ? buildCatArrow(true)
             : glassFiller(Material.GRAY_STAINED_GLASS_PANE));
 
@@ -575,6 +602,12 @@ public final class SettingGui implements Listener {
               .decoration(TextDecoration.ITALIC, false)
               .append(Component.text("◈ ").color(ACCENT))
               .append(Component.text("ᴄʟɪᴄᴋ ᴛᴏ ᴛᴏɢɢʟᴇ").color(DARK_GRAY)));
+    } else if (entry.type == SettingType.ACTION) {
+      lore.add(
+          Component.empty()
+              .decoration(TextDecoration.ITALIC, false)
+              .append(Component.text("⚠ ").color(OFF_RED))
+              .append(Component.text("ᴄʟɪᴄᴋ ᴛᴏ ʀᴜɴ ᴛʜɪꜱ ᴀᴄᴛɪᴏɴ").color(DARK_GRAY)));
     } else {
       lore.add(
           Component.empty()
@@ -588,9 +621,19 @@ public final class SettingGui implements Listener {
     return item;
   }
 
-  private ItemStack buildCategoryTab(int idx, boolean active) {
-    Category cat = categories[idx];
-    Material mat = active ? cat.activeMat : cat.inactiveMat;
+  private List<SettingsTabRef> visibleTabs(Player viewer) {
+    List<SettingsTabRef> tabs = new ArrayList<>(categories.length + extensionTabs.size());
+    for (Category category : categories) {
+      tabs.add(new SettingsTabRef(category));
+    }
+    for (FppSettingsTab tab : extensionTabs) {
+      if (tab.isVisible(viewer)) tabs.add(new SettingsTabRef(tab));
+    }
+    return tabs;
+  }
+
+  private ItemStack buildCategoryTab(SettingsTabRef tab, boolean active) {
+    Material mat = active ? tab.activeMat() : tab.inactiveMat();
     ItemStack item = new ItemStack(mat);
     ItemMeta meta = item.getItemMeta();
     if (active) {
@@ -601,7 +644,7 @@ public final class SettingGui implements Listener {
         Component.empty()
             .decoration(TextDecoration.ITALIC, false)
             .append(
-                Component.text(cat.label).color(ACCENT).decoration(TextDecoration.BOLD, active)));
+                Component.text(tab.label()).color(ACCENT).decoration(TextDecoration.BOLD, active)));
     meta.lore(
         List.of(
             Component.empty()
@@ -634,8 +677,87 @@ public final class SettingGui implements Listener {
     return item;
   }
 
-  private static int totalPagesForCat(Category cat) {
-    return Math.max(1, (int) Math.ceil(cat.settings.size() / (double) SETTINGS_PER_PAGE));
+  private ItemStack buildExtensionSettingItem(FppSettingsItem item) {
+    ItemStack stack = new ItemStack(item.getIcon());
+    ItemMeta meta = stack.getItemMeta();
+    meta.displayName(
+        Component.empty()
+            .decoration(TextDecoration.ITALIC, false)
+            .append(Component.text(item.getLabel()).color(ACCENT).decoration(TextDecoration.BOLD, true)));
+    List<Component> lore = new ArrayList<>();
+    lore.add(Component.empty());
+    String value = item.getValue();
+    if (value != null && !value.isBlank()) {
+      lore.add(
+          Component.empty()
+              .decoration(TextDecoration.ITALIC, false)
+              .append(Component.text("ᴠᴀʟᴜᴇ  ").color(DARK_GRAY))
+              .append(Component.text(value).color(VALUE_YELLOW).decoration(TextDecoration.BOLD, true)));
+      lore.add(Component.empty());
+    }
+    for (String line : item.getDescription().split("\\\\n|\n")) {
+      if (!line.isBlank()) {
+        lore.add(
+            Component.empty()
+                .decoration(TextDecoration.ITALIC, false)
+                .append(Component.text(line).color(GRAY)));
+      }
+    }
+    lore.add(Component.empty());
+    lore.add(
+        Component.empty()
+            .decoration(TextDecoration.ITALIC, false)
+            .append(Component.text("⚠ ").color(OFF_RED))
+            .append(Component.text("ᴄʟɪᴄᴋ ᴛᴏ ᴇxᴇᴄᴜᴛᴇ").color(DARK_GRAY)));
+    meta.lore(lore);
+    stack.setItemMeta(meta);
+    return stack;
+  }
+
+  private record SettingsTabRef(Category builtin, FppSettingsTab extension) {
+    SettingsTabRef(Category builtin) {
+      this(builtin, null);
+    }
+
+    SettingsTabRef(FppSettingsTab extension) {
+      this(null, extension);
+    }
+
+    boolean isExtension() {
+      return extension != null;
+    }
+
+    String label() {
+      return isExtension() ? extension.getLabel() : builtin.label;
+    }
+
+    Material activeMat() {
+      return isExtension() ? extension.getActiveMaterial() : builtin.activeMat;
+    }
+
+    Material inactiveMat() {
+      return isExtension() ? extension.getInactiveMaterial() : builtin.inactiveMat;
+    }
+
+    Material separatorGlass() {
+      return isExtension() ? extension.getSeparatorGlass() : builtin.separatorGlass;
+    }
+
+    List<SettingEntry> entries(Player viewer) {
+      if (!isExtension()) return builtin.settings;
+      List<SettingEntry> out = new ArrayList<>();
+      for (FppSettingsItem item : extension.getItems(viewer)) {
+        out.add(
+            SettingEntry.action(
+                item.getId(),
+                item.getLabel(),
+                item.getDescription(),
+                item.getIcon(),
+                item.getValue(),
+                () -> item.onClick(viewer)));
+      }
+      return out;
+    }
   }
 
   private ItemStack buildResetAllButton() {
@@ -704,25 +826,24 @@ public final class SettingGui implements Listener {
   }
 
   private void scheduleSkullRefresh() {
-    Bukkit.getScheduler()
-        .runTaskAsynchronously(
-            plugin,
-            () -> {
-              try {
-                PlayerProfile profile = Bukkit.createProfile(SKIN_OWNER_UUID, SKIN_OWNER_NAME);
-                profile.complete(true);
-                ItemStack skull = new ItemStack(Material.PLAYER_HEAD);
-                SkullMeta meta = (SkullMeta) skull.getItemMeta();
-                if (meta != null) {
-                  meta.setPlayerProfile(profile);
-                  skull.setItemMeta(meta);
-                }
-                cachedOwnerSkull = skull;
-                skullRefreshedAt = System.currentTimeMillis();
-              } catch (Exception ignored) {
+    FppScheduler.runAsync(
+        plugin,
+        () -> {
+          try {
+            PlayerProfile profile = Bukkit.createProfile(SKIN_OWNER_UUID, SKIN_OWNER_NAME);
+            profile.complete(true);
+            ItemStack skull = new ItemStack(Material.PLAYER_HEAD);
+            SkullMeta meta = (SkullMeta) skull.getItemMeta();
+            if (meta != null) {
+              meta.setPlayerProfile(profile);
+              skull.setItemMeta(meta);
+            }
+            cachedOwnerSkull = skull;
+            skullRefreshedAt = System.currentTimeMillis();
+          } catch (Exception ignored) {
 
-              }
-            });
+          }
+        });
   }
 
   private void resetAllCategories(Player player) {
@@ -861,24 +982,23 @@ public final class SettingGui implements Listener {
                                         + "'");
                                 return;
                               }
-                              Bukkit.getScheduler()
-                                  .runTaskLater(
-                                      plugin,
-                                      () -> {
-                                        Player b = fp.getPlayer();
-                                        if (b == null || !b.isOnline()) return;
-                                        plugin.getSkinManager().applySkinFromProfile(fp, skin);
-                                        Config.debugSkin(
-                                            "SettingGui:"
-                                                + " re-applied"
-                                                + " custom"
-                                                + " skin"
-                                                + " for bot"
-                                                + " '"
-                                                + fp.getName()
-                                                + "'");
-                                      },
-                                      3L);
+                              FppScheduler.runSyncLater(
+                                  plugin,
+                                  () -> {
+                                    Player b = fp.getPlayer();
+                                    if (b == null || !b.isOnline()) return;
+                                    plugin.getSkinManager().applySkinFromProfile(fp, skin);
+                                    Config.debugSkin(
+                                        "SettingGui:"
+                                            + " re-applied"
+                                            + " custom"
+                                            + " skin"
+                                            + " for bot"
+                                            + " '"
+                                            + fp.getName()
+                                            + "'");
+                                  },
+                                  3L);
                             });
                   } else {
 
@@ -942,33 +1062,31 @@ public final class SettingGui implements Listener {
     bot.setRotation(origYaw, 90f);
     NmsPlayerSpawner.setHeadYaw(bot, origYaw);
 
-    Bukkit.getScheduler()
-        .runTaskLater(
-            plugin,
-            () -> {
-              Player b = fp.getPlayer();
-              if (b == null || !b.isOnline()) return;
+    FppScheduler.runSyncLater(
+        plugin,
+        () -> {
+          Player b = fp.getPlayer();
+          if (b == null || !b.isOnline()) return;
 
-              ItemStack[] contents = b.getInventory().getContents().clone();
-              b.getInventory().clear();
-              for (ItemStack item : contents) {
-                if (item != null && item.getType() != org.bukkit.Material.AIR) {
-                  b.getWorld().dropItemNaturally(b.getLocation(), item);
-                }
-              }
+          ItemStack[] contents = b.getInventory().getContents().clone();
+          b.getInventory().clear();
+          for (ItemStack item : contents) {
+            if (item != null && item.getType() != org.bukkit.Material.AIR) {
+              b.getWorld().dropItemNaturally(b.getLocation(), item);
+            }
+          }
 
-              Bukkit.getScheduler()
-                  .runTaskLater(
-                      plugin,
-                      () -> {
-                        Player b2 = fp.getPlayer();
-                        if (b2 == null || !b2.isOnline()) return;
-                        b2.setRotation(origYaw, origPitch);
-                        NmsPlayerSpawner.setHeadYaw(b2, origYaw);
-                      },
-                      5L);
-            },
-            3L);
+          FppScheduler.runSyncLater(
+              plugin,
+              () -> {
+                Player b2 = fp.getPlayer();
+                if (b2 == null || !b2.isOnline()) return;
+                b2.setRotation(origYaw, origPitch);
+                NmsPlayerSpawner.setHeadYaw(b2, origYaw);
+              },
+              5L);
+        },
+        3L);
   }
 
   private void sendActionBarConfirm(Player player, String label, String newVal) {
@@ -1062,7 +1180,23 @@ public final class SettingGui implements Listener {
                 "ᴄʜᴜɴᴋ ʟᴏᴀᴅ ʀᴀᴅɪᴜꜱ",
                 "ᴄʜᴜɴᴋ ʀᴀᴅɪᴜꜱ ᴋᴇᴘᴛ ʟᴏᴀᴅᴇᴅ ᴀʀᴏᴜɴᴅ\nᴇᴀᴄʜ ʙᴏᴛ. 0 = ꜱᴇʀᴠᴇʀ ᴅᴇꜰᴀᴜʟᴛ.",
                 Material.COMPASS,
-                new int[] {0, 2, 4, 6, 8, 12, 16})));
+                new int[] {0, 2, 4, 6, 8, 12, 16}),
+            SettingEntry.action(
+                "reset-all-bots",
+                "ʀᴇꜱᴇᴛ ᴀʟʟ ʙᴏᴛꜱ",
+                "ᴅᴇꜱᴘᴀᴡɴ ᴀʟʟ ᴀᴄᴛɪᴠᴇ ʙᴏᴛꜱ ᴀɴᴅ\n"
+                    + "ᴄʟᴇᴀʀ ᴛʜᴇɪʀ ʀᴜɴɴɪɴɢ ᴛᴀꜱᴋꜱ.",
+                Material.TNT)));
+  }
+
+  private void handleAction(Player player, String key) {
+    if ("reset-all-bots".equals(key)) {
+      int count = plugin.getFakePlayerManager().getActivePlayers().size();
+      plugin.getFakePlayerManager().removeAll();
+      player.sendMessage(
+          Component.text("Reset " + count + " active bot(s).", NamedTextColor.YELLOW)
+              .decoration(TextDecoration.ITALIC, false));
+    }
   }
 
   private Category body() {
@@ -1110,7 +1244,7 @@ public final class SettingGui implements Listener {
             SettingEntry.toggle(
                 "swim-ai.enabled",
                 "ꜱᴡɪᴍ ᴀɪ",
-                "ʙᴏᴛꜱ ꜱᴡɪᴍ ᴜᴘᴡᴀʀᴅ ᴡʜᴇɴ\nꜱᴜʙᴍᴇʀɢᴇᴅ ɪɴ ᴡᴀᴛᴇʀ ᴏʀ ʟᴀᴠᴀ.",
+                "ʙᴏᴛꜱ ᴜꜱᴇ ʙᴀꜱɪᴄ ꜰʟᴏᴀᴛ/ᴊᴜᴍᴘ ꜱᴡɪᴍ ᴀɪ\nᴡʜᴇɴ ꜱᴜʙᴍᴇʀɢᴇᴅ ɪɴ ᴡᴀᴛᴇʀ ᴏʀ ʟᴀᴠᴀ.",
                 Material.WATER_BUCKET),
             SettingEntry.toggle(
                 "death.respawn-on-death",
@@ -1318,119 +1452,6 @@ public final class SettingGui implements Listener {
                 new int[] {5, 10, 30, 60, 120})));
   }
 
-  private Category pvp() {
-    return new Category(
-        "⚔ ᴘᴠᴘ ʙᴏᴛ",
-        Material.NETHERITE_SWORD,
-        Material.IRON_SWORD,
-        Material.RED_STAINED_GLASS_PANE,
-        List.of(
-            SettingEntry.comingSoon(
-                "pvp-ai.difficulty",
-                "ᴅɪꜰꜰɪᴄᴜʟᴛʏ",
-                "ꜱᴇᴛ ᴛʜᴇ ʙᴏᴛ'ꜱ ꜱᴋɪʟʟ ʟᴇᴠᴇʟ.\n" + "ɴᴘᴄ / ᴇᴀꜱʏ / ᴍᴇᴅɪᴜᴍ / ʜᴀʀᴅ / ᴛɪᴇʀ1 / ʜᴀᴄᴋᴇʀ.",
-                Material.DIAMOND_SWORD),
-            SettingEntry.comingSoon(
-                "pvp-ai.combat-mode",
-                "ᴄᴏᴍʙᴀᴛ ᴍᴏᴅᴇ",
-                "ꜱᴡɪᴛᴄʜ ʙᴇᴛᴡᴇᴇɴ ᴄʀʏꜱᴛᴀʟ ᴘᴠᴘ\nᴀɴᴅ ꜱᴡᴏʀᴅ ꜰɪɡʜᴛɪɴɢ ꜱᴛʏʟᴇ.",
-                Material.END_CRYSTAL),
-            SettingEntry.comingSoon(
-                "pvp-ai.critting",
-                "ᴄʀɪᴛᴛɪɴɢ",
-                "ʙᴏᴛ ʟᴀɴᴅꜱ ᴄʀɪᴛɪᴄᴀʟ ʜɪᴛꜱ ʙʏ\nꜰᴀʟɪɴɢ ᴅᴜʀɪɴɢ ᴀᴛᴛᴀᴄᴋꜱ.",
-                Material.NETHERITE_SWORD),
-            SettingEntry.comingSoon(
-                "pvp-ai.s-tapping",
-                "ꜱ-ᴛᴀᴘᴘɪɴɢ",
-                "ʙᴏᴛ ᴛᴀᴘꜱ ꜱ ᴅᴜʀɪɴɢ ꜱᴡɪɴɢ\nᴛᴏ ʀᴇꜱᴇᴛ ᴀᴛᴛᴀᴄᴋ ᴄᴏᴏʟᴅᴏᴡɴ.",
-                Material.CLOCK),
-            SettingEntry.comingSoon(
-                "pvp-ai.strafing",
-                "ꜱᴛʀᴀꜰɪɴɢ",
-                "ʙᴏᴛ ᴄɪʀᴄʟᴇꜱ ᴀʀᴏᴜɴᴅ ᴛʜᴇ ᴛᴀʀɡᴇᴛ\nᴡʜɪʟᴇ ꜰɪɡʜᴛɪɴɢ.",
-                Material.FEATHER),
-            SettingEntry.comingSoon(
-                "pvp-ai.shield",
-                "ꜱʜɪᴇʟᴅɪɴɢ",
-                "ʙᴏᴛ ᴄᴀʀʀɪᴇꜱ ᴀɴᴅ ᴜꜱᴇꜱ ᴀ ꜱʜɪᴇʟᴅ\nᴛᴏ ʙʟᴏᴄᴋ ɪɴᴄᴏᴍɪɴɢ ᴀᴛᴛᴀᴄᴋꜱ.",
-                Material.SHIELD),
-            SettingEntry.comingSoon(
-                "pvp-ai.speed-buffs",
-                "ꜱᴘᴇᴇᴅ ʙᴜꜰꜰꜱ",
-                "ʙᴏᴛ ʜᴀꜱ ꜱᴘᴇᴇᴅ & ꜱᴛʀᴇɴɡᴛʜ ᴘᴏᴛɪᴏɴ\nᴇꜰꜰᴇᴄᴛꜱ ᴀᴄᴛɪᴠᴇ.",
-                Material.SUGAR),
-            SettingEntry.comingSoon(
-                "pvp-ai.jump-reset",
-                "ᴊᴜᴍᴘ ʀᴇꜱᴇᴛ",
-                "ʙᴏᴛ ᴊᴜᴍᴘꜱ ᴊᴜꜱᴛ ʙᴇꜰᴏʀᴇ ꜱᴡɪɴɢɪɴɢ\n" + "ᴛᴏ ɢᴀɪɴ ᴛʜᴇ W-ᴛᴀᴘ ᴋɴᴏᴄᴋʙᴀᴄᴋ ʙᴏɴᴜꜱ.",
-                Material.SLIME_BALL),
-            SettingEntry.comingSoon(
-                "pvp-ai.random",
-                "ʀᴀɴᴅᴏᴍ ᴘʟᴀʏꜱᴛʏʟᴇ",
-                "ʀᴀɴᴅᴏᴍɪꜱᴇ ᴛᴇᴄʜɴɪQᴜᴇꜱ ᴇᴀᴄʜ ʀᴏᴜɴᴅ\nᴛᴏ ᴋᴇᴇᴘ ᴛʜᴇ ꜰɪɡᴜᴛ ᴜɴᴘʀᴇᴅɪᴄᴛᴀʙʟᴇ.",
-                Material.COMPARATOR),
-            SettingEntry.comingSoon(
-                "pvp-ai.gear",
-                "ɢᴇᴀʀ ᴛʏᴘᴇ",
-                "ʙᴏᴛ ᴡᴇᴀʀꜱ ᴅɪᴀᴍᴏɴᴅ ᴏʀ\nɴᴇᴛʜᴇʀɪᴛᴇ ᴀʀᴍᴏᴜʀ.",
-                Material.DIAMOND_CHESTPLATE),
-            SettingEntry.comingSoon(
-                "pvp-ai.defensive-mode",
-                "ᴅᴇꜰᴇɴꜱɪᴠᴇ ᴍᴏᴅᴇ",
-                "ʙᴏᴛ ᴏɴʟʏ ꜰɪɡʜᴛꜱ ʙᴀᴄᴋ ᴡʜᴇɴ\nᴛʜᴇ ᴘʟᴀʏᴇʀ ᴀᴛᴛᴀᴄᴋꜱ ꜰɪʀꜱᴛ.",
-                Material.BOW),
-            SettingEntry.comingSoon(
-                "pvp-ai.detect-range",
-                "ᴅᴇᴛᴇᴄᴛ ʀᴀɴɢᴇ",
-                "ʜᴏᴡ ꜰᴀʀ ᴛʜᴇ ʙᴏᴛ ꜱᴇᴇꜱ ᴘʟᴀʏᴇʀꜱ\nᴀɴᴅ ʟᴏᴄᴋꜱ ᴏɴ ᴀꜱ ᴛᴀʀɡᴇᴛ.",
-                Material.SPYGLASS),
-            SettingEntry.comingSoon(
-                "pvp-ai.sprint",
-                "ꜱᴘʀɪɴᴛɪɴɢ",
-                "ʙᴏᴛ ꜱᴘʀɪɴᴛꜱ ᴛᴏᴡᴀʀᴅꜱ ᴛʜᴇ ᴛᴀʀɡᴇᴛ\nᴅᴜʀɪɴɢ ᴄᴏᴍʙᴀᴛ.",
-                Material.GOLDEN_BOOTS),
-            SettingEntry.comingSoon(
-                "pvp-ai.pearl",
-                "ᴇɴᴅᴇʀ ᴘᴇᴀʀʟ",
-                "ʙᴏᴛ ᴛʜʀᴏᴡꜱ ᴇɴᴅᴇʀ ᴘᴇᴀʀʟꜱ ᴛᴏ\nᴄʟᴏꜱᴇ ᴛʜᴇ ɢᴀᴘ ᴏʀ ᴇꜱᴄᴀᴘᴇ.",
-                Material.ENDER_PEARL),
-            SettingEntry.comingSoon(
-                "pvp-ai.pearl-spam",
-                "ᴘᴇᴀʀʟ ꜱᴘᴀᴍ",
-                "ʙᴏᴛ ꜱᴘᴀᴍꜱ ᴘᴇᴀʀʟꜱ ɪɴ ʙᴜʀꜱᴛꜱ\nꜰᴏʀ ᴀɡɡʀᴇꜱꜱɪᴠᴇ ɢᴀᴘ-ᴄʟᴏꜱɪɴɢ.",
-                Material.ENDER_EYE),
-            SettingEntry.comingSoon(
-                "pvp-ai.walk-backwards",
-                "ᴡᴀʟᴋ ʙᴀᴄᴋᴡᴀʀᴅꜱ",
-                "ʙᴏᴛ ʙᴀᴄᴋꜱ ᴀᴡᴀʏ ᴡʜɪʟᴇ ꜱᴡɪɴɢɪɴɢ\nᴛᴏ ᴄᴏɴᴛʀᴏʟ ᴋɴᴏᴄᴋʙᴀᴄᴋ.",
-                Material.LEATHER_BOOTS),
-            SettingEntry.comingSoon(
-                "pvp-ai.hole-mode",
-                "ʜᴏʟᴇ ᴍᴏᴅᴇ",
-                "ʙᴏᴛ ᴘᴀᴛʜꜰɪɴᴅꜱ ᴛᴏ ᴀɴ ᴏʙꜱɪᴅɪᴀɴ\nʜᴏʟᴇ ᴛᴏ ᴘʀᴏᴛᴇᴄᴛ ɪᴛꜱᴇʟꜰ.",
-                Material.OBSIDIAN),
-            SettingEntry.comingSoon(
-                "pvp-ai.kit",
-                "ᴋɪᴛ ᴘʀᴇꜱᴇᴛ",
-                "ꜱᴇʟᴇᴄᴛ ᴛʜᴇ ʙᴏᴛ'ꜱ ʟᴏᴀᴅᴏᴜᴛ.\nᴋɪᴛ1 / ᴋɪᴛ2 / ᴋɪᴛ3 / ᴋɪᴛ4.",
-                Material.CHEST),
-            SettingEntry.comingSoon(
-                "pvp-ai.auto-refill",
-                "ᴀᴜᴛᴏ-ʀᴇꜰɪʟʟ ᴛᴏᴛᴇᴍ",
-                "ʙᴏᴛ ᴀᴜᴛᴏᴍᴀᴛɪᴄᴀʟʟʏ ʀᴇ-ᴇQᴜɪɡꜱ ᴀ\nᴛᴏᴛᴇᴍ ᴀꜰᴛᴇʀ ᴘᴏᴘᴘɪɴɡ ᴏɴᴇ.",
-                Material.TOTEM_OF_UNDYING),
-            SettingEntry.comingSoon(
-                "pvp-ai.auto-respawn",
-                "ᴀᴜᴛᴏ-ʀᴇꜱᴘᴀᴡɴ",
-                "ʙᴏᴛ ᴀᴜᴛᴏᴍᴀᴛɪᴄᴀʟʟʏ ʀᴇꜱᴘᴀᴡɴꜱ\nᴀɴᴅ ʀᴇᴊᴏɪɴꜱ ᴀꜰᴛᴇʀ ᴅᴇᴀᴛʜ.",
-                Material.RESPAWN_ANCHOR),
-            SettingEntry.comingSoon(
-                "pvp-ai.spawn-protection",
-                "ꜱᴘᴀᴡɴ ᴘʀᴏᴛᴇᴄᴛɪᴏɴ",
-                "ʙᴏᴛ ꜱᴛᴀʏꜱ ɪɴᴠᴜʟɴᴇʀᴀʙʟᴇ ꜰᴏʀ\nᴀ ꜱʜᴏʀᴛ ɢʀᴀᴄᴇ ᴘᴇʀɪᴏᴅ ᴀᴛ ꜱᴘᴀᴡɴ.",
-                Material.GRASS_BLOCK)));
-  }
 
   private Category pathfinding() {
     return new Category(
@@ -1566,6 +1587,7 @@ public final class SettingGui implements Listener {
     TOGGLE,
     CYCLE_INT,
     CYCLE_DOUBLE,
+    ACTION,
     COMING_SOON
   }
 
@@ -1579,6 +1601,8 @@ public final class SettingGui implements Listener {
     final SettingType type;
     final int[] intValues;
     final double[] dblValues;
+    final String valueOverride;
+    final Runnable clickAction;
 
     private SettingEntry(
         String configKey,
@@ -1587,7 +1611,9 @@ public final class SettingGui implements Listener {
         Material icon,
         SettingType type,
         int[] intValues,
-        double[] dblValues) {
+        double[] dblValues,
+        String valueOverride,
+        Runnable clickAction) {
       this.configKey = configKey;
       this.label = label;
       this.description = description;
@@ -1595,31 +1621,50 @@ public final class SettingGui implements Listener {
       this.type = type;
       this.intValues = intValues;
       this.dblValues = dblValues;
+      this.valueOverride = valueOverride;
+      this.clickAction = clickAction;
     }
 
     static SettingEntry toggle(String key, String label, String desc, Material icon) {
-      return new SettingEntry(key, label, desc, icon, SettingType.TOGGLE, null, null);
+      return new SettingEntry(key, label, desc, icon, SettingType.TOGGLE, null, null, null, null);
     }
 
     static SettingEntry cycleInt(
         String key, String label, String desc, Material icon, int[] values) {
-      return new SettingEntry(key, label, desc, icon, SettingType.CYCLE_INT, values, null);
+      return new SettingEntry(key, label, desc, icon, SettingType.CYCLE_INT, values, null, null, null);
     }
 
     static SettingEntry cycleDouble(
         String key, String label, String desc, Material icon, double[] values) {
-      return new SettingEntry(key, label, desc, icon, SettingType.CYCLE_DOUBLE, null, values);
+      return new SettingEntry(key, label, desc, icon, SettingType.CYCLE_DOUBLE, null, values, null, null);
     }
 
     static SettingEntry comingSoon(String key, String label, String desc, Material icon) {
-      return new SettingEntry(key, label, desc, icon, SettingType.COMING_SOON, null, null);
+      return new SettingEntry(key, label, desc, icon, SettingType.COMING_SOON, null, null, null, null);
+    }
+
+    static SettingEntry action(String key, String label, String desc, Material icon) {
+      return new SettingEntry(key, label, desc, icon, SettingType.ACTION, null, null, null, null);
+    }
+
+    static SettingEntry action(
+        String key,
+        String label,
+        String desc,
+        Material icon,
+        String valueOverride,
+        Runnable clickAction) {
+      return new SettingEntry(
+          key, label, desc, icon, SettingType.ACTION, null, null, valueOverride, clickAction);
     }
 
     String currentValueString(FakePlayerPlugin plugin) {
+      if (valueOverride != null) return valueOverride;
       var cfg = plugin.getConfig();
       return switch (type) {
         case TOGGLE -> cfg.getBoolean(configKey, false) ? "✔ ᴇɴᴀʙʟᴇᴅ" : "✘ ᴅɪꜱᴀʙʟᴇᴅ";
         case CYCLE_INT -> String.valueOf(cfg.getInt(configKey, intValues[0]));
+        case ACTION -> "ᴄʟɪᴄᴋ ᴛᴏ ʀᴜɴ";
         case CYCLE_DOUBLE -> {
           double d = cfg.getDouble(configKey, dblValues[0]);
           yield (d == Math.floor(d) && !Double.isInfinite(d))

@@ -5,12 +5,19 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.net.InetAddress;
 import java.util.*;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import me.bill.fakePlayerPlugin.FakePlayerPlugin;
 import me.bill.fakePlayerPlugin.fakeplayer.network.FakeConnection;
 import me.bill.fakePlayerPlugin.fakeplayer.network.FakeServerGamePacketListenerImpl;
 import me.bill.fakePlayerPlugin.util.FppLogger;
 import org.bukkit.Bukkit;
+import org.bukkit.Location;
+import org.bukkit.plugin.Plugin;
 import org.bukkit.World;
 import org.bukkit.entity.Player;
+import org.bukkit.util.Vector;
 
 public final class NmsPlayerSpawner {
 
@@ -31,6 +38,7 @@ public final class NmsPlayerSpawner {
   private static Class<?> packetFlowClass;
 
   private static Constructor<?> gameProfileConstructor;
+  private static Class<?> gameProfileClass;
   private static Method setPosMethod;
   private static Method doTickMethod;
   private static Method getPlayerListMethod;
@@ -70,6 +78,11 @@ public final class NmsPlayerSpawner {
   private static Method synchedEntityDataSetMethod = null;
 
   private static Field entityDataFieldForSkinParts = null;
+
+  private static volatile boolean foliaSchedulerResolved = false;
+  private static volatile boolean foliaSchedulerAvailable = false;
+  private static Method bukkitGetRegionSchedulerMethod = null;
+  private static Method regionSchedulerExecuteMethod = null;
 
   private NmsPlayerSpawner() {}
 
@@ -139,7 +152,7 @@ public final class NmsPlayerSpawner {
       } catch (ClassNotFoundException ignored) {
       }
 
-      Class<?> gameProfileClass = Class.forName("com.mojang.authlib.GameProfile");
+      gameProfileClass = Class.forName("com.mojang.authlib.GameProfile");
       gameProfileConstructor = gameProfileClass.getConstructor(UUID.class, String.class);
 
       getPlayerListMethod = minecraftServerClass.getMethod("getPlayerList");
@@ -244,7 +257,7 @@ public final class NmsPlayerSpawner {
           FppLogger.debug("NmsPlayerSpawner: attack(Entity) method cached");
         } else {
           FppLogger.warn(
-              "NmsPlayerSpawner: attack(Entity) method not found - PVP bots will use"
+              "NmsPlayerSpawner: attack(Entity) method not found - bots will use"
                   + " fallback damage");
         }
       } catch (Exception e) {
@@ -370,7 +383,7 @@ public final class NmsPlayerSpawner {
       Object gameProfile = gameProfileConstructor.newInstance(uuid, name);
       if (skin != null && skin.isValid()) {
         try {
-          SkinProfileInjector.apply(gameProfile, skin);
+          gameProfile = SkinProfileInjector.createGameProfile(gameProfileClass, uuid, name, skin);
           FppLogger.debug("NmsPlayerSpawner: injected skin for '" + name + "'");
         } catch (Exception e) {
           FppLogger.warn("NmsPlayerSpawner: skin injection failed: " + e.getMessage());
@@ -402,6 +415,12 @@ public final class NmsPlayerSpawner {
 
       boolean placed = placePlayer(minecraftServer, conn, serverPlayer, gameProfile, clientInfo);
       if (!placed) {
+        placed =
+            placePlayerOnRegionThread(
+                world, x, z, minecraftServer, conn, serverPlayer, gameProfile, clientInfo);
+      }
+      if (!placed) {
+        cleanupFailedSpawn(minecraftServer, serverPlayer, name);
         FppLogger.warn("NmsPlayerSpawner: placeNewPlayer failed for " + name);
         return null;
       }
@@ -415,6 +434,7 @@ public final class NmsPlayerSpawner {
       Object entity = getBukkitEntity.invoke(serverPlayer);
       if (entity instanceof Player result) {
         result.setGameMode(org.bukkit.GameMode.SURVIVAL);
+        setListed(result, true);
 
         forceAllSkinParts(result);
         firstTickSet.add(uuid);
@@ -434,6 +454,17 @@ public final class NmsPlayerSpawner {
   }
 
   public static void tickPhysics(Player bot) {
+    if (!initialized || doTickMethod == null || craftPlayerGetHandleMethod == null) return;
+    if (!bot.isOnline() || !bot.isValid() || bot.isDead()) return;
+
+    if (dispatchTickPhysicsToRegionThread(bot)) {
+      return;
+    }
+
+    tickPhysicsInternal(bot);
+  }
+
+  private static void tickPhysicsInternal(Player bot) {
     if (!initialized || doTickMethod == null || craftPlayerGetHandleMethod == null) return;
     if (!bot.isOnline() || !bot.isValid() || bot.isDead()) return;
     try {
@@ -458,6 +489,58 @@ public final class NmsPlayerSpawner {
     } catch (Exception e) {
       FppLogger.debug(
           "NmsPlayerSpawner.tickPhysics failed for " + bot.getName() + ": " + e.getMessage());
+    }
+  }
+
+  private static boolean dispatchTickPhysicsToRegionThread(Player bot) {
+    try {
+      if (!foliaSchedulerResolved) {
+        synchronized (NmsPlayerSpawner.class) {
+          if (!foliaSchedulerResolved) {
+            try {
+              bukkitGetRegionSchedulerMethod = Bukkit.getServer().getClass().getMethod("getRegionScheduler");
+              Object rs = bukkitGetRegionSchedulerMethod.invoke(Bukkit.getServer());
+              if (rs != null) {
+                regionSchedulerExecuteMethod =
+                    rs.getClass().getMethod(
+                        "execute", Plugin.class, World.class, int.class, int.class, Runnable.class);
+                foliaSchedulerAvailable = true;
+              }
+            } catch (Throwable ignored) {
+              foliaSchedulerAvailable = false;
+            }
+            foliaSchedulerResolved = true;
+          }
+        }
+      }
+
+      if (!foliaSchedulerAvailable || bukkitGetRegionSchedulerMethod == null || regionSchedulerExecuteMethod == null) {
+        return false;
+      }
+
+      Plugin plugin = FakePlayerPlugin.getInstance();
+      if (plugin == null) return false;
+
+      Location loc = bot.getLocation();
+      World world = loc.getWorld();
+      if (world == null) return false;
+      int cx = loc.getBlockX() >> 4;
+      int cz = loc.getBlockZ() >> 4;
+
+      Object regionScheduler = bukkitGetRegionSchedulerMethod.invoke(Bukkit.getServer());
+      if (regionScheduler == null) return false;
+
+      regionSchedulerExecuteMethod.invoke(
+          regionScheduler,
+          plugin,
+          world,
+          cx,
+          cz,
+          (Runnable) () -> tickPhysicsInternal(bot));
+      return true;
+    } catch (Throwable e) {
+      FppLogger.debug("NmsPlayerSpawner: region-thread dispatch failed: " + e.getMessage());
+      return false;
     }
   }
 
@@ -557,7 +640,48 @@ public final class NmsPlayerSpawner {
     }
   }
 
+  public static void applyServerVelocity(Player bot, org.bukkit.util.Vector velocity) {
+    if (!initialized || craftPlayerGetHandleMethod == null || bot == null || velocity == null) return;
+    try {
+      Object nmsPlayer = craftPlayerGetHandleMethod.invoke(bot);
+      Class<?> vec3Class = Class.forName("net.minecraft.world.phys.Vec3");
+      Object vec3 =
+          vec3Class
+              .getConstructor(double.class, double.class, double.class)
+              .newInstance(velocity.getX(), velocity.getY(), velocity.getZ());
+      Method setDelta = findMethod(nmsPlayer.getClass(), "setDeltaMovement", 1, vec3Class);
+      if (setDelta != null) {
+        setDelta.invoke(nmsPlayer, vec3);
+      } else {
+        bot.setVelocity(velocity);
+      }
+
+      Field hurtMarked = findFieldInHierarchy(nmsPlayer.getClass(), "hurtMarked");
+      if (hurtMarked != null && hurtMarked.getType() == boolean.class) {
+        hurtMarked.setBoolean(nmsPlayer, true);
+      }
+      Field hasImpulse = findFieldInHierarchy(nmsPlayer.getClass(), "hasImpulse");
+      if (hasImpulse != null && hasImpulse.getType() == boolean.class) {
+        hasImpulse.setBoolean(nmsPlayer, true);
+      }
+    } catch (Exception e) {
+      try {
+        bot.setVelocity(velocity);
+      } catch (Exception ignored) {
+      }
+      FppLogger.debug("NmsPlayerSpawner.applyServerVelocity failed: " + e.getMessage());
+    }
+  }
+
   public static void removeFakePlayer(Player player) {
+    removeFakePlayer(player, true);
+  }
+
+  public static void removeFakePlayerFast(Player player) {
+    removeFakePlayer(player, false);
+  }
+
+  private static void removeFakePlayer(Player player, boolean saveData) {
     if (player == null) return;
     try {
       firstTickSet.remove(player.getUniqueId());
@@ -567,17 +691,19 @@ public final class NmsPlayerSpawner {
 
         FppLogger.debug("NmsPlayerSpawner: removing '" + name + "' uuid=" + uuid);
 
-        try {
-          player.saveData();
-          FppLogger.debug("NmsPlayerSpawner: saved playerdata for '" + name + "' uuid=" + uuid);
-        } catch (Exception e) {
-          FppLogger.warn(
-              "NmsPlayerSpawner: saveData failed for '"
-                  + name
-                  + "' uuid="
-                  + uuid
-                  + ": "
-                  + e.getMessage());
+        if (saveData) {
+          try {
+            player.saveData();
+            FppLogger.debug("NmsPlayerSpawner: saved playerdata for '" + name + "' uuid=" + uuid);
+          } catch (Exception e) {
+            FppLogger.warn(
+                "NmsPlayerSpawner: saveData failed for '"
+                    + name
+                    + "' uuid="
+                    + uuid
+                    + ": "
+                    + e.getMessage());
+          }
         }
 
         boolean removedViaPlayerList = false;
@@ -890,6 +1016,53 @@ public final class NmsPlayerSpawner {
     }
   }
 
+  public static void interactBlock(Player bot, org.bukkit.block.Block block) {
+    if (!initialized || craftPlayerGetHandleMethod == null) return;
+    try {
+      Object nmsPlayer = craftPlayerGetHandleMethod.invoke(bot);
+      ClassLoader cl = nmsPlayer.getClass().getClassLoader();
+
+      Class<?> interactionHandClass = cl.loadClass("net.minecraft.world.InteractionHand");
+      Object[] hands = interactionHandClass.getEnumConstants();
+      if (hands == null || hands.length == 0) return;
+      Object mainHand = hands[0];
+
+      Class<?> blockPosClass = cl.loadClass("net.minecraft.core.BlockPos");
+      Class<?> directionClass = cl.loadClass("net.minecraft.core.Direction");
+      Class<?> blockHitResultClass = cl.loadClass("net.minecraft.world.phys.BlockHitResult");
+
+      Object blockPos = blockPosClass.getConstructor(int.class, int.class, int.class)
+          .newInstance(block.getX(), block.getY(), block.getZ());
+
+      Object direction = directionClass.getMethod("getNearest", float.class, float.class, float.class)
+          .invoke(null, 0f, -1f, 0f);
+
+      Object blockHit = blockHitResultClass.getConstructor(
+              Vector.class, directionClass, blockPosClass, boolean.class)
+          .newInstance(new Vector(0.5, 0.5, 0.5), direction, blockPos, false);
+
+      Object gameMode = nmsPlayer.getClass().getMethod("gameMode").invoke(nmsPlayer);
+      Object level = nmsPlayer.getClass().getMethod("level").invoke(nmsPlayer);
+      Object itemStack = nmsPlayer.getClass().getMethod("getItemInHand", interactionHandClass)
+          .invoke(nmsPlayer, mainHand);
+
+      Object result = gameMode.getClass().getMethod("useItemOn",
+              nmsPlayer.getClass(), level.getClass(),
+              cl.loadClass("net.minecraft.world.item.ItemStack"), interactionHandClass, blockHitResultClass)
+          .invoke(gameMode, nmsPlayer, level, itemStack, mainHand, blockHit);
+
+      if (result != null) {
+        Method consumesAction = result.getClass().getMethod("consumesAction");
+        if ((boolean) consumesAction.invoke(result)) {
+          Method swing = nmsPlayer.getClass().getMethod("swing", interactionHandClass);
+          swing.invoke(nmsPlayer, mainHand);
+        }
+      }
+    } catch (Exception e) {
+      FppLogger.debug("NmsPlayerSpawner.interactBlock failed: " + e.getMessage());
+    }
+  }
+
   public static void forceAllSkinParts(Player bot) {
     if (!initialized
         || skinPartsDataAccessor == null
@@ -1047,9 +1220,307 @@ public final class NmsPlayerSpawner {
       }
       FppLogger.warn("NmsPlayerSpawner: placeNewPlayer(3-arg) not found on PlayerList");
     } catch (Exception e) {
-      FppLogger.warn("NmsPlayerSpawner.placePlayer failed: " + e.getMessage());
+      Throwable cause = e.getCause() != null ? e.getCause() : e;
+      if (isWorldDataNotReadyFailure(cause)) {
+        FppLogger.warn(
+            "NmsPlayerSpawner.placePlayer deferred: world data not ready on this thread yet");
+      } else {
+        FppLogger.warn(
+            "NmsPlayerSpawner.placePlayer failed: "
+                + cause.getClass().getSimpleName()
+                + ": "
+                + cause.getMessage());
+      }
     }
     return false;
+  }
+
+  private static boolean isWorldDataNotReadyFailure(Throwable cause) {
+    if (cause == null) return false;
+    String msg = cause.getMessage();
+    return cause instanceof NullPointerException
+        && msg != null
+        && msg.contains("getCurrentWorldData()")
+        && msg.contains("connections");
+  }
+
+  private static void cleanupFailedSpawn(Object minecraftServer, Object serverPlayer, String name) {
+    try {
+      Method getBukkitEntity = serverPlayerClass.getMethod("getBukkitEntity");
+      Object entity = getBukkitEntity.invoke(serverPlayer);
+      if (entity instanceof Player player) {
+        FppLogger.warn("NmsPlayerSpawner: cleaning up partial failed spawn for " + name);
+        removeFakePlayer(player);
+        return;
+      }
+    } catch (Exception ignored) {
+    }
+
+    try {
+      if (minecraftServer != null && getPlayerListMethod != null && playerListRemoveMethod != null) {
+        Object playerList = getPlayerListMethod.invoke(minecraftServer);
+        playerListRemoveMethod.invoke(playerList, serverPlayer);
+      }
+    } catch (Exception ignored) {
+    }
+  }
+
+  private static boolean placePlayerOnRegionThread(
+      World world,
+      double x,
+      double z,
+      Object minecraftServer,
+      Object conn,
+      Object serverPlayer,
+      Object gameProfile,
+      Object clientInfo) {
+    try {
+      Plugin plugin = FakePlayerPlugin.getInstance();
+      if (plugin == null) return false;
+      if (world == null) return false;
+
+      Method getRegionScheduler = Bukkit.getServer().getClass().getMethod("getRegionScheduler");
+      Object regionScheduler = getRegionScheduler.invoke(Bukkit.getServer());
+      if (regionScheduler == null) return false;
+
+      int cx = ((int) Math.floor(x)) >> 4;
+      int cz = ((int) Math.floor(z)) >> 4;
+
+      // We can't safely block a Folia scheduler thread waiting for another region.
+      // Callers on a Folia scheduler thread must use dispatchPlacePlayerAsync() instead.
+      String threadName = Thread.currentThread().getName();
+      boolean onSchedulerThread =
+          threadName != null
+              && (threadName.startsWith("Folia Region Scheduler Thread")
+                  || threadName.startsWith("Folia Async Scheduler Thread"));
+      if (onSchedulerThread) {
+        return false;
+      }
+
+      AtomicBoolean placed = new AtomicBoolean(false);
+      CountDownLatch latch = new CountDownLatch(1);
+
+      Runnable task =
+          () -> {
+            try {
+              placed.set(placePlayer(minecraftServer, conn, serverPlayer, gameProfile, clientInfo));
+            } finally {
+              latch.countDown();
+            }
+          };
+
+      Method execute =
+          regionScheduler
+              .getClass()
+              .getMethod("execute", Plugin.class, World.class, int.class, int.class, Runnable.class);
+      execute.invoke(regionScheduler, plugin, world, cx, cz, task);
+
+      if (!latch.await(5, TimeUnit.SECONDS)) {
+        FppLogger.warn("NmsPlayerSpawner: region-thread placeNewPlayer timed out");
+        return false;
+      }
+      if (placed.get()) {
+        FppLogger.debug("NmsPlayerSpawner: placeNewPlayer succeeded on region thread");
+      }
+      return placed.get();
+    } catch (NoSuchMethodException ignored) {
+      return false;
+    } catch (Exception e) {
+      Throwable cause = e.getCause() != null ? e.getCause() : e;
+      FppLogger.warn(
+          "NmsPlayerSpawner: region-thread placeNewPlayer failed: "
+              + cause.getClass().getSimpleName()
+              + ": "
+              + cause.getMessage());
+      return false;
+    }
+  }
+
+  /**
+   * Async Folia-compatible placement. Dispatches placeNewPlayer to the destination chunk's
+   * region thread and invokes the callback once placement has been attempted. Must be used
+   * when the caller is already on a Folia scheduler thread.
+   */
+  private static boolean dispatchPlacePlayerAsync(
+      World world,
+      double x,
+      double z,
+      Object minecraftServer,
+      Object conn,
+      Object serverPlayer,
+      Object gameProfile,
+      Object clientInfo,
+      java.util.function.Consumer<Boolean> onComplete) {
+    try {
+      Plugin plugin = FakePlayerPlugin.getInstance();
+      if (plugin == null || world == null) return false;
+      Method getRegionScheduler = Bukkit.getServer().getClass().getMethod("getRegionScheduler");
+      Object regionScheduler = getRegionScheduler.invoke(Bukkit.getServer());
+      if (regionScheduler == null) return false;
+
+      int cx = ((int) Math.floor(x)) >> 4;
+      int cz = ((int) Math.floor(z)) >> 4;
+      Method execute =
+          regionScheduler
+              .getClass()
+              .getMethod("execute", Plugin.class, World.class, int.class, int.class, Runnable.class);
+
+      Runnable task =
+          () -> {
+            boolean ok = false;
+            try {
+              ok = placePlayer(minecraftServer, conn, serverPlayer, gameProfile, clientInfo);
+            } catch (Throwable t) {
+              FppLogger.warn(
+                  "NmsPlayerSpawner: async region-thread placeNewPlayer failed: " + t.getMessage());
+            }
+            onComplete.accept(ok);
+          };
+      execute.invoke(regionScheduler, plugin, world, cx, cz, task);
+      return true;
+    } catch (NoSuchMethodException ignored) {
+      return false;
+    } catch (Exception e) {
+      FppLogger.debug(
+          "NmsPlayerSpawner: dispatchPlacePlayerAsync failed: " + e.getMessage());
+      return false;
+    }
+  }
+
+  /** True when running under Folia (RegionScheduler exists). */
+  private static volatile Boolean cachedFoliaDetected;
+
+  public static boolean isFolia() {
+    Boolean cached = cachedFoliaDetected;
+    if (cached != null) return cached;
+    try {
+      Bukkit.getServer().getClass().getMethod("getRegionScheduler");
+      cachedFoliaDetected = Boolean.TRUE;
+    } catch (NoSuchMethodException e) {
+      cachedFoliaDetected = Boolean.FALSE;
+    }
+    return cachedFoliaDetected;
+  }
+
+  /**
+   * Async spawn entry point for Folia. Dispatches placement to the destination chunk's region
+   * thread and calls {@code callback} with the resulting Bukkit Player on the global scheduler
+   * thread (or null on failure). On Paper/Spigot, runs fully synchronously and invokes the
+   * callback directly.
+   */
+  public static void spawnFakePlayerAsync(
+      UUID uuid,
+      String name,
+      SkinProfile skin,
+      World world,
+      double x,
+      double y,
+      double z,
+      java.util.function.Consumer<Player> callback) {
+    if (!isAvailable()) {
+      FppLogger.warn("NmsPlayerSpawner not available - cannot spawn " + name);
+      callback.accept(null);
+      return;
+    }
+    if (!isFolia()) {
+      callback.accept(spawnFakePlayer(uuid, name, skin, world, x, y, z));
+      return;
+    }
+
+    try {
+      Object gameProfile = gameProfileConstructor.newInstance(uuid, name);
+      if (skin != null && skin.isValid()) {
+        try {
+          gameProfile = SkinProfileInjector.createGameProfile(gameProfileClass, uuid, name, skin);
+        } catch (Exception e) {
+          FppLogger.warn("NmsPlayerSpawner: skin injection failed: " + e.getMessage());
+        }
+      }
+
+      Object minecraftServer = craftServerGetServerMethod.invoke(Bukkit.getServer());
+      Object serverLevel = craftWorldGetHandleMethod.invoke(world);
+      Object clientInfo = getClientInformation();
+
+      Object serverPlayer =
+          createServerPlayer(minecraftServer, serverLevel, gameProfile, clientInfo);
+      if (serverPlayer == null) {
+        FppLogger.warn("NmsPlayerSpawner: failed to create ServerPlayer for " + name);
+        callback.accept(null);
+        return;
+      }
+
+      if (setPosMethod != null) setPosMethod.invoke(serverPlayer, x, y, z);
+      initPreviousPosition(serverPlayer, x, y, z);
+
+      Object conn = createFakeConnection();
+      if (conn == null) {
+        FppLogger.warn("NmsPlayerSpawner: failed to create fake connection for " + name);
+        callback.accept(null);
+        return;
+      }
+
+      ensurePlayerDataExists(minecraftServer, serverPlayer, name, uuid);
+
+      final Object fMinecraftServer = minecraftServer;
+      final Object fConn = conn;
+      final Object fServerPlayer = serverPlayer;
+      final Object fGameProfile = gameProfile;
+      final Object fClientInfo = clientInfo;
+
+      boolean dispatched =
+          dispatchPlacePlayerAsync(
+              world,
+              x,
+              z,
+              minecraftServer,
+              conn,
+              serverPlayer,
+              gameProfile,
+              clientInfo,
+              placed -> {
+                if (!placed) {
+                  cleanupFailedSpawn(fMinecraftServer, fServerPlayer, name);
+                  FppLogger.warn("NmsPlayerSpawner: placeNewPlayer failed for " + name);
+                  callback.accept(null);
+                  return;
+                }
+                try {
+                  if (setPosMethod != null) setPosMethod.invoke(fServerPlayer, x, y, z);
+                  initPreviousPosition(fServerPlayer, x, y, z);
+                  injectFakeListener(
+                      fMinecraftServer, fConn, fServerPlayer, fGameProfile, fClientInfo);
+                  Method getBukkitEntity = serverPlayerClass.getMethod("getBukkitEntity");
+                  Object entity = getBukkitEntity.invoke(fServerPlayer);
+                  if (entity instanceof Player result) {
+                    result.setGameMode(org.bukkit.GameMode.SURVIVAL);
+                    setListed(result, true);
+                    forceAllSkinParts(result);
+                    firstTickSet.add(uuid);
+                    FppLogger.debug(
+                        "NmsPlayerSpawner: spawned " + name + " (" + uuid + ") async");
+                    callback.accept(result);
+                  } else {
+                    callback.accept(null);
+                  }
+                } catch (Exception e) {
+                  FppLogger.error(
+                      "NmsPlayerSpawner: async post-placement failed for "
+                          + name
+                          + ": "
+                          + e.getMessage());
+                  callback.accept(null);
+                }
+              });
+
+      if (!dispatched) {
+        cleanupFailedSpawn(minecraftServer, serverPlayer, name);
+        callback.accept(null);
+      }
+    } catch (Exception e) {
+      FppLogger.error(
+          "NmsPlayerSpawner.spawnFakePlayerAsync failed for " + name + ": " + e.getMessage());
+      callback.accept(null);
+    }
   }
 
   private static Object createCookieDynamic(Object gameProfile, Object clientInfo) {
@@ -1138,6 +1609,20 @@ public final class NmsPlayerSpawner {
         }
       }
       cur = cur.getSuperclass();
+    }
+    return null;
+  }
+
+  private static Field findFieldInHierarchy(Class<?> clazz, String name) {
+    Class<?> cur = clazz;
+    while (cur != null && cur != Object.class) {
+      try {
+        Field f = cur.getDeclaredField(name);
+        f.setAccessible(true);
+        return f;
+      } catch (NoSuchFieldException ignored) {
+        cur = cur.getSuperclass();
+      }
     }
     return null;
   }

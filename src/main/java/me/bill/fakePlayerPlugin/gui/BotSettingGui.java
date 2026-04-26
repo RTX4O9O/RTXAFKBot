@@ -10,6 +10,8 @@ import me.bill.fakePlayerPlugin.fakeplayer.NmsPlayerSpawner;
 import me.bill.fakePlayerPlugin.lang.Lang;
 import me.bill.fakePlayerPlugin.permission.Perm;
 import me.bill.fakePlayerPlugin.util.BotRenameHelper;
+import me.bill.fakePlayerPlugin.util.BotAccess;
+import me.bill.fakePlayerPlugin.util.FppScheduler;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextColor;
@@ -28,6 +30,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
@@ -36,6 +39,13 @@ import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemFlag;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
+import org.jetbrains.annotations.NotNull;
+import me.bill.fakePlayerPlugin.api.event.FppBotDespawnEvent;
+import me.bill.fakePlayerPlugin.api.event.FppBotSettingChangeEvent;
+import me.bill.fakePlayerPlugin.api.impl.FppBotImpl;
+import java.util.concurrent.CopyOnWriteArrayList;
+import me.bill.fakePlayerPlugin.api.FppSettingsItem;
+import me.bill.fakePlayerPlugin.api.FppSettingsTab;
 
 public final class BotSettingGui implements Listener {
 
@@ -188,6 +198,8 @@ public final class BotSettingGui implements Listener {
 
   private final Map<UUID, UUID> botSessions = new HashMap<>();
 
+  private final Map<UUID, UUID> botLocks = new HashMap<>();
+
   private final Map<UUID, ChatInputSes> chatSessions = new HashMap<>();
   private final Set<UUID> pendingChatInput = new HashSet<>();
   private final Set<UUID> pendingRebuild = new HashSet<>();
@@ -200,26 +212,88 @@ public final class BotSettingGui implements Listener {
 
   private final Set<UUID> inMobSelector = new HashSet<>();
 
-  private final BotCategory[] categories;
+  private final Map<UUID, Integer> editPauseCounts = new HashMap<>();
+
+  private final List<BotCategory> categories;
+  private final CopyOnWriteArrayList<FppSettingsTab> extensionTabs = new CopyOnWriteArrayList<>();
 
   public BotSettingGui(FakePlayerPlugin plugin, FakePlayerManager manager) {
     this.plugin = plugin;
     this.manager = manager;
     this.renameHelper = new BotRenameHelper(plugin, manager);
-    this.categories = new BotCategory[] {general(), chat(), pve(), pathfinding(), pvp(), danger()};
+    this.categories = List.of(general(), chat(), pve(), pathfinding(), danger());
+  }
+
+  public void registerExtensionTab(FppSettingsTab tab) {
+    if (isPvpExtensionTab(tab)) return;
+    extensionTabs.addIfAbsent(tab);
+  }
+
+  public void unregisterExtensionTab(FppSettingsTab tab) {
+    extensionTabs.remove(tab);
+  }
+
+  private List<BotCategory> allCategories(Player viewer) {
+    if (extensionTabs.isEmpty()) return categories;
+    List<BotCategory> all = new ArrayList<>(categories);
+    for (FppSettingsTab tab : extensionTabs) {
+      if (isPvpExtensionTab(tab)) continue;
+      if (!tab.isVisible(viewer)) continue;
+      List<BotEntry> entries = new ArrayList<>();
+      int idx = 0;
+      for (FppSettingsItem item : tab.getItems(viewer)) {
+        entries.add(new BotEntry(
+            "ext:" + tab.getId() + ":" + idx,
+            item.getLabel(),
+            item.getDescription(),
+            item.getIcon(),
+            BotEntryType.ACTION,
+            false));
+        idx++;
+      }
+      all.add(new BotCategory(
+          tab.getLabel(),
+          tab.getActiveMaterial(),
+          tab.getInactiveMaterial(),
+          tab.getSeparatorGlass(),
+          entries));
+    }
+    return all;
   }
 
   public void open(Player player, FakePlayer bot) {
+    if (!BotAccess.canAdminister(player, bot)) {
+      player.sendMessage(Lang.get("no-permission"));
+      return;
+    }
+    UUID botUuid = bot.getUuid();
     UUID uuid = player.getUniqueId();
+    if (!acquireBotLock(botUuid, uuid)) {
+      player.sendMessage(Lang.get("inv-busy", "name", bot.getDisplayName()));
+      return;
+    }
+    if (botUuid.equals(botSessions.get(uuid))) {
+      build(player);
+      return;
+    }
+    pauseBotForEditing(bot);
     sessions.put(uuid, new int[] {0, 0, 0});
-    botSessions.put(uuid, bot.getUuid());
+    botSessions.put(uuid, botUuid);
     build(player);
   }
 
+  public @NotNull List<String> getCategoryNames() {
+    List<String> names = new ArrayList<>(categories.size());
+    for (BotCategory category : categories) names.add(category.label());
+    return Collections.unmodifiableList(names);
+  }
+
   public void shutdown() {
+    for (UUID botUuid : new ArrayList<>(editPauseCounts.keySet())) resumeBotAfterEditing(botUuid);
     sessions.clear();
     botSessions.clear();
-    chatSessions.forEach((uuid, ses) -> Bukkit.getScheduler().cancelTask(ses.cleanupTaskId));
+    botLocks.clear();
+    chatSessions.forEach((uuid, ses) -> FppScheduler.cancelTask(ses.cleanupTaskId));
     chatSessions.clear();
     pendingChatInput.clear();
     pendingRebuild.clear();
@@ -227,6 +301,7 @@ public final class BotSettingGui implements Listener {
     pendingResetConfirm.clear();
     mobSelectorPage.clear();
     inMobSelector.clear();
+    editPauseCounts.clear();
   }
 
   private void build(Player player) {
@@ -241,11 +316,20 @@ public final class BotSettingGui implements Listener {
       player.sendMessage(Lang.get("chat-bot-not-found", "name", "?"));
       return;
     }
+    if (!BotAccess.canAdminister(player, bot)) {
+      cleanup(uuid);
+      player.closeInventory();
+      player.sendMessage(Lang.get("no-permission"));
+      return;
+    }
 
     int catIdx = state[0];
     int pageIdx = state[1];
     int catOffset = state[2];
-    BotCategory cat = categories[catIdx];
+    List<BotCategory> all = allCategories(player);
+    if (catIdx >= all.size()) catIdx = all.size() - 1;
+    state[0] = catIdx;
+    BotCategory cat = all.get(catIdx);
     boolean isOp = isOp(player);
 
     GuiHolder holder = new GuiHolder(uuid);
@@ -280,13 +364,13 @@ public final class BotSettingGui implements Listener {
       int ci = catOffset + i;
       inv.setItem(
           CAT_WINDOW_START + i,
-          ci < categories.length
-              ? buildCategoryTab(ci, ci == catIdx)
+          ci < all.size()
+              ? buildCategoryTab(all.get(ci), ci == catIdx)
               : glassFiller(Material.GRAY_STAINED_GLASS_PANE));
     }
     inv.setItem(
         SLOT_CAT_NEXT,
-        catOffset + CAT_WINDOW < categories.length
+        catOffset + CAT_WINDOW < all.size()
             ? buildCatArrow(true)
             : glassFiller(Material.GRAY_STAINED_GLASS_PANE));
     inv.setItem(SLOT_CLOSE, buildCloseButton());
@@ -309,6 +393,15 @@ public final class BotSettingGui implements Listener {
       return;
     }
 
+    if (event.getInventory().getHolder() instanceof ShareSelectorHolder ssh) {
+      event.setCancelled(true);
+      if (!(event.getWhoClicked() instanceof Player player)) return;
+      if (event.getClickedInventory() == null) return;
+      if (!event.getClickedInventory().equals(event.getInventory())) return;
+      handleShareSelectorClick(player, ssh, event.getSlot());
+      return;
+    }
+
     if (!(event.getInventory().getHolder() instanceof GuiHolder holder)) return;
     event.setCancelled(true);
 
@@ -324,6 +417,11 @@ public final class BotSettingGui implements Listener {
     FakePlayer bot = manager.getByUuid(botUuid);
     if (bot == null) {
       player.closeInventory();
+      return;
+    }
+    if (!BotAccess.canAdminister(player, bot)) {
+      player.closeInventory();
+      player.sendMessage(Lang.get("no-permission"));
       return;
     }
 
@@ -346,7 +444,7 @@ public final class BotSettingGui implements Listener {
       return;
     }
     if (slot == SLOT_CAT_NEXT) {
-      if (catOffset + CAT_WINDOW < categories.length) {
+      if (catOffset + CAT_WINDOW < allCategories(player).size()) {
         playUiClick(player, 1.0f);
         state[2]++;
       }
@@ -360,7 +458,7 @@ public final class BotSettingGui implements Listener {
     }
     if (slot >= CAT_WINDOW_START && slot < CAT_WINDOW_START + CAT_WINDOW) {
       int ci = catOffset + (slot - CAT_WINDOW_START);
-      if (ci < categories.length) {
+      if (ci < allCategories(player).size()) {
         if (ci != catIdx) playUiClick(player, 1.3f);
         state[0] = ci;
         state[1] = 0;
@@ -369,7 +467,9 @@ public final class BotSettingGui implements Listener {
       return;
     }
     if (slot < 45) {
-      List<BotEntry> entries = visibleEntries(categories[catIdx], isOp);
+      List<BotCategory> allCats = allCategories(player);
+      if (catIdx >= allCats.size()) return;
+      List<BotEntry> entries = visibleEntries(allCats.get(catIdx), isOp);
       int entryIdx = state[1] * SETTINGS_PER_PAGE + slot;
       if (entryIdx >= entries.size()) return;
       handleEntryClick(player, bot, entries.get(entryIdx), isOp);
@@ -388,13 +488,25 @@ public final class BotSettingGui implements Listener {
 
       if (event.getReason() != InventoryCloseEvent.Reason.DISCONNECT
           && sessions.containsKey(uuid)) {
-        Bukkit.getScheduler()
-            .runTask(
-                plugin,
-                () -> {
-                  Player p = Bukkit.getPlayer(uuid);
-                  if (p != null && sessions.containsKey(uuid)) build(p);
-                });
+        FppScheduler.runSync(
+            plugin,
+            () -> {
+              Player p = Bukkit.getPlayer(uuid);
+              if (p != null && sessions.containsKey(uuid)) build(p);
+            });
+      }
+      return;
+    }
+
+    if (event.getInventory().getHolder() instanceof ShareSelectorHolder) {
+      if (pendingRebuild.contains(uuid)) return;
+      if (event.getReason() != InventoryCloseEvent.Reason.DISCONNECT && sessions.containsKey(uuid)) {
+        FppScheduler.runSync(
+            plugin,
+            () -> {
+              Player p = Bukkit.getPlayer(uuid);
+              if (p != null && sessions.containsKey(uuid)) build(p);
+            });
       }
       return;
     }
@@ -422,49 +534,59 @@ public final class BotSettingGui implements Listener {
     if (ses == null) return;
 
     event.setCancelled(true);
-    Bukkit.getScheduler().cancelTask(ses.cleanupTaskId);
+    FppScheduler.cancelTask(ses.cleanupTaskId);
 
     String raw = PlainTextComponentSerializer.plainText().serialize(event.message()).trim();
 
     sessions.put(uuid, ses.guiState);
-    Bukkit.getScheduler()
-        .runTask(
-            plugin,
-            () -> {
-              Player p = Bukkit.getPlayer(uuid);
-              if (p == null) return;
+    FppScheduler.runSync(
+        plugin,
+        () -> {
+          Player p = Bukkit.getPlayer(uuid);
+          if (p == null) return;
 
-              if (raw.equalsIgnoreCase("cancel")) {
-                p.sendMessage(
-                    Component.empty()
-                        .decoration(TextDecoration.ITALIC, false)
-                        .append(Component.text("✦ ").color(ACCENT))
-                        .append(
-                            Component.text("ᴄᴀɴᴄᴇʟʟᴇᴅ - ʀᴇᴛᴜʀɴɪɴɢ ᴛᴏ" + " ꜱᴇᴛᴛɪɴɡꜱ.").color(GRAY)));
-                build(p);
-                return;
-              }
+          if (raw.equalsIgnoreCase("cancel")) {
+            p.sendMessage(
+                Component.empty()
+                    .decoration(TextDecoration.ITALIC, false)
+                    .append(Component.text("✦ ").color(ACCENT))
+                    .append(
+                        Component.text("ᴄᴀɴᴄᴇʟʟᴇᴅ - ʀᴇᴛᴜʀɴɪɴɢ ᴛᴏ" + " ꜱᴇᴛᴛɪɴɡꜱ.").color(GRAY)));
+            build(p);
+            return;
+          }
 
-              FakePlayer bot = manager.getByUuid(ses.botUuid);
-              if (bot == null) {
-                p.sendMessage(Lang.get("chat-bot-not-found", "name", "?"));
-                cleanup(uuid);
-                return;
-              }
+          FakePlayer bot = manager.getByUuid(ses.botUuid);
+          if (bot == null) {
+            p.sendMessage(Lang.get("chat-bot-not-found", "name", "?"));
+            cleanup(uuid);
+            return;
+          }
 
-              applyInput(p, bot, ses.inputType, raw);
-              build(p);
-            });
+          applyInput(p, bot, ses.inputType, raw);
+          build(p);
+        });
   }
 
   @EventHandler
   public void onPlayerQuit(PlayerQuitEvent event) {
     UUID uuid = event.getPlayer().getUniqueId();
     ChatInputSes ses = chatSessions.remove(uuid);
-    if (ses != null) Bukkit.getScheduler().cancelTask(ses.cleanupTaskId);
+    if (ses != null) FppScheduler.cancelTask(ses.cleanupTaskId);
     inMobSelector.remove(uuid);
     mobSelectorPage.remove(uuid);
     cleanup(uuid);
+  }
+
+  @EventHandler(priority = EventPriority.MONITOR)
+  public void onBotDespawn(FppBotDespawnEvent event) {
+    releaseAllEditors(event.getBot().getUuid());
+  }
+
+  @EventHandler(priority = EventPriority.MONITOR)
+  public void onBotDeath(PlayerDeathEvent event) {
+    FakePlayer bot = manager.getByEntity(event.getEntity());
+    if (bot != null) releaseAllEditors(bot.getUuid());
   }
 
   private void handleEntryClick(Player player, FakePlayer bot, BotEntry entry, boolean isOp) {
@@ -524,7 +646,32 @@ public final class BotSettingGui implements Listener {
         sendActionBarConfirm(player, entry.label(), bot.getPvePriority());
         build(player);
       }
+      case CYCLE_PVE_MODE -> {
+        cyclePveMode(bot);
+        manager.persistBotSettings(bot);
+        restartPveIfActive(bot);
+        playUiClick(player, 1.0f);
+        sendActionBarConfirm(player, entry.label(), pveModeLabel(bot));
+        build(player);
+      }
       case ACTION -> {
+        if (entry.id().startsWith("ext:")) {
+          String[] parts = entry.id().split(":");
+          if (parts.length >= 3) {
+            String tabId = parts[1];
+            int itemIdx = Integer.parseInt(parts[2]);
+            for (FppSettingsTab tab : extensionTabs) {
+              if (tab.getId().equals(tabId)) {
+                List<FppSettingsItem> items = tab.getItems(player);
+                if (itemIdx >= 0 && itemIdx < items.size()) {
+                  items.get(itemIdx).onClick(player);
+                }
+                break;
+              }
+            }
+          }
+          return;
+        }
         playUiClick(player, 1.0f);
         openChatInput(player, bot, entry);
       }
@@ -533,6 +680,14 @@ public final class BotSettingGui implements Listener {
         openMobSelector(player, bot);
       }
       case IMMEDIATE -> {
+        if ("share_control".equals(entry.id())) {
+          if (!BotAccess.canShare(player, bot)) {
+            player.sendMessage(Lang.get("no-permission"));
+            return;
+          }
+          openShareSelector(player, bot);
+          return;
+        }
         applyImmediate(player, bot, entry.id());
         playUiClick(player, 0.85f);
         build(player);
@@ -545,67 +700,79 @@ public final class BotSettingGui implements Listener {
     }
   }
 
+  private void fireSettingChange(FakePlayer bot, String key, Object oldValue, Object newValue) {
+    Bukkit.getPluginManager().callEvent(new FppBotSettingChangeEvent(new FppBotImpl(bot), key, oldValue, newValue));
+  }
+
   private boolean applyToggle(FakePlayer bot, String id) {
     return switch (id) {
       case "frozen" -> {
-        bot.setFrozen(!bot.isFrozen());
+        boolean old = bot.isFrozen();
+        bot.setFrozen(!old);
+        fireSettingChange(bot, "frozen", old, bot.isFrozen());
         yield bot.isFrozen();
       }
       case "head_ai_enabled" -> {
-        bot.setHeadAiEnabled(!bot.isHeadAiEnabled());
+        boolean old = bot.isHeadAiEnabled();
+        bot.setHeadAiEnabled(!old);
+        fireSettingChange(bot, "head_ai_enabled", old, bot.isHeadAiEnabled());
         yield bot.isHeadAiEnabled();
       }
       case "swim_ai_enabled" -> {
-        bot.setSwimAiEnabled(!bot.isSwimAiEnabled());
+        boolean old = bot.isSwimAiEnabled();
+        bot.setSwimAiEnabled(!old);
+        fireSettingChange(bot, "swim_ai_enabled", old, bot.isSwimAiEnabled());
         yield bot.isSwimAiEnabled();
       }
       case "pickup_items" -> {
-        boolean v = !bot.isPickUpItemsEnabled();
+        boolean old = bot.isPickUpItemsEnabled();
+        boolean v = !old;
         bot.setPickUpItemsEnabled(v);
+        fireSettingChange(bot, "pickup_items", old, bot.isPickUpItemsEnabled());
 
         Player body = bot.getPlayer();
         if (body != null) body.setCanPickupItems(v);
         yield v;
       }
       case "pickup_xp" -> {
-        bot.setPickUpXpEnabled(!bot.isPickUpXpEnabled());
+        boolean old = bot.isPickUpXpEnabled();
+        bot.setPickUpXpEnabled(!old);
+        fireSettingChange(bot, "pickup_xp", old, bot.isPickUpXpEnabled());
         yield bot.isPickUpXpEnabled();
       }
       case "chat_enabled" -> {
-        bot.setChatEnabled(!bot.isChatEnabled());
+        boolean old = bot.isChatEnabled();
+        bot.setChatEnabled(!old);
+        fireSettingChange(bot, "chat_enabled", old, bot.isChatEnabled());
         yield bot.isChatEnabled();
       }
       case "nav_parkour" -> {
-        bot.setNavParkour(!bot.isNavParkour());
+        boolean old = bot.isNavParkour();
+        bot.setNavParkour(!old);
+        fireSettingChange(bot, "nav_parkour", old, bot.isNavParkour());
         yield bot.isNavParkour();
       }
       case "nav_break_blocks" -> {
-        bot.setNavBreakBlocks(!bot.isNavBreakBlocks());
+        boolean old = bot.isNavBreakBlocks();
+        bot.setNavBreakBlocks(!old);
+        fireSettingChange(bot, "nav_break_blocks", old, bot.isNavBreakBlocks());
         yield bot.isNavBreakBlocks();
       }
       case "nav_place_blocks" -> {
-        bot.setNavPlaceBlocks(!bot.isNavPlaceBlocks());
+        boolean old = bot.isNavPlaceBlocks();
+        bot.setNavPlaceBlocks(!old);
+        fireSettingChange(bot, "nav_place_blocks", old, bot.isNavPlaceBlocks());
         yield bot.isNavPlaceBlocks();
       }
-      case "pve_enabled" -> {
-        bot.setPveEnabled(!bot.isPveEnabled());
-
-        var attackCmd = plugin.getAttackCommand();
-        if (attackCmd != null) {
-          if (bot.isPveEnabled()) {
-            attackCmd.startMobModeFromSettings(bot);
-          } else {
-            attackCmd.stopAttacking(bot.getUuid());
-          }
-        }
-        yield bot.isPveEnabled();
-      }
+      case "pve_enabled" -> bot.isPveEnabled();
+      case "pve_move" -> bot.isPveMoveToTarget();
       case "follow_player" -> {
         var followCmd = plugin.getFollowCommand();
         if (followCmd == null) yield false;
-        boolean wasFollowing = followCmd.isFollowing(bot.getUuid());
-        if (wasFollowing) {
+        boolean old = followCmd.isFollowing(bot.getUuid());
+        if (old) {
           followCmd.stopFollowing(bot.getUuid());
+          fireSettingChange(bot, "follow_player", old, false);
           yield false;
         } else {
 
@@ -621,10 +788,12 @@ public final class BotSettingGui implements Listener {
               Player botPlayer = bot.getPlayer();
               if (botPlayer != null && botPlayer.getWorld().equals(target.getWorld())) {
                 followCmd.startFollowingFromSettings(bot, target);
+                fireSettingChange(bot, "follow_player", old, true);
                 yield true;
               }
             }
           }
+          fireSettingChange(bot, "follow_player", old, false);
           yield false;
         }
       }
@@ -633,6 +802,7 @@ public final class BotSettingGui implements Listener {
   }
 
   private void cycleTier(FakePlayer bot) {
+    String old = bot.getChatTier();
     bot.setChatTier(
         switch (bot.getChatTier() == null ? "random" : bot.getChatTier()) {
           case "random" -> "quiet";
@@ -642,6 +812,7 @@ public final class BotSettingGui implements Listener {
           case "active" -> "chatty";
           default -> null;
         });
+    fireSettingChange(bot, "chat_tier", old, bot.getChatTier());
   }
 
   private void restartPveIfActive(FakePlayer bot) {
@@ -654,8 +825,10 @@ public final class BotSettingGui implements Listener {
 
   private void cyclePersonality(FakePlayer bot) {
     me.bill.fakePlayerPlugin.ai.PersonalityRepository repo = plugin.getPersonalityRepository();
+    String old = bot.getAiPersonality();
     if (repo == null || repo.size() == 0) {
       bot.setAiPersonality(null);
+      fireSettingChange(bot, "ai_personality", old, bot.getAiPersonality());
       return;
     }
 
@@ -675,6 +848,7 @@ public final class BotSettingGui implements Listener {
         bot.setAiPersonality(names.get(idx + 1));
       }
     }
+    fireSettingChange(bot, "ai_personality", old, bot.getAiPersonality());
 
     if (plugin.getDatabaseManager() != null) {
       plugin
@@ -684,8 +858,42 @@ public final class BotSettingGui implements Listener {
   }
 
   private void cyclePriority(FakePlayer bot) {
+    String old = bot.getPvePriority();
     String current = bot.getPvePriority();
     bot.setPvePriority("nearest".equals(current) ? "lowest-health" : "nearest");
+    fireSettingChange(bot, "pve_priority", old, bot.getPvePriority());
+  }
+
+  private void cyclePveMode(FakePlayer bot) {
+    var oldMode = bot.getPveSmartAttackMode();
+    boolean oldEnabled = bot.isPveEnabled();
+    boolean oldMove = bot.isPveMoveToTarget();
+
+    bot.setPveSmartAttackMode(oldMode.next());
+    fireSettingChange(bot, "pve_smart_attack_mode", oldMode.name(), bot.getPveSmartAttackMode().name());
+    if (oldEnabled != bot.isPveEnabled()) {
+      fireSettingChange(bot, "pve_enabled", oldEnabled, bot.isPveEnabled());
+    }
+    if (oldMove != bot.isPveMoveToTarget()) {
+      fireSettingChange(bot, "pve_move", oldMove, bot.isPveMoveToTarget());
+    }
+
+    var attackCmd = plugin.getAttackCommand();
+    if (attackCmd != null) {
+      if (bot.isPveEnabled()) {
+        attackCmd.startMobModeFromSettings(bot);
+      } else {
+        attackCmd.stopAttacking(bot.getUuid());
+      }
+    }
+  }
+
+  private String pveModeLabel(FakePlayer bot) {
+    return switch (bot.getPveSmartAttackMode()) {
+      case OFF -> "✘ ᴏꜰꜰ";
+      case ON_NO_MOVE -> "✔ ᴏɴ · ꜱᴛɪʟʟ";
+      case ON_MOVE -> "✔ ᴏɴ · ᴍᴏᴠᴇ";
+    };
   }
 
   private void applyImmediate(Player player, FakePlayer bot, String id) {}
@@ -742,7 +950,7 @@ public final class BotSettingGui implements Listener {
       case "rename" -> {
         cleanup(player.getUniqueId());
         player.closeInventory();
-        Bukkit.getScheduler().runTaskLater(plugin, () -> renameHelper.rename(player, bot, raw), 1L);
+        FppScheduler.runSyncLater(plugin, () -> renameHelper.rename(player, bot, raw), 1L);
       }
       case "chunk_load_radius" -> {
         int globalMax = Config.chunkLoadingEnabled() ? Config.chunkLoadingRadius() : 0;
@@ -766,7 +974,9 @@ public final class BotSettingGui implements Listener {
 
         if (val < -1) val = -1;
         if (val > globalMax && globalMax > 0) val = globalMax;
+        int old = bot.getChunkLoadRadius();
         bot.setChunkLoadRadius(val);
+        fireSettingChange(bot, "chunk_load_radius", old, bot.getChunkLoadRadius());
         manager.persistBotSettings(bot);
         String display =
             val == -1 ? "ɢʟᴏʙᴀʟ (" + globalMax + ")" : val == 0 ? "ᴅɪꜱᴀʙʟᴇᴅ" : val + " ᴄʜᴜɴᴋꜱ";
@@ -975,6 +1185,109 @@ public final class BotSettingGui implements Listener {
     }
   }
 
+  private void openShareSelector(Player player, FakePlayer bot) {
+    UUID uuid = player.getUniqueId();
+    pendingRebuild.add(uuid);
+    buildShareSelector(player, bot);
+    pendingRebuild.remove(uuid);
+  }
+
+  private void buildShareSelector(Player player, FakePlayer bot) {
+    ShareSelectorHolder holder = new ShareSelectorHolder(player.getUniqueId());
+    Component title =
+        Component.empty()
+            .decoration(TextDecoration.ITALIC, false)
+            .append(Component.text("[").color(DARK_GRAY))
+            .append(Component.text("ꜰᴘᴘ").color(ACCENT))
+            .append(Component.text("] ").color(DARK_GRAY))
+            .append(Component.text(bot.getName()).color(ACCENT))
+            .append(Component.text("  ·  ").color(DARK_GRAY))
+            .append(Component.text("ꜱʜᴀʀᴇ ᴄᴏɴᴛʀᴏʟ").color(DARK_GRAY));
+
+    Inventory inv = Bukkit.createInventory(holder, SIZE, title);
+    int slot = 0;
+    for (Player candidate : Bukkit.getOnlinePlayers()) {
+      if (slot >= 45) break;
+      if (candidate.getUniqueId().equals(bot.getSpawnedByUuid())) continue;
+      if (candidate.getUniqueId().equals(player.getUniqueId())) continue;
+      inv.setItem(slot++, buildSharePlayerItem(candidate, bot.hasSharedController(candidate.getUniqueId())));
+    }
+    if (slot == 0) {
+      ItemStack item = new ItemStack(Material.BARRIER);
+      ItemMeta meta = item.getItemMeta();
+      meta.displayName(Component.text("ɴᴏ ᴏɴʟɪɴᴇ ᴘʟᴀʏᴇʀꜱ").color(OFF_RED));
+      meta.lore(List.of(Component.text("ᴘʟᴀʏᴇʀꜱ ᴍᴜꜱᴛ ʙᴇ ᴏɴʟɪɴᴇ ᴛᴏ ꜱʜᴀʀᴇ ᴄᴏɴᴛʀᴏʟ.").color(GRAY)));
+      item.setItemMeta(meta);
+      inv.setItem(22, item);
+    }
+    inv.setItem(45, buildMobBarItem(Material.ARROW, "◄  ʙᴀᴄᴋ ᴛᴏ ꜱᴇᴛᴛɪɴɢꜱ", ACCENT));
+    for (int i = 46; i < 53; i++) inv.setItem(i, glassFiller(Material.GRAY_STAINED_GLASS_PANE));
+    inv.setItem(53, buildCloseButton());
+    player.openInventory(inv);
+  }
+
+  private ItemStack buildSharePlayerItem(Player player, boolean shared) {
+    ItemStack item = new ItemStack(Material.PLAYER_HEAD);
+    ItemMeta meta = item.getItemMeta();
+    if (shared) {
+      meta.addEnchant(Enchantment.UNBREAKING, 1, true);
+      meta.addItemFlags(ItemFlag.HIDE_ENCHANTS);
+    }
+    meta.displayName(
+        Component.text(player.getName())
+            .color(shared ? SELECTED_GREEN : ACCENT)
+            .decoration(TextDecoration.ITALIC, false));
+    meta.lore(
+        List.of(
+            Component.text(shared ? "✔ ᴄᴀɴ ᴄᴏɴᴛʀᴏʟ ᴛʜɪꜱ ʙᴏᴛ" : "✘ ɴᴏ ᴄᴏɴᴛʀᴏʟ ᴀᴄᴄᴇꜱꜱ")
+                .color(shared ? SELECTED_GREEN : GRAY),
+            Component.text("ᴄʟɪᴄᴋ ᴛᴏ ᴛᴏɢɢʟᴇ").color(YELLOW)));
+    item.setItemMeta(meta);
+    return item;
+  }
+
+  private void handleShareSelectorClick(Player player, ShareSelectorHolder holder, int slot) {
+    UUID uuid = player.getUniqueId();
+    UUID botUuid = botSessions.get(uuid);
+    if (botUuid == null) return;
+    FakePlayer bot = manager.getByUuid(botUuid);
+    if (bot == null) {
+      player.closeInventory();
+      return;
+    }
+    if (!BotAccess.canShare(player, bot)) {
+      player.sendMessage(Lang.get("no-permission"));
+      player.closeInventory();
+      return;
+    }
+    if (slot == 45) {
+      playUiClick(player, 1.0f);
+      pendingRebuild.add(uuid);
+      build(player);
+      pendingRebuild.remove(uuid);
+      return;
+    }
+    if (slot == 53) {
+      playUiClick(player, 0.8f);
+      player.closeInventory();
+      return;
+    }
+    if (slot < 0 || slot >= 45) return;
+    ItemStack item = player.getOpenInventory().getTopInventory().getItem(slot);
+    if (item == null || !item.hasItemMeta() || item.getItemMeta().displayName() == null) return;
+    String targetName = PlainTextComponentSerializer.plainText().serialize(item.getItemMeta().displayName());
+    Player target = Bukkit.getPlayerExact(targetName);
+    if (target == null) return;
+    boolean shared = bot.hasSharedController(target.getUniqueId());
+    if (shared) bot.removeSharedController(target.getUniqueId());
+    else bot.addSharedController(target.getUniqueId());
+    playUiClick(player, shared ? 0.85f : 1.2f);
+    sendActionBarConfirm(player, "ꜱʜᴀʀᴇ ᴄᴏɴᴛʀᴏʟ", target.getName() + (shared ? " ʀᴇᴠᴏᴋᴇᴅ" : " ɢʀᴀɴᴛᴇᴅ"));
+    pendingRebuild.add(uuid);
+    buildShareSelector(player, bot);
+    pendingRebuild.remove(uuid);
+  }
+
   private ItemStack buildMobItem(MobDisplay mob, boolean selected) {
     ItemStack item = new ItemStack(mob.material);
     ItemMeta meta = item.getItemMeta();
@@ -1052,33 +1365,31 @@ public final class BotSettingGui implements Listener {
     bot.setRotation(origYaw, 90f);
     NmsPlayerSpawner.setHeadYaw(bot, origYaw);
 
-    Bukkit.getScheduler()
-        .runTaskLater(
-            plugin,
-            () -> {
-              Player b = fp.getPlayer();
-              if (b == null || !b.isOnline()) return;
+    FppScheduler.runSyncLater(
+        plugin,
+        () -> {
+          Player b = fp.getPlayer();
+          if (b == null || !b.isOnline()) return;
 
-              ItemStack[] contents = b.getInventory().getContents().clone();
-              b.getInventory().clear();
-              for (ItemStack item : contents) {
-                if (item != null && item.getType() != Material.AIR) {
-                  b.getWorld().dropItemNaturally(b.getLocation(), item);
-                }
-              }
+          ItemStack[] contents = b.getInventory().getContents().clone();
+          b.getInventory().clear();
+          for (ItemStack item : contents) {
+            if (item != null && item.getType() != Material.AIR) {
+              b.getWorld().dropItemNaturally(b.getLocation(), item);
+            }
+          }
 
-              Bukkit.getScheduler()
-                  .runTaskLater(
-                      plugin,
-                      () -> {
-                        Player b2 = fp.getPlayer();
-                        if (b2 == null || !b2.isOnline()) return;
-                        b2.setRotation(origYaw, origPitch);
-                        NmsPlayerSpawner.setHeadYaw(b2, origYaw);
-                      },
-                      5L);
-            },
-            3L);
+          FppScheduler.runSyncLater(
+              plugin,
+              () -> {
+                Player b2 = fp.getPlayer();
+                if (b2 == null || !b2.isOnline()) return;
+                b2.setRotation(origYaw, origPitch);
+                NmsPlayerSpawner.setHeadYaw(b2, origYaw);
+              },
+              5L);
+        },
+        3L);
   }
 
   private void dropBotXp(FakePlayer fp) {
@@ -1098,6 +1409,7 @@ public final class BotSettingGui implements Listener {
   }
 
   private void resetBot(Player player, FakePlayer bot, boolean isOp) {
+    fireSettingChange(bot, "reset", null, null);
 
     bot.setFrozen(false);
     bot.setHeadAiEnabled(true);
@@ -1109,18 +1421,19 @@ public final class BotSettingGui implements Listener {
     bot.setChatEnabled(true);
     bot.setChatTier(null);
     bot.setAiPersonality(null);
+    bot.setPing(-1);
 
     bot.setPveEnabled(false);
     var attackCmd = plugin.getAttackCommand();
     if (attackCmd != null) attackCmd.stopAttacking(bot.getUuid());
     bot.setPveRange(Config.attackMobDefaultRange());
     bot.setPvePriority(Config.attackMobDefaultPriority());
+    bot.setPveSmartAttackMode(FakePlayer.PveSmartAttackMode.OFF);
     bot.setPveMobTypes(new java.util.LinkedHashSet<>());
 
     bot.setNavParkour(Config.pathfindingParkour());
     bot.setNavBreakBlocks(Config.pathfindingBreakBlocks());
     bot.setNavPlaceBlocks(Config.pathfindingPlaceBlocks());
-
     if (isOp) bot.setRightClickCommand(null);
 
     manager.persistBotSettings(bot);
@@ -1218,29 +1531,27 @@ public final class BotSettingGui implements Listener {
     player.sendMessage(Component.empty());
 
     int taskId =
-        Bukkit.getScheduler()
-            .runTaskLater(
-                plugin,
-                () -> {
-                  ChatInputSes stale = chatSessions.remove(uuid);
-                  if (stale != null) {
-                    sessions.put(uuid, stale.guiState);
-                    Player p = Bukkit.getPlayer(uuid);
-                    if (p != null) {
-                      p.sendMessage(
-                          Component.empty()
-                              .decoration(TextDecoration.ITALIC, false)
-                              .append(Component.text("✦ ").color(ACCENT))
-                              .append(
-                                  Component.text(
-                                          "ɪɴᴘᴜᴛ ᴛɪᴍᴇᴅ" + " ᴏᴜᴛ -" + " ʀᴇᴛᴜʀɴɪɴɢ" + " ᴛᴏ ꜱᴇᴛᴛɪɴɡꜱ.")
-                                      .color(GRAY)));
-                      build(p);
-                    }
-                  }
-                },
-                20L * 60)
-            .getTaskId();
+        FppScheduler.runSyncLaterWithId(
+            plugin,
+            () -> {
+              ChatInputSes stale = chatSessions.remove(uuid);
+              if (stale != null) {
+                sessions.put(uuid, stale.guiState);
+                Player p = Bukkit.getPlayer(uuid);
+                if (p != null) {
+                  p.sendMessage(
+                      Component.empty()
+                          .decoration(TextDecoration.ITALIC, false)
+                          .append(Component.text("✦ ").color(ACCENT))
+                          .append(
+                              Component.text(
+                                      "ɪɴᴘᴜᴛ ᴛɪᴍᴇᴅ" + " ᴏᴜᴛ -" + " ʀᴇᴛᴜʀɴɪɴɢ" + " ᴛᴏ ꜱᴇᴛᴛɪɴɡꜱ.")
+                                  .color(GRAY)));
+                  build(p);
+                }
+              }
+            },
+            20L * 60);
 
     chatSessions.put(uuid, new ChatInputSes(entry.id(), bot.getUuid(), guiState.clone(), taskId));
   }
@@ -1366,7 +1677,8 @@ public final class BotSettingGui implements Listener {
       case "nav_parkour" -> bot.isNavParkour() ? "✔ ᴇɴᴀʙʟᴇᴅ" : "✘ ᴅɪꜱᴀʙʟᴇᴅ";
       case "nav_break_blocks" -> bot.isNavBreakBlocks() ? "✔ ᴇɴᴀʙʟᴇᴅ" : "✘ ᴅɪꜱᴀʙʟᴇᴅ";
       case "nav_place_blocks" -> bot.isNavPlaceBlocks() ? "✔ ᴇɴᴀʙʟᴇᴅ" : "✘ ᴅɪꜱᴀʙʟᴇᴅ";
-      case "pve_enabled" -> bot.isPveEnabled() ? "✔ ᴇɴᴀʙʟᴇᴅ" : "✘ ᴅɪꜱᴀʙʟᴇᴅ";
+      case "pve_enabled" -> pveModeLabel(bot);
+      case "share_control" -> bot.getSharedControllers().size() + " ꜱʜᴀʀᴇᴅ";
       case "follow_player" -> {
         var followCmd = plugin.getFollowCommand();
         yield (followCmd != null && followCmd.isFollowing(bot.getUuid()))
@@ -1411,6 +1723,7 @@ public final class BotSettingGui implements Listener {
       case "nav_break_blocks" -> bot.isNavBreakBlocks();
       case "nav_place_blocks" -> bot.isNavPlaceBlocks();
       case "pve_enabled" -> bot.isPveEnabled();
+      case "pve_move" -> bot.isPveMoveToTarget();
       case "follow_player" -> {
         var followCmd = plugin.getFollowCommand();
         yield followCmd != null && followCmd.isFollowing(bot.getUuid());
@@ -1433,7 +1746,12 @@ public final class BotSettingGui implements Listener {
       case "nav_break_blocks" ->
           bot.isNavBreakBlocks() ? Material.DIAMOND_PICKAXE : Material.IRON_PICKAXE;
       case "nav_place_blocks" -> bot.isNavPlaceBlocks() ? Material.GRASS_BLOCK : Material.DIRT;
-      case "pve_enabled" -> bot.isPveEnabled() ? Material.IRON_SWORD : Material.WOODEN_SWORD;
+      case "pve_enabled" -> switch (bot.getPveSmartAttackMode()) {
+        case OFF -> Material.WOODEN_SWORD;
+        case ON_NO_MOVE -> Material.IRON_SWORD;
+        case ON_MOVE -> Material.DIAMOND_SWORD;
+      };
+      case "share_control" -> Material.PLAYER_HEAD;
       case "follow_player" -> {
         var followCmd = plugin.getFollowCommand();
         yield (followCmd != null && followCmd.isFollowing(bot.getUuid()))
@@ -1457,8 +1775,7 @@ public final class BotSettingGui implements Listener {
     };
   }
 
-  private ItemStack buildCategoryTab(int idx, boolean active) {
-    BotCategory cat = categories[idx];
+  private ItemStack buildCategoryTab(BotCategory cat, boolean active) {
     ItemStack item = new ItemStack(active ? cat.activeMat() : cat.inactiveMat());
     ItemMeta meta = item.getItemMeta();
     if (active) {
@@ -1555,9 +1872,65 @@ public final class BotSettingGui implements Listener {
   }
 
   private void cleanup(UUID uuid) {
+    UUID botUuid = botSessions.get(uuid);
+    if (botUuid != null) {
+      releaseBotLock(botUuid, uuid);
+      resumeBotAfterEditing(botUuid);
+    }
     sessions.remove(uuid);
     botSessions.remove(uuid);
     pendingResetConfirm.remove(uuid);
+  }
+
+  private boolean acquireBotLock(UUID botUuid, UUID viewerUuid) {
+    UUID owner = botLocks.putIfAbsent(botUuid, viewerUuid);
+    return owner == null || owner.equals(viewerUuid);
+  }
+
+  private void releaseBotLock(UUID botUuid, UUID viewerUuid) {
+    botLocks.remove(botUuid, viewerUuid);
+  }
+
+  private void releaseAllEditors(UUID botUuid) {
+    botLocks.remove(botUuid);
+    for (Map.Entry<UUID, UUID> entry : new HashMap<>(botSessions).entrySet()) {
+      if (!botUuid.equals(entry.getValue())) continue;
+      Player viewer = Bukkit.getPlayer(entry.getKey());
+      if (viewer != null) {
+        pendingDelete.add(entry.getKey());
+        viewer.closeInventory();
+      }
+      cleanup(entry.getKey());
+      pendingDelete.remove(entry.getKey());
+    }
+  }
+
+  private void pauseBotForEditing(FakePlayer bot) {
+    UUID botUuid = bot.getUuid();
+    editPauseCounts.merge(botUuid, 1, Integer::sum);
+    Player player = bot.getPlayer();
+    if (player != null && player.isOnline()) {
+      manager.lockForAction(botUuid, player.getLocation());
+      NmsPlayerSpawner.setMovementForward(player, 0f);
+      player.setSprinting(false);
+      player.setVelocity(new org.bukkit.util.Vector(0, 0, 0));
+    }
+  }
+
+  private void resumeBotAfterEditing(UUID botUuid) {
+    Integer count = editPauseCounts.get(botUuid);
+    if (count != null && count > 1) {
+      editPauseCounts.put(botUuid, count - 1);
+      return;
+    }
+    editPauseCounts.remove(botUuid);
+    manager.unlockAction(botUuid);
+  }
+
+  private static boolean isPvpExtensionTab(FppSettingsTab tab) {
+    String id = tab.getId().toLowerCase(Locale.ROOT);
+    String label = tab.getLabel().toLowerCase(Locale.ROOT);
+    return id.contains("pvp") || label.contains("pvp");
   }
 
   private boolean isOp(Player player) {
@@ -1604,8 +1977,8 @@ public final class BotSettingGui implements Listener {
             BotEntry.toggle(
                 "swim_ai_enabled",
                 "ꜱᴡɪᴍ ᴀɪ",
-                "ʙᴏᴛ ᴀᴜᴛᴏ-ꜱᴡɪᴍꜱ ᴜᴘᴡᴀʀᴅ ɪɴ ᴡᴀᴛᴇʀ/ʟᴀᴠᴀ\n"
-                    + "ᴡʜᴇɴ ᴇɴᴀʙᴜᴇᴅ (ꜱᴘᴀᴄᴇʙᴀʀ ʜᴏʟᴅ).\n"
+                "ʙᴏᴛ ᴜꜱᴇꜱ ʙᴀꜱɪᴄ ꜰʟᴏᴀᴛ/ᴊᴜᴍᴘ ꜱᴡɪᴍ ʙᴇʜᴀᴠɪᴏʀ\n"
+                    + "ɪɴ ᴡᴀᴛᴇʀ ᴏʀ ʟᴀᴠᴀ ᴡʜᴇɴ ᴇɴᴀʙʟᴇᴅ.\n"
                     + "ᴅɪꜱᴀʙᴇ ᴛᴏ ʟᴇᴛ ᴛʜᴇ ʙᴏᴛ ꜱɪɴᴋ.\n"
                     + "ɢʟᴏʙᴀʟ: "
                     + (Config.swimAiEnabled() ? "ᴇɴᴀʙʟᴇᴅ" : "ᴅɪꜱᴀʙʟᴇᴅ"),
@@ -1640,6 +2013,14 @@ public final class BotSettingGui implements Listener {
                 "ʀᴇɴᴀᴍᴇ ʙᴏᴛ",
                 "ᴄʜᴀɴɢᴇ ᴛʜᴇ ʙᴏᴛ'ꜱ ᴍɪɴᴇᴄʀᴀꜰᴛ ɴᴀᴍᴇ.\n" + "ɴᴀᴍᴇᴛᴀɡ, ᴛᴀʙ ᴀɴᴅ ᴅᴇᴀᴛʜ ᴍᴇꜱꜱᴀɢᴇꜱ ᴜᴘᴅᴀᴛᴇ.",
                 Material.NAME_TAG,
+                false),
+            BotEntry.immediate(
+                "share_control",
+                "ꜱʜᴀʀᴇ ᴄᴏɴᴛʀᴏʟ",
+                "ᴏᴘᴇɴ ᴀ ʀᴇᴀʟ-ᴘʟᴀʏᴇʀ ꜱᴇʟᴇᴄᴛᴏʀ\n"
+                    + "ᴛᴏ ɢʀᴀɴᴛ ᴏʀ ʀᴇᴠᴏᴋᴇ ᴄᴏɴᴛʀᴏʟ.\n"
+                    + "ᴏɴʟʏ ᴏᴡɴᴇʀꜱ ᴀɴᴅ ᴀᴅᴍɪɴꜱ ᴄᴀɴ ꜱʜᴀʀᴇ.",
+                Material.PLAYER_HEAD,
                 false)));
   }
 
@@ -1681,12 +2062,13 @@ public final class BotSettingGui implements Listener {
         Material.STONE_SWORD,
         Material.LIME_STAINED_GLASS_PANE,
         List.of(
-            BotEntry.toggle(
+            BotEntry.cyclePveMode(
                 "pve_enabled",
                 "ꜱᴍᴀʀᴛ ᴀᴛᴛᴀᴄᴋ",
-                "ᴡʜᴇɴ ᴇɴᴀʙʟᴇᴅ, ᴛʜɪꜱ ʙᴏᴛ ᴀᴜᴛᴏ-ᴀᴛᴛᴀᴄᴋꜱ\n"
-                    + "ɴᴇᴀʀʙʏ ᴍᴏʙꜱ ᴡɪᴛʜ ᴘʀᴏᴘᴇʀ\n"
-                    + "ᴡᴇᴀᴘᴏɴ ᴄᴏᴏʟᴅᴏᴡɴꜱ ᴀɴᴅ ꜱᴍᴏᴏᴛʜ ʀᴏᴛᴀᴛɪᴏɴ.",
+                "ᴄʏᴄʟᴇꜱ ʙᴇᴛᴡᴇᴇɴ ᴏꜰꜰ, ᴏɴ ᴡɪᴛʜᴏᴜᴛ\n"
+                    + "ᴍᴏᴠᴇᴍᴇɴᴛ, ᴀɴᴅ ᴏɴ ᴡɪᴛʜ ᴍᴏᴠᴇᴍᴇɴᴛ.\n"
+                    + "ꜱᴍᴀʀᴛ ᴀᴛᴛᴀᴄᴋ ᴜꜱᴇꜱ ᴡᴇᴀᴘᴏɴ ᴄᴏᴏʟᴅᴏᴡɴꜱ\n"
+                    + "ᴀɴᴅ ꜱᴍᴏᴏᴛʜ ʀᴏᴛᴀᴛɪᴏɴ.",
                 Material.IRON_SWORD,
                 false),
             BotEntry.mobSelector(
@@ -1714,100 +2096,6 @@ public final class BotSettingGui implements Listener {
                 false)));
   }
 
-  private BotCategory pvp() {
-    return new BotCategory(
-        "⚔ ᴘᴠᴘ",
-        Material.NETHERITE_SWORD,
-        Material.IRON_SWORD,
-        Material.RED_STAINED_GLASS_PANE,
-        List.of(
-            BotEntry.comingSoon(
-                "pvp_difficulty",
-                "ᴅɪꜰꜰɪᴄᴜʟᴛʏ",
-                "ᴏᴠᴇʀʀɪᴅᴇ ᴛʜɪꜱ ʙᴏᴛ'ꜱ ꜱᴋɪʟʟ ʟᴇᴠᴇʟ.\n"
-                    + "ɴᴘᴄ / ᴇᴀꜢʏ / ᴍᴇᴅɪᴜᴍ / ʜᴀʀᴅ / ᴛɪᴇʀ1 / ʜᴀᴄᴋᴇʀ.",
-                Material.DIAMOND_SWORD),
-            BotEntry.comingSoon(
-                "pvp_combat_mode",
-                "ᴄᴏᴍʙᴀᴛ ᴍᴏᴅᴇ",
-                "ᴘᴇʀ-ʙᴏᴛ ᴄʀʏꜱᴛᴀʟ / ꜱᴡᴏʀᴅ / ꜰɪꜱᴛ\nᴄᴏᴍʙᴀᴛ ꜱᴛʏʟᴇ ꜱᴇʟᴇᴄᴛɪᴏɴ.",
-                Material.END_CRYSTAL),
-            BotEntry.comingSoon(
-                "pvp_critting",
-                "ᴄʀɪᴛᴛɪɴɢ",
-                "ʙᴏᴛ ʟᴀɴᴅꜱ ᴄʀɪᴛɪᴄᴀʟ ʜɪᴛꜱ ʙʏ\nꜰᴀʟʟɪɴɢ ᴅᴜʀɪɴɢ ᴀᴛᴛᴀᴄᴋꜱ.",
-                Material.NETHERITE_SWORD),
-            BotEntry.comingSoon(
-                "pvp_s_tapping",
-                "ꜱ-ᴛᴀᴘᴘɪɴɢ",
-                "ʙᴏᴛ ᴛᴀᴘꜱ ꜱ ᴅᴜʀɪɴɢ ꜱᴡɪɴɢ\n" + "ᴛᴏ ʀᴇꜱᴇᴛ ᴀᴛᴛᴀᴄᴋ ᴄᴏᴏʟᴅᴏᴡɴ.",
-                Material.CLOCK),
-            BotEntry.comingSoon(
-                "pvp_strafing",
-                "ꜱᴛʀᴀꜰɪɴɢ",
-                "ʙᴏᴛ ᴄɪʀᴄʟᴇꜱ ᴀʀᴏᴜɴᴅ ᴛʜᴇ ᴛᴀʀɡᴇᴛ\nᴡʜɪʟᴇ ꜰɪɡʜᴛɪɴɢ.",
-                Material.FEATHER),
-            BotEntry.comingSoon(
-                "pvp_shield",
-                "ꜱʜɪᴇʟᴅɪɴɢ",
-                "ʙᴏᴛ ᴄᴀʀʀɪᴇꜱ ᴀɴᴅ ᴜꜱᴇꜱ ᴀ ꜱʜɪᴇʟᴅ\nᴛᴏ ʙʟᴏᴄᴋ ɪɴᴄᴏᴍɪɴɢ ᴀᴛᴛᴀᴄᴋꜱ.",
-                Material.SHIELD),
-            BotEntry.comingSoon(
-                "pvp_speed_buffs",
-                "ꜱᴘᴇᴇᴅ ʙᴜꜰꜰꜱ",
-                "ʙᴏᴛ ʜᴀꜱ ꜱᴘᴇᴇᴅ & ꜱᴛʀᴇɴɡʜ ᴘᴏᴛɪᴏɴ\nᴇ꜀꜀ᴛꜱ ᴀᴄɪᴠᴇ.",
-                Material.SUGAR),
-            BotEntry.comingSoon(
-                "pvp_jump_reset",
-                "ᴊᴜᴍᴘ ʀᴇꜱᴇᴛ",
-                "ʙᴏᴛ ᴊᴜᴍᴘꜱ ᴊᴜꜱᴛ ʙᴇꜰᴏʀᴇ ꜱᴡɪɴɢɪɴɢ\n" + "ᴛᴏ ɡᴀɪɴ ᴛʜᴇ ᴡ-ᴛᴀᴘ ᴋɴᴏᴄᴋʙᴀᴄᴋ ʙᴏɴᴜꜱ.",
-                Material.SLIME_BALL),
-            BotEntry.comingSoon(
-                "pvp_random",
-                "ʀᴀɴᴅᴏᴍ ᴘʟᴀʏꜱᴛʏʟᴇ",
-                "ʀᴀɴᴅᴏᴍɪꜱᴇ ᴛᴇᴄʜɴɪQᴜᴇꜱ ᴇᴀᴄʜ ʀᴏᴜɴᴅ\nᴛᴏ ᴋᴇᴇᴘ ᴛʜᴇ ꜰɪɡʜᴛ ᴜɴᴘʀᴇᴅɪᴄᴛᴀʙʟᴇ.",
-                Material.COMPARATOR),
-            BotEntry.comingSoon(
-                "pvp_gear",
-                "ɢᴇᴀʀ ᴛʏᴘᴇ",
-                "ʙᴏᴛ ᴡᴇᴀʀꜱ ᴅɪᴀᴍᴏɴᴅ ᴏʀ\nɴᴇᴛʜᴇʀɪᴛᴇ ᴀʀᴍᴏᴜʀ.",
-                Material.DIAMOND_CHESTPLATE),
-            BotEntry.comingSoon(
-                "pvp_auto_refill",
-                "ᴀᴜᴛᴏ-ʀᴇꜰɪʟʟ ᴛᴏᴛᴇᴍ",
-                "ʙᴏᴛ ᴀᴜᴛᴏᴍᴀᴛɪᴄᴀʟʟʏ ʀᴇ-ᴇQᴜɪᴘꜱ ᴀ\nᴛᴏᴍ ᴀꜰᴛᴇʀ ᴘᴏᴘᴘɪɴɢ ᴏɴᴇ.",
-                Material.TOTEM_OF_UNDYING),
-            BotEntry.comingSoon(
-                "pvp_auto_respawn",
-                "ᴀᴜᴛᴏ-ʀᴇꜱᴘᴀᴡɴ",
-                "ʙᴏᴛ ᴀᴜᴛᴏᴍᴀᴛɪᴄᴀʟʟʏ ʀᴇꜱᴘᴀᴡɴꜱ\nᴀɴᴅ ʀᴇᴊᴏɪɴꜱ ᴀꜰᴛᴇʀ ᴅᴇᴀᴛʜ.",
-                Material.RESPAWN_ANCHOR),
-            BotEntry.comingSoon(
-                "pvp_spawn_prot",
-                "ꜱᴘᴀᴡɴ ᴘʀᴏᴛᴇᴄᴛɪᴏɴ",
-                "ʙᴏᴛ ꜱᴛᴀʏꜱ ɪɴᴠᴜʟɴᴇʀᴀʙʟᴇ ꜰᴏʀ\nᴀ ꜱʜʏʀᴛ ɡᴀᴄᴇ ᴘᴇʀᴏᴅ ᴀᴛ ꜱᴘᴀᴡɴ.",
-                Material.GRASS_BLOCK),
-            BotEntry.comingSoon(
-                "pvp_target",
-                "ᴛᴀʀɡᴇᴛ ᴘʀɪᴏʀɪᴛʏ",
-                "ᴄʜᴏᴏꜱᴇ ᴡʜɪᴄʜ ᴘʟᴀʏᴇʀ ᴛʏᴘᴇ ᴛʜᴪꜱ\nʙᴏᴛ ᴘʀɪᴏʀɪᴛɪꜬ ᴀꜱ ᴛᴀʀɡᴇᴛ.",
-                Material.ORANGE_DYE),
-            BotEntry.comingSoon(
-                "pvp_aggression",
-                "ᴀɡɡʀᴇꜱꜱɪᴏɴ",
-                "ᴄᴏɴᴛʀᴏʟ ʜᴏᴡ ᴀɢɡʀᴇꜱꜱɪᴏɴ ʙᴏᴛ ᴡɪʟʟ\nʙᴀᴄᴋ ᴏ꜡꜡.",
-                Material.BLAZE_POWDER),
-            BotEntry.comingSoon(
-                "pvp_flee_health",
-                "ꜰʟᴇᴇ ʜᴇᴀʟᴛʜ",
-                "ʙᴏᴛ ʀᴇᴛʀᴇᴀᴛꜱ ᴡʜᴇɴ ɪᴛꜱ ʜᴇᴀʟᴛʜ\nᴅʀᴏᴘꜱ ʙᴀʟᴏᴡ ᴛʜɪꜱ ᴠᴀʟᴜᴇ.",
-                Material.RED_DYE),
-            BotEntry.comingSoon(
-                "pvp_combo_length",
-                "ᴄᴏᴍʙᴏ ʟᴇɴɡᴛʜ",
-                "ᴍᴀxɪᴍᴜᴍ ʜɪᴛꜱ ɪɴ ᴀ ꜱɪɴɡʟᴇ ʙᴜʀꜱᴛ\nʙᴇꜰᴏʀᴇ ʙᴀᴄᴋɪɴɢ ᴏ꜡꜡.",
-                Material.IRON_SWORD)));
-  }
 
   private BotCategory pathfinding() {
     return new BotCategory(
@@ -1892,6 +2180,14 @@ public final class BotSettingGui implements Listener {
     }
   }
 
+  private record ShareSelectorHolder(UUID playerUuid) implements InventoryHolder {
+    @SuppressWarnings("NullableProblems")
+    @Override
+    public Inventory getInventory() {
+      return null;
+    }
+  }
+
   private record MobDisplay(
       EntityType type, Material material, String displayName, String category) {}
 
@@ -1907,6 +2203,7 @@ public final class BotSettingGui implements Listener {
     CYCLE_TIER,
     CYCLE_PERSONALITY,
     CYCLE_PRIORITY,
+    CYCLE_PVE_MODE,
     ACTION,
     MOB_SELECTOR,
     IMMEDIATE,
@@ -1937,6 +2234,11 @@ public final class BotSettingGui implements Listener {
     static BotEntry cyclePriority(
         String id, String label, String desc, Material icon, boolean opOnly) {
       return new BotEntry(id, label, desc, icon, BotEntryType.CYCLE_PRIORITY, opOnly);
+    }
+
+    static BotEntry cyclePveMode(
+        String id, String label, String desc, Material icon, boolean opOnly) {
+      return new BotEntry(id, label, desc, icon, BotEntryType.CYCLE_PVE_MODE, opOnly);
     }
 
     static BotEntry action(String id, String label, String desc, Material icon, boolean opOnly) {

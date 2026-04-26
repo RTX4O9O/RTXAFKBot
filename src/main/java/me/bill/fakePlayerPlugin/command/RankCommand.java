@@ -11,6 +11,7 @@ import me.bill.fakePlayerPlugin.fakeplayer.FakePlayerManager;
 import me.bill.fakePlayerPlugin.lang.Lang;
 import me.bill.fakePlayerPlugin.permission.Perm;
 import me.bill.fakePlayerPlugin.util.LuckPermsHelper;
+import me.bill.fakePlayerPlugin.util.FppScheduler;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.command.CommandSender;
@@ -100,14 +101,13 @@ public final class RankCommand implements FppCommand {
         .thenRun(
             () -> {
               fp.setLuckpermsGroup(groupName);
-              org.bukkit.Bukkit.getScheduler()
-                  .runTaskLater(
-                      plugin,
-                      () -> {
-                        if (manager.getByName(fp.getName()) == null) return;
-                        manager.refreshLpDisplayName(fp);
-                      },
-                      2L);
+              FppScheduler.runSyncLater(
+                  plugin,
+                  () -> {
+                    if (manager.getByName(fp.getName()) == null) return;
+                    manager.refreshLpDisplayName(fp);
+                  },
+                  2L);
             });
   }
 

@@ -64,7 +64,7 @@ public final class LuckPermsHelper {
                     }
                     if (newGroup == null) newGroup = "default";
                     fp.setLuckpermsGroup(newGroup);
-                    Bukkit.getScheduler().runTask(plugin, () -> manager.refreshLpDisplayName(fp));
+                    FppScheduler.runSync(plugin, () -> manager.refreshLpDisplayName(fp));
                     Config.debugLuckPerms(
                         "UserDataRecalculate for bot '"
                             + fp.getName()

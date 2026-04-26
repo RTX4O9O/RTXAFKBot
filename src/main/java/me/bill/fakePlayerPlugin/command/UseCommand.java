@@ -10,6 +10,11 @@ import me.bill.fakePlayerPlugin.fakeplayer.NmsPlayerSpawner;
 import me.bill.fakePlayerPlugin.fakeplayer.PathfindingService;
 import me.bill.fakePlayerPlugin.lang.Lang;
 import me.bill.fakePlayerPlugin.permission.Perm;
+import me.bill.fakePlayerPlugin.util.FppScheduler;
+import me.bill.fakePlayerPlugin.api.event.FppBotInteractEvent;
+import me.bill.fakePlayerPlugin.api.impl.FppApiImpl;
+import me.bill.fakePlayerPlugin.api.impl.FppBotImpl;
+import org.bukkit.Bukkit;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
@@ -20,7 +25,6 @@ import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
-import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.command.CommandSender;
 import org.bukkit.craftbukkit.entity.CraftPlayer;
@@ -176,11 +180,12 @@ public final class UseCommand implements FppCommand {
   }
 
   private void lockAndStartUsing(FakePlayer fp, boolean once, Location lockLoc) {
+    FppApiImpl.fireTaskEvent(fp, "use", me.bill.fakePlayerPlugin.api.event.FppBotTaskEvent.Action.START);
     UUID uuid = fp.getUuid();
     Player bot = fp.getPlayer();
     if (bot == null) return;
 
-    bot.teleport(lockLoc);
+    FppScheduler.teleportAsync(bot, lockLoc);
 
     manager.lockForAction(uuid, lockLoc);
 
@@ -190,10 +195,9 @@ public final class UseCommand implements FppCommand {
     final int[] freeze = {0};
 
     int taskId =
-        Bukkit.getScheduler()
-            .runTaskTimer(
-                plugin,
-                () -> {
+        FppScheduler.runSyncRepeatingWithId(
+            plugin,
+            () -> {
                   Player b = fp.getPlayer();
                   if (b == null || !b.isOnline()) {
                     stopUsing(uuid);
@@ -252,6 +256,19 @@ public final class UseCommand implements FppCommand {
 
                       nms.resetLastActionTime();
 
+                      var bukkitEntity = entity.getBukkitEntity();
+                      var equipSlot =
+                          hand == InteractionHand.MAIN_HAND
+                              ? org.bukkit.inventory.EquipmentSlot.HAND
+                              : org.bukkit.inventory.EquipmentSlot.OFF_HAND;
+                      var interactEvent =
+                          new FppBotInteractEvent(new FppBotImpl(fp), bukkitEntity, equipSlot);
+                      Bukkit.getPluginManager().callEvent(interactEvent);
+                      if (interactEvent.isCancelled()) {
+                        acted = true;
+                        break;
+                      }
+
                       if (entity.interactAt(nms, relPos, hand).consumesAction()) {
                         freeze[0] = 3;
                         acted = true;
@@ -277,9 +294,8 @@ public final class UseCommand implements FppCommand {
 
                   if (once && acted) stopUsing(uuid);
                 },
-                0L,
-                1L)
-            .getTaskId();
+            0L,
+            1L);
 
     useTasks.put(uuid, taskId);
   }
@@ -301,15 +317,17 @@ public final class UseCommand implements FppCommand {
   }
 
   public void stopUsing(UUID botUuid) {
+    FakePlayer fp = manager.getByUuid(botUuid);
+    if (fp != null) {
+      FppApiImpl.fireTaskEvent(fp, "use", me.bill.fakePlayerPlugin.api.event.FppBotTaskEvent.Action.STOP);
+    }
     Integer taskId = useTasks.remove(botUuid);
-    if (taskId != null) Bukkit.getScheduler().cancelTask(taskId);
+    if (taskId != null) FppScheduler.cancelTask(taskId);
 
     manager.unlockAction(botUuid);
 
     activeUseLocations.remove(botUuid);
     activeUseOnceFlags.remove(botUuid);
-
-    FakePlayer fp = manager.getByUuid(botUuid);
     if (fp != null) {
       Player bot = fp.getPlayer();
       if (bot != null && bot.isOnline()) ((CraftPlayer) bot).getHandle().releaseUsingItem();
@@ -337,6 +355,15 @@ public final class UseCommand implements FppCommand {
   public boolean isActiveUseOnce(UUID botUuid) {
     Boolean v = activeUseOnceFlags.get(botUuid);
     return v != null && v;
+  }
+
+  public void resumeUsing(FakePlayer fp) {
+    UUID uuid = fp.getUuid();
+    Location useLoc = getActiveUseLocation(uuid);
+    boolean once = isActiveUseOnce(uuid);
+    if (useLoc != null) {
+      resumeUsing(fp, once, useLoc);
+    }
   }
 
   public void resumeUsing(FakePlayer fp, boolean once, Location loc) {

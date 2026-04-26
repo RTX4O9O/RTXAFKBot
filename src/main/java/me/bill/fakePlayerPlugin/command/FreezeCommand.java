@@ -49,7 +49,7 @@ public class FreezeCommand implements FppCommand {
     String target = args[0];
     String statArg = args.length >= 2 ? args[1].toLowerCase() : null;
 
-    if (target.equalsIgnoreCase("all")) {
+    if (target.equalsIgnoreCase("--all")) {
       return handleFreezeAll(sender, statArg);
     }
 
@@ -107,6 +107,13 @@ public class FreezeCommand implements FppCommand {
   }
 
   private static void applyFreeze(FakePlayer fp, boolean freeze) {
+    var api = me.bill.fakePlayerPlugin.FakePlayerPlugin.getInstance();
+    if (api != null) {
+      var freezeEvt = new me.bill.fakePlayerPlugin.api.event.FppBotFreezeEvent(
+          new me.bill.fakePlayerPlugin.api.impl.FppBotImpl(fp), freeze);
+      org.bukkit.Bukkit.getPluginManager().callEvent(freezeEvt);
+      if (freezeEvt.isCancelled()) return;
+    }
     fp.setFrozen(freeze);
     Player player = fp.getPlayer();
     if (player != null && player.isValid()) {
@@ -125,7 +132,7 @@ public class FreezeCommand implements FppCommand {
           manager.getActiveNames().stream()
               .filter(n -> n.toLowerCase().startsWith(prefix))
               .collect(Collectors.toList());
-      if ("all".startsWith(prefix)) names.add(0, "all");
+      if ("--all".startsWith(prefix)) names.add(0, "--all");
       return names;
     }
     if (args.length == 2) {

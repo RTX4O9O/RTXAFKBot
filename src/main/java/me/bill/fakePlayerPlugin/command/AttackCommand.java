@@ -3,6 +3,8 @@ package me.bill.fakePlayerPlugin.command;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import me.bill.fakePlayerPlugin.FakePlayerPlugin;
+import me.bill.fakePlayerPlugin.api.impl.FppApiImpl;
+import me.bill.fakePlayerPlugin.api.impl.FppBotImpl;
 import me.bill.fakePlayerPlugin.config.Config;
 import me.bill.fakePlayerPlugin.fakeplayer.FakePlayer;
 import me.bill.fakePlayerPlugin.fakeplayer.FakePlayerManager;
@@ -10,6 +12,7 @@ import me.bill.fakePlayerPlugin.fakeplayer.NmsPlayerSpawner;
 import me.bill.fakePlayerPlugin.fakeplayer.PathfindingService;
 import me.bill.fakePlayerPlugin.lang.Lang;
 import me.bill.fakePlayerPlugin.permission.Perm;
+import me.bill.fakePlayerPlugin.util.FppScheduler;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.phys.AABB;
@@ -75,6 +78,9 @@ public final class AttackCommand implements FppCommand {
 
   private final Map<UUID, Integer> attackTasks = new ConcurrentHashMap<>();
 
+  /** Separate repeating-scan task IDs for --hunt mode (20-tick navigation-to-next-target loop). */
+  private final Map<UUID, Integer> huntScanTasks = new ConcurrentHashMap<>();
+
   private final Map<UUID, Location> activeAttackLocations = new ConcurrentHashMap<>();
 
   private final Map<UUID, Boolean> activeAttackOnceFlags = new ConcurrentHashMap<>();
@@ -94,6 +100,12 @@ public final class AttackCommand implements FppCommand {
     String priority = "nearest";
     Set<EntityType> filterTypes = new HashSet<>();
 
+    FakePlayer.PveSmartAttackMode smartAttackMode = FakePlayer.PveSmartAttackMode.OFF;
+    boolean moveToTarget = false;
+
+    /** True when in --hunt mode (PathfindingService drives movement, not raw input). */
+    boolean huntMode = false;
+
     @Nullable UUID currentTargetUuid = null;
     int retargetCountdown = 0;
 
@@ -101,7 +113,24 @@ public final class AttackCommand implements FppCommand {
     float currentPitch = 0f;
   }
 
-  private record MobFlags(double range, String priority, Set<EntityType> filterTypes) {}
+  private record MobFlags(
+      double range,
+      String priority,
+      Set<EntityType> filterTypes,
+      FakePlayer.PveSmartAttackMode smartAttackMode,
+      boolean huntMode) {
+    /** Backward-compat 4-arg constructor used by persistence-resume and settings paths. */
+    MobFlags(double range, String priority, Set<EntityType> filterTypes, boolean moveToTarget) {
+      this(
+          range,
+          priority,
+          filterTypes,
+          moveToTarget
+              ? FakePlayer.PveSmartAttackMode.ON_MOVE
+              : FakePlayer.PveSmartAttackMode.ON_NO_MOVE,
+          false);
+    }
+  }
 
   @Override
   public String getName() {
@@ -110,13 +139,13 @@ public final class AttackCommand implements FppCommand {
 
   @Override
   public String getUsage() {
-    return "<bot|all> [--once|--stop|--mob [--range <n>] [--type <mob>] [--priority <mode>]]  | "
-               + " --stop";
+    return "<bot|all> [--once|--stop|--mob [--range <n>] [--type <mob>] [--priority <mode>] [--move]"
+               + "  |  --hunt [<mob>] [--range <n>] [--priority <mode>]]  |  --stop";
   }
 
   @Override
   public String getDescription() {
-    return "Attack entities or auto-target mobs.";
+    return "Attack entities, auto-target mobs (--mob), or roam and hunt mobs (--hunt).";
   }
 
   @Override
@@ -148,6 +177,8 @@ public final class AttackCommand implements FppCommand {
     boolean once = false;
     boolean stop = false;
     boolean mobMode = false;
+    boolean moveToTarget = false;
+    boolean huntMode = false;
     double range = Config.attackMobDefaultRange();
     String priority = Config.attackMobDefaultPriority();
     EntityType filterType = null;
@@ -157,6 +188,7 @@ public final class AttackCommand implements FppCommand {
       switch (a) {
         case "once", "--once" -> once = true;
         case "stop", "--stop" -> stop = true;
+        case "--move" -> moveToTarget = true;
         case "--mob" -> {
           mobMode = true;
 
@@ -170,6 +202,24 @@ public final class AttackCommand implements FppCommand {
               }
             } catch (IllegalArgumentException ignored) {
 
+            }
+          }
+        }
+        case "--hunt" -> {
+          huntMode = true;
+          mobMode = true;
+          // Default to a larger scan range for hunting
+          if (range == Config.attackMobDefaultRange()) range = 32.0;
+
+          if (i + 1 < args.length && !args[i + 1].startsWith("-")) {
+            String next = args[i + 1].toUpperCase();
+            try {
+              EntityType candidate = EntityType.valueOf(next);
+              if (candidate.isAlive() && candidate != EntityType.PLAYER) {
+                filterType = candidate;
+                i++;
+              }
+            } catch (IllegalArgumentException ignored) {
             }
           }
         }
@@ -211,10 +261,17 @@ public final class AttackCommand implements FppCommand {
 
     MobFlags mobFlags =
         mobMode
-            ? new MobFlags(range, priority, filterType != null ? Set.of(filterType) : Set.of())
+            ? new MobFlags(
+                range,
+                priority,
+                filterType != null ? Set.of(filterType) : Set.of(),
+                moveToTarget
+                    ? FakePlayer.PveSmartAttackMode.ON_MOVE
+                    : FakePlayer.PveSmartAttackMode.ON_NO_MOVE,
+                huntMode)
             : null;
 
-    if (botName.equalsIgnoreCase("all")) {
+    if (botName.equalsIgnoreCase("--all")) {
       if (stop) {
         stopAll();
         sender.sendMessage(Lang.get("attack-stopped-all"));
@@ -228,6 +285,8 @@ public final class AttackCommand implements FppCommand {
         count++;
       }
       if (count == 0) sender.sendMessage(Lang.get("attack-no-bots"));
+      else if (mobFlags != null && mobFlags.huntMode())
+        sender.sendMessage(Lang.get("attack-hunt-started-all", "count", String.valueOf(count)));
       return true;
     }
 
@@ -252,25 +311,35 @@ public final class AttackCommand implements FppCommand {
     startForBot(sender, fp, once, mobFlags);
 
     if (mobFlags != null) {
-      if (sender instanceof Player sp) {
-        double xzDist = PathfindingService.xzDist(bot.getLocation(), sp.getLocation());
-        if (xzDist > Config.pathfindingArrivalDistance()) {
-          sender.sendMessage(Lang.get("attack-walking", "name", fp.getDisplayName()));
-          return true;
+      if (mobFlags.huntMode()) {
+        // Hunt mode: no navigation to sender; bot roams freely
+        sender.sendMessage(
+            Lang.get(
+                "attack-hunt-started",
+                "name", fp.getDisplayName(),
+                "range", String.valueOf((int) mobFlags.range()),
+                "priority", mobFlags.priority()));
+      } else {
+        if (sender instanceof Player sp) {
+          double xzDist = PathfindingService.xzDist(bot.getLocation(), sp.getLocation());
+          if (xzDist > Config.pathfindingArrivalDistance()) {
+            sender.sendMessage(Lang.get("attack-walking", "name", fp.getDisplayName()));
+            return true;
+          }
         }
+        sender.sendMessage(
+            Lang.get(
+                "attack-mob-started",
+                "name",
+                fp.getDisplayName(),
+                "range",
+                String.valueOf((int) mobFlags.range()),
+                "priority",
+                mobFlags.priority()));
       }
-      sender.sendMessage(
-          Lang.get(
-              "attack-mob-started",
-              "name",
-              fp.getDisplayName(),
-              "range",
-              String.valueOf((int) mobFlags.range),
-              "priority",
-              mobFlags.priority));
-      if (!mobFlags.filterTypes.isEmpty()) {
+      if (!mobFlags.filterTypes().isEmpty()) {
         String typeNames =
-            mobFlags.filterTypes.stream()
+            mobFlags.filterTypes().stream()
                 .map(t -> t.name().toLowerCase())
                 .reduce((a, b) -> a + ", " + b)
                 .orElse("all hostile");
@@ -304,7 +373,7 @@ public final class AttackCommand implements FppCommand {
     if (args.length == 1) {
       String prefix = args[0].toLowerCase();
       List<String> out = new ArrayList<>();
-      for (String s : List.of("--stop", "stop", "all")) if (s.startsWith(prefix)) out.add(s);
+      for (String s : List.of("--stop", "stop", "--all")) if (s.startsWith(prefix)) out.add(s);
       for (FakePlayer fp : manager.getActivePlayers())
         if (fp.getName().toLowerCase().startsWith(prefix)) out.add(fp.getName());
       return out;
@@ -315,7 +384,7 @@ public final class AttackCommand implements FppCommand {
     if (args.length >= 3) {
       String prev = args[args.length - 2].toLowerCase();
 
-      if (prev.equals("--mob")) {
+      if (prev.equals("--mob") || prev.equals("--hunt")) {
         List<String> out = new ArrayList<>();
         for (EntityType et : EntityType.values()) {
           if (et.isAlive() && et != EntityType.PLAYER && et.name().toLowerCase().startsWith(prefix))
@@ -348,13 +417,20 @@ public final class AttackCommand implements FppCommand {
 
     Set<String> used = new HashSet<>();
     boolean mobNameProvided = false;
+    boolean huntNameProvided = false;
     for (int i = 1; i < args.length - 1; i++) {
       String a = args[i].toLowerCase();
       used.add(a);
       if (a.equals("--mob")) {
-
         if (i + 1 < args.length - 1 && !args[i + 1].startsWith("-")) {
           mobNameProvided = true;
+          used.add(args[i + 1].toLowerCase());
+          i++;
+        }
+      }
+      if (a.equals("--hunt")) {
+        if (i + 1 < args.length - 1 && !args[i + 1].startsWith("-")) {
+          huntNameProvided = true;
           used.add(args[i + 1].toLowerCase());
           i++;
         }
@@ -366,10 +442,9 @@ public final class AttackCommand implements FppCommand {
     List<String> flags =
         new ArrayList<>(
             List.of(
-                "--once", "--stop", "--mob", "--range", "--type", "--priority", "once", "stop"));
-    if (mobNameProvided) {
-      flags.remove("--type");
-    }
+                "--once", "--stop", "--mob", "--hunt", "--range", "--type", "--priority", "--move",
+                "once", "stop"));
+    if (mobNameProvided || huntNameProvided) flags.remove("--type");
 
     for (String flag : flags) if (!used.contains(flag) && flag.startsWith(prefix)) out.add(flag);
 
@@ -425,11 +500,12 @@ public final class AttackCommand implements FppCommand {
   }
 
   private void lockAndStartClassic(FakePlayer fp, boolean once, Location lockLoc) {
+    FppApiImpl.fireTaskEvent(fp, "attack", me.bill.fakePlayerPlugin.api.event.FppBotTaskEvent.Action.START);
     UUID uuid = fp.getUuid();
     Player bot = fp.getPlayer();
     if (bot == null) return;
 
-    bot.teleport(lockLoc);
+    FppScheduler.teleportAsync(bot, lockLoc);
     manager.lockForAction(uuid, lockLoc);
 
     activeAttackLocations.put(uuid, lockLoc.clone());
@@ -440,9 +516,8 @@ public final class AttackCommand implements FppCommand {
     attackStates.put(uuid, state);
 
     int taskId =
-        Bukkit.getScheduler()
-            .runTaskTimer(plugin, () -> tickClassicAttack(fp, uuid, once), 0L, 1L)
-            .getTaskId();
+        FppScheduler.runAtEntityRepeatingWithId(
+            plugin, bot, () -> tickClassicAttack(fp, uuid, once), 0L, 1L);
     attackTasks.put(uuid, taskId);
   }
 
@@ -465,27 +540,139 @@ public final class AttackCommand implements FppCommand {
     Player bot = fp.getPlayer();
     if (bot == null) return;
 
-    bot.teleport(lockLoc);
-    manager.lockForAction(uuid, lockLoc);
+    if (flags.huntMode()) {
+      startHuntMode(fp, flags, lockLoc);
+      return;
+    }
+
+    if (!flags.smartAttackMode().movesWhileAttacking()) {
+      FppScheduler.teleportAsync(bot, lockLoc);
+      manager.lockForAction(uuid, lockLoc);
+    }
 
     activeAttackLocations.put(uuid, lockLoc.clone());
     activeAttackOnceFlags.put(uuid, false);
 
     AttackState state = new AttackState();
     state.mobMode = true;
-    state.range = flags.range;
-    state.priority = flags.priority;
+    state.range = flags.range();
+    state.priority = flags.priority();
     state.filterTypes =
-        flags.filterTypes != null ? new HashSet<>(flags.filterTypes) : new HashSet<>();
+        flags.filterTypes() != null ? new HashSet<>(flags.filterTypes()) : new HashSet<>();
+    state.smartAttackMode = flags.smartAttackMode();
+    state.moveToTarget = flags.smartAttackMode().movesWhileAttacking();
     state.currentYaw = lockLoc.getYaw();
     state.currentPitch = lockLoc.getPitch();
     attackStates.put(uuid, state);
 
     int taskId =
-        Bukkit.getScheduler()
-            .runTaskTimer(plugin, () -> tickMobAttack(fp, uuid), 0L, 1L)
-            .getTaskId();
+        FppScheduler.runAtEntityRepeatingWithId(
+            plugin, bot, () -> tickMobAttack(fp, uuid), 0L, 1L);
     attackTasks.put(uuid, taskId);
+  }
+
+  private void navigateToMobTarget(
+      FakePlayer fp, UUID uuid, AttackState state, LivingEntity target, double reach) {
+    if (target == null) return;
+    if (pathfinding.isNavigating(uuid, PathfindingService.Owner.ATTACK)) return;
+    if (fp.getPlayer() == null || !fp.getPlayer().isOnline()) return;
+
+    final UUID targetUuid = target.getUniqueId();
+    double arrivalDistance = Math.max(2.5, reach - 0.5);
+    pathfinding.navigate(
+        fp,
+        new PathfindingService.NavigationRequest(
+            PathfindingService.Owner.ATTACK,
+            () -> {
+              UUID liveTargetUuid = state.currentTargetUuid != null ? state.currentTargetUuid : targetUuid;
+              Entity live = Bukkit.getEntity(liveTargetUuid);
+              if (!(live instanceof LivingEntity le) || !le.isValid() || le.isDead()) return null;
+              Player bot = fp.getPlayer();
+              if (bot == null || !bot.isOnline() || le.getWorld() != bot.getWorld()) return null;
+              return le.getLocation();
+            },
+            arrivalDistance,
+            3.5,
+            3,
+            null,
+            null,
+            null));
+  }
+
+  private void startHuntMode(FakePlayer fp, MobFlags flags, Location startLoc) {
+    UUID uuid = fp.getUuid();
+    Player bot = fp.getPlayer();
+    if (bot == null) return;
+
+    activeAttackLocations.put(uuid, startLoc.clone());
+    activeAttackOnceFlags.put(uuid, false);
+
+    AttackState state = new AttackState();
+    state.mobMode = true;
+    state.huntMode = true;
+    state.range = flags.range();
+    state.priority = flags.priority();
+    state.filterTypes =
+        flags.filterTypes() != null ? new HashSet<>(flags.filterTypes()) : new HashSet<>();
+    state.moveToTarget = false;
+    state.currentYaw = bot.getLocation().getYaw();
+    state.currentPitch = bot.getLocation().getPitch();
+    attackStates.put(uuid, state);
+
+    // 1-tick task: rotation + melee when close
+    int attackTaskId =
+        FppScheduler.runAtEntityRepeatingWithId(
+            plugin, bot, () -> tickMobAttack(fp, uuid), 0L, 1L);
+    attackTasks.put(uuid, attackTaskId);
+
+    // 20-tick task: find next target and navigate to it
+    int scanTaskId =
+        FppScheduler.runAtEntityRepeatingWithId(
+            plugin, bot, () -> tickHuntScan(fp, uuid), 0L, 20L);
+    huntScanTasks.put(uuid, scanTaskId);
+  }
+
+  private void tickHuntScan(FakePlayer fp, UUID uuid) {
+    Player b = fp.getPlayer();
+    if (b == null || !b.isOnline()) {
+      stopAttacking(uuid);
+      return;
+    }
+
+    AttackState state = attackStates.get(uuid);
+    if (state == null) {
+      stopAttacking(uuid);
+      return;
+    }
+
+    // Let any in-flight navigation finish before picking a new target
+    if (pathfinding.isNavigating(uuid, PathfindingService.Owner.ATTACK)) return;
+
+    LivingEntity target = findBestTarget(b, state);
+    if (target == null) return;
+
+    double dist = b.getLocation().distance(target.getLocation());
+    double reach = ((CraftPlayer) b).getHandle().gameMode.isCreative() ? 5.0 : 3.5;
+    if (dist <= reach) return; // already in melee range — combat tick handles it
+
+    final UUID targetUuid = target.getUniqueId();
+    PathfindingService.NavigationRequest req =
+        new PathfindingService.NavigationRequest(
+            PathfindingService.Owner.ATTACK,
+            () -> {
+              Entity t = Bukkit.getEntity(targetUuid);
+              return (t != null && t.isValid() && !((LivingEntity) t).isDead())
+                  ? t.getLocation()
+                  : null;
+            },
+            2.2,  // arrival distance — close enough to melee
+            3.5,  // recalc when target moves this far
+            3,    // max null-path recalculations before giving up
+            () -> {},    // onArrive — combat tick handles the attack
+            () -> {},    // onCancel
+            () -> {}     // onPathFailure
+        );
+    pathfinding.navigate(fp, req);
   }
 
   private void tickClassicAttack(FakePlayer fp, UUID uuid, boolean once) {
@@ -523,6 +710,11 @@ public final class AttackCommand implements FppCommand {
     if (manager.getByUuid(bukkit.getUniqueId()) != null) return;
 
     b.swingMainHand();
+
+    var atkEvt = new me.bill.fakePlayerPlugin.api.event.FppBotAttackEvent(
+        new FppBotImpl(fp), bukkit, 1.0);
+    org.bukkit.Bukkit.getPluginManager().callEvent(atkEvt);
+    if (atkEvt.isCancelled()) return;
 
     nms.attack(nmsEntity);
 
@@ -578,19 +770,33 @@ public final class AttackCommand implements FppCommand {
     state.currentYaw = smoothAngle(state.currentYaw, desiredYaw, speed);
     state.currentPitch = smoothAngle(state.currentPitch, desiredPitch, speed * 0.8f);
 
-    manager.updateActionLockRotation(uuid, state.currentYaw, state.currentPitch);
     ServerPlayer nms = ((CraftPlayer) b).getHandle();
     nms.setYRot(state.currentYaw);
     nms.setXRot(state.currentPitch);
     nms.setYHeadRot(state.currentYaw);
+
+    // --move mode: chase the target when out of reach; stop when in melee range.
+    double dist = b.getLocation().distance(currentTarget.getLocation());
+    double reach = nms.gameMode.isCreative() ? 5.0 : 3.5;
+    if (state.moveToTarget) {
+      if (dist > reach) {
+        navigateToMobTarget(fp, uuid, state, currentTarget, reach);
+        return;
+      }
+      if (pathfinding.isNavigating(uuid, PathfindingService.Owner.ATTACK)) {
+        pathfinding.cancel(uuid);
+      }
+    } else if (!state.huntMode) {
+      // stationary mob mode: keep bot frozen at lock location
+      manager.updateActionLockRotation(uuid, state.currentYaw, state.currentPitch);
+    }
+    // hunt mode: PathfindingService drives movement; rotation already applied above
 
     if (state.cooldownTicks > 0) {
       state.cooldownTicks--;
       return;
     }
 
-    double dist = botEye.distance(currentTarget.getLocation());
-    double reach = nms.gameMode.isCreative() ? 5.0 : 3.5;
     if (dist > reach) return;
 
     var nmsMainHand = nms.getItemInHand(InteractionHand.MAIN_HAND);
@@ -601,6 +807,11 @@ public final class AttackCommand implements FppCommand {
     if (nmsTarget == null) return;
 
     b.swingMainHand();
+
+    var atkEvt2 = new me.bill.fakePlayerPlugin.api.event.FppBotAttackEvent(
+        new FppBotImpl(fp), currentTarget, 1.0);
+    org.bukkit.Bukkit.getPluginManager().callEvent(atkEvt2);
+    if (atkEvt2.isCancelled()) return;
     nms.attack(nmsTarget);
 
     ItemStack mainHand = b.getInventory().getItemInMainHand();
@@ -716,23 +927,53 @@ public final class AttackCommand implements FppCommand {
       }
     }
 
-    MobFlags flags = new MobFlags(fp.getPveRange(), fp.getPvePriority(), filterTypes);
+    if (!fp.isPveEnabled()) return;
+    MobFlags flags =
+        new MobFlags(fp.getPveRange(), fp.getPvePriority(), filterTypes, fp.getPveSmartAttackMode(), false);
     startMobMode(fp, flags, bot.getLocation());
   }
 
   public void stopAttacking(UUID botUuid) {
-    Integer taskId = attackTasks.remove(botUuid);
-    if (taskId != null) Bukkit.getScheduler().cancelTask(taskId);
+    pathfinding.cancel(botUuid);
 
-    manager.unlockAction(botUuid);
+    Integer taskId = attackTasks.remove(botUuid);
+    if (taskId != null) FppScheduler.cancelTask(taskId);
+
+    Integer scanTaskId = huntScanTasks.remove(botUuid);
+    if (scanTaskId != null) FppScheduler.cancelTask(scanTaskId);
+
+    AttackState state = attackStates.remove(botUuid);
+
+    // If the bot was chasing (--move mode), stop its movement.
+    if (state != null && state.moveToTarget) {
+      FakePlayer fp = manager.getByUuid(botUuid);
+      if (fp != null) {
+        Player bot = fp.getPlayer();
+        if (bot != null) {
+          bot.setSprinting(false);
+          NmsPlayerSpawner.setMovementForward(bot, 0f);
+        }
+      }
+    } else if (state == null || !state.huntMode) {
+      manager.unlockAction(botUuid);
+    }
+    // hunt mode: no action-lock was held; PathfindingService cancellation is handled by cancelAll()
+
+    FakePlayer fp = manager.getByUuid(botUuid);
+    if (fp != null) {
+      FppApiImpl.fireTaskEvent(fp, "attack", me.bill.fakePlayerPlugin.api.event.FppBotTaskEvent.Action.STOP);
+    }
 
     activeAttackLocations.remove(botUuid);
     activeAttackOnceFlags.remove(botUuid);
-    attackStates.remove(botUuid);
   }
 
   public void stopAll() {
     pathfinding.cancelAll(PathfindingService.Owner.ATTACK);
+    new HashSet<>(huntScanTasks.keySet()).forEach(uuid -> {
+      Integer id = huntScanTasks.remove(uuid);
+      if (id != null) FppScheduler.cancelTask(id);
+    });
     new HashSet<>(attackTasks.keySet()).forEach(this::cancelAll);
   }
 
@@ -757,6 +998,15 @@ public final class AttackCommand implements FppCommand {
   public boolean isMobMode(UUID botUuid) {
     AttackState state = attackStates.get(botUuid);
     return state != null && state.mobMode;
+  }
+
+  public void resumeAttacking(FakePlayer fp) {
+    UUID uuid = fp.getUuid();
+    Location attackLoc = getActiveAttackLocation(uuid);
+    boolean once = isActiveAttackOnce(uuid);
+    if (attackLoc != null) {
+      resumeAttacking(fp, once, attackLoc);
+    }
   }
 
   public void resumeAttacking(FakePlayer fp, boolean once, Location loc) {

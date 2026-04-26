@@ -11,7 +11,7 @@ import me.bill.fakePlayerPlugin.util.FppLogger;
 
 public class DatabaseManager {
 
-  private static final int SCHEMA_VERSION = 18;
+  private static final int SCHEMA_VERSION = 20;
 
   public static int getCurrentSchemaVersion() {
     return SCHEMA_VERSION;
@@ -97,13 +97,17 @@ public class DatabaseManager {
           + "  head_ai_enabled BOOLEAN DEFAULT 1,"
           + "  nav_parkour     BOOLEAN DEFAULT 0,"
           + "  nav_break_blocks BOOLEAN DEFAULT 0,"
-          + "  nav_place_blocks BOOLEAN DEFAULT 0,"
-          + "  swim_ai_enabled  BOOLEAN DEFAULT 1,"
-          + "  chunk_load_radius INT     DEFAULT -1,"
-          + "  pve_enabled      BOOLEAN DEFAULT 0,"
+           + "  nav_place_blocks BOOLEAN DEFAULT 0,"
+           + "  nav_avoid_water BOOLEAN DEFAULT 0,"
+           + "  nav_avoid_lava  BOOLEAN DEFAULT 0,"
+           + "  swim_ai_enabled  BOOLEAN DEFAULT 1,"
+           + "  chunk_load_radius INT     DEFAULT -1,"
+           + "  ping            INT      DEFAULT -1,"
+           + "  pve_enabled      BOOLEAN DEFAULT 0,"
           + "  pve_range        DOUBLE  DEFAULT 16.0,"
           + "  pve_priority     VARCHAR(16) DEFAULT NULL,"
           + "  pve_mob_type     VARCHAR(64) DEFAULT NULL,"
+          + "  pve_smart_attack_mode VARCHAR(16) DEFAULT 'OFF',"
           + "  skin_texture     TEXT    DEFAULT NULL,"
           + "  skin_signature   TEXT    DEFAULT NULL"
           + ")";
@@ -134,13 +138,17 @@ public class DatabaseManager {
           + "  head_ai_enabled BOOLEAN DEFAULT 1,"
           + "  nav_parkour     BOOLEAN DEFAULT 0,"
           + "  nav_break_blocks BOOLEAN DEFAULT 0,"
-          + "  nav_place_blocks BOOLEAN DEFAULT 0,"
-          + "  swim_ai_enabled  BOOLEAN DEFAULT 1,"
-          + "  chunk_load_radius INT     DEFAULT -1,"
-          + "  pve_enabled      BOOLEAN DEFAULT 0,"
+           + "  nav_place_blocks BOOLEAN DEFAULT 0,"
+           + "  nav_avoid_water BOOLEAN DEFAULT 0,"
+           + "  nav_avoid_lava  BOOLEAN DEFAULT 0,"
+           + "  swim_ai_enabled  BOOLEAN DEFAULT 1,"
+           + "  chunk_load_radius INT     DEFAULT -1,"
+           + "  ping            INT      DEFAULT -1,"
+           + "  pve_enabled      BOOLEAN DEFAULT 0,"
           + "  pve_range        DOUBLE  DEFAULT 16.0,"
           + "  pve_priority     VARCHAR(16) DEFAULT NULL,"
           + "  pve_mob_type     VARCHAR(64) DEFAULT NULL,"
+          + "  pve_smart_attack_mode VARCHAR(16) DEFAULT 'OFF',"
           + "  skin_texture     TEXT    DEFAULT NULL,"
           + "  skin_signature   TEXT    DEFAULT NULL"
           + ")";
@@ -350,6 +358,11 @@ public class DatabaseManager {
       "ALTER TABLE fpp_active_bots ADD COLUMN chunk_load_radius  INT     DEFAULT -1"
     },
     {
+      "ALTER TABLE fpp_active_bots ADD COLUMN nav_avoid_water   BOOLEAN DEFAULT 0",
+      "ALTER TABLE fpp_active_bots ADD COLUMN nav_avoid_lava    BOOLEAN DEFAULT 0"
+    },
+    {"ALTER TABLE fpp_active_bots ADD COLUMN ping INT DEFAULT -1"},
+    {
       "CREATE TABLE IF NOT EXISTS fpp_skin_cache ("
           + "  skin_name         VARCHAR(16)  NOT NULL PRIMARY KEY,"
           + "  texture_value     TEXT         NOT NULL,"
@@ -380,6 +393,9 @@ public class DatabaseManager {
           + "  saved_at       BIGINT       NOT NULL,"
           + "  PRIMARY KEY (bot_name, server_id)"
           + ")"
+    },
+    {
+      "ALTER TABLE fpp_active_bots ADD COLUMN pve_smart_attack_mode VARCHAR(16) DEFAULT 'OFF'"
     }
   };
 
@@ -554,8 +570,46 @@ public class DatabaseManager {
   }
 
   private void repairSchema() {
-    execSilent("ALTER TABLE fpp_active_bots ADD COLUMN skin_texture   TEXT DEFAULT NULL");
-    execSilent("ALTER TABLE fpp_active_bots ADD COLUMN skin_signature TEXT DEFAULT NULL");
+    createTables();
+    execSilent("ALTER TABLE fpp_bot_sessions ADD COLUMN last_yaw         FLOAT");
+    execSilent("ALTER TABLE fpp_bot_sessions ADD COLUMN last_pitch       FLOAT");
+    execSilent("ALTER TABLE fpp_bot_sessions ADD COLUMN bot_display      VARCHAR(128) DEFAULT NULL");
+    execSilent("ALTER TABLE fpp_bot_sessions ADD COLUMN luckperms_group  VARCHAR(64)  DEFAULT NULL");
+    execSilent("ALTER TABLE fpp_bot_sessions ADD COLUMN server_id        VARCHAR(64)  NOT NULL DEFAULT 'default'");
+    execSilent("ALTER TABLE fpp_active_bots ADD COLUMN bot_display       VARCHAR(128) DEFAULT NULL");
+    execSilent("ALTER TABLE fpp_active_bots ADD COLUMN luckperms_group   VARCHAR(64)  DEFAULT NULL");
+    execSilent("ALTER TABLE fpp_active_bots ADD COLUMN server_id         VARCHAR(64)  NOT NULL DEFAULT 'default'");
+    execSilent("ALTER TABLE fpp_active_bots ADD COLUMN frozen            BOOLEAN DEFAULT 0");
+    execSilent("ALTER TABLE fpp_active_bots ADD COLUMN chat_enabled      BOOLEAN DEFAULT 1");
+    execSilent("ALTER TABLE fpp_active_bots ADD COLUMN chat_tier         VARCHAR(16) DEFAULT NULL");
+    execSilent("ALTER TABLE fpp_active_bots ADD COLUMN right_click_cmd   VARCHAR(256) DEFAULT NULL");
+    execSilent("ALTER TABLE fpp_active_bots ADD COLUMN ai_personality    VARCHAR(64) DEFAULT NULL");
+    execSilent("ALTER TABLE fpp_active_bots ADD COLUMN pickup_items      BOOLEAN DEFAULT 0");
+    execSilent("ALTER TABLE fpp_active_bots ADD COLUMN pickup_xp         BOOLEAN DEFAULT 1");
+    execSilent("ALTER TABLE fpp_active_bots ADD COLUMN head_ai_enabled   BOOLEAN DEFAULT 1");
+    execSilent("ALTER TABLE fpp_active_bots ADD COLUMN nav_parkour       BOOLEAN DEFAULT 0");
+    execSilent("ALTER TABLE fpp_active_bots ADD COLUMN nav_break_blocks  BOOLEAN DEFAULT 0");
+    execSilent("ALTER TABLE fpp_active_bots ADD COLUMN nav_place_blocks  BOOLEAN DEFAULT 0");
+    execSilent("ALTER TABLE fpp_active_bots ADD COLUMN swim_ai_enabled   BOOLEAN DEFAULT 1");
+    execSilent("ALTER TABLE fpp_active_bots ADD COLUMN chunk_load_radius INT     DEFAULT -1");
+    execSilent("ALTER TABLE fpp_active_bots ADD COLUMN skin_texture      TEXT    DEFAULT NULL");
+    execSilent("ALTER TABLE fpp_active_bots ADD COLUMN skin_signature    TEXT    DEFAULT NULL");
+    execSilent("ALTER TABLE fpp_active_bots ADD COLUMN nav_avoid_water   BOOLEAN DEFAULT 0");
+    execSilent("ALTER TABLE fpp_active_bots ADD COLUMN nav_avoid_lava    BOOLEAN DEFAULT 0");
+    execSilent("ALTER TABLE fpp_active_bots ADD COLUMN ping             INT     DEFAULT -1");
+    execSilent("ALTER TABLE fpp_active_bots ADD COLUMN pve_enabled      BOOLEAN DEFAULT 0");
+    execSilent("ALTER TABLE fpp_active_bots ADD COLUMN pve_range        DOUBLE  DEFAULT 16.0");
+    execSilent("ALTER TABLE fpp_active_bots ADD COLUMN pve_priority     VARCHAR(16) DEFAULT NULL");
+    execSilent("ALTER TABLE fpp_active_bots ADD COLUMN pve_mob_type     VARCHAR(64) DEFAULT NULL");
+    execSilent("ALTER TABLE fpp_active_bots ADD COLUMN pve_smart_attack_mode VARCHAR(16) DEFAULT 'OFF'");
+    execSilent("CREATE INDEX IF NOT EXISTS idx_sessions_bot_name    ON fpp_bot_sessions(bot_name)");
+    execSilent("CREATE INDEX IF NOT EXISTS idx_sessions_spawned_by  ON fpp_bot_sessions(spawned_by)");
+    execSilent("CREATE INDEX IF NOT EXISTS idx_sessions_removed_at  ON fpp_bot_sessions(removed_at)");
+    execSilent("CREATE INDEX IF NOT EXISTS idx_sessions_spawned_at  ON fpp_bot_sessions(spawned_at)");
+    execSilent("CREATE INDEX IF NOT EXISTS idx_sessions_bot_uuid    ON fpp_bot_sessions(bot_uuid)");
+    execSilent("CREATE INDEX IF NOT EXISTS idx_sessions_server_id   ON fpp_bot_sessions(server_id)");
+    execSilent("CREATE INDEX IF NOT EXISTS idx_active_server_id     ON fpp_active_bots(server_id)");
+    execSilent("CREATE INDEX IF NOT EXISTS idx_skin_cache_cached_at ON fpp_skin_cache(cached_at)");
   }
 
   private int getSchemaVersion() {
@@ -1062,6 +1116,16 @@ public class DatabaseManager {
       navPlaceBlocks = rs.getBoolean("nav_place_blocks");
     } catch (SQLException ignored) {
     }
+    boolean navAvoidWater = false;
+    try {
+      navAvoidWater = rs.getBoolean("nav_avoid_water");
+    } catch (SQLException ignored) {
+    }
+    boolean navAvoidLava = false;
+    try {
+      navAvoidLava = rs.getBoolean("nav_avoid_lava");
+    } catch (SQLException ignored) {
+    }
     boolean swimAiEnabled = Config.swimAiEnabled();
     try {
       swimAiEnabled = rs.getBoolean("swim_ai_enabled");
@@ -1070,6 +1134,11 @@ public class DatabaseManager {
     int chunkLoadRadius = -1;
     try {
       chunkLoadRadius = rs.getInt("chunk_load_radius");
+    } catch (SQLException ignored) {
+    }
+    int ping = -1;
+    try {
+      ping = rs.getInt("ping");
     } catch (SQLException ignored) {
     }
     boolean pveEnabled = false;
@@ -1090,6 +1159,12 @@ public class DatabaseManager {
     String pveMobType = null;
     try {
       pveMobType = rs.getString("pve_mob_type");
+    } catch (SQLException ignored) {
+    }
+    String pveSmartAttackMode = pveEnabled ? "ON_NO_MOVE" : "OFF";
+    try {
+      String raw = rs.getString("pve_smart_attack_mode");
+      if (raw != null && !raw.isBlank()) pveSmartAttackMode = raw;
     } catch (SQLException ignored) {
     }
     String skinTexture = null;
@@ -1127,12 +1202,16 @@ public class DatabaseManager {
         navParkour,
         navBreakBlocks,
         navPlaceBlocks,
+        navAvoidWater,
+        navAvoidLava,
         swimAiEnabled,
         chunkLoadRadius,
+        ping,
         pveEnabled,
         pveRange,
         pvePriority,
         pveMobType,
+        pveSmartAttackMode,
         skinTexture,
         skinSignature);
   }
@@ -2006,23 +2085,27 @@ public class DatabaseManager {
       boolean navParkour,
       boolean navBreakBlocks,
       boolean navPlaceBlocks,
+      boolean navAvoidWater,
+      boolean navAvoidLava,
       boolean swimAiEnabled,
       int chunkLoadRadius,
+      int ping,
       boolean pveEnabled,
       double pveRange,
       String pvePriority,
-      String pveMobType) {
+      String pveMobType,
+      String pveSmartAttackMode) {
     if (!isAlive()) return;
     final String tier = chatTier, rcc = rightClickCmd, pers = aiPersonality;
-    final String pvePri = pvePriority, pveMob = pveMobType;
+    final String pvePri = pvePriority, pveMob = pveMobType, pveMode = pveSmartAttackMode;
     enqueue(
         () -> {
           if (!isAlive()) return;
           String sql =
               "UPDATE fpp_active_bots SET frozen=?,chat_enabled=?,chat_tier=?,right_click_cmd=?,"
                   + "ai_personality=?,pickup_items=?,pickup_xp=?,head_ai_enabled=?,"
-                  + "nav_parkour=?,nav_break_blocks=?,nav_place_blocks=?,swim_ai_enabled=?,chunk_load_radius=?,"
-                  + "pve_enabled=?,pve_range=?,pve_priority=?,pve_mob_type=? WHERE bot_uuid=?";
+                  + "nav_parkour=?,nav_break_blocks=?,nav_place_blocks=?,nav_avoid_water=?,nav_avoid_lava=?,swim_ai_enabled=?,chunk_load_radius=?,"
+                  + "ping=?,pve_enabled=?,pve_range=?,pve_priority=?,pve_mob_type=?,pve_smart_attack_mode=? WHERE bot_uuid=?";
           try (PreparedStatement ps = connection.prepareStatement(sql)) {
             ps.setBoolean(1, frozen);
             ps.setBoolean(2, chatEnabled);
@@ -2038,15 +2121,20 @@ public class DatabaseManager {
             ps.setBoolean(9, navParkour);
             ps.setBoolean(10, navBreakBlocks);
             ps.setBoolean(11, navPlaceBlocks);
-            ps.setBoolean(12, swimAiEnabled);
-            ps.setInt(13, chunkLoadRadius);
-            ps.setBoolean(14, pveEnabled);
-            ps.setDouble(15, pveRange);
-            if (pvePri != null) ps.setString(16, pvePri);
-            else ps.setNull(16, java.sql.Types.VARCHAR);
-            if (pveMob != null) ps.setString(17, pveMob);
-            else ps.setNull(17, java.sql.Types.VARCHAR);
-            ps.setString(18, uuid);
+            ps.setBoolean(12, navAvoidWater);
+            ps.setBoolean(13, navAvoidLava);
+            ps.setBoolean(14, swimAiEnabled);
+            ps.setInt(15, chunkLoadRadius);
+            ps.setInt(16, ping);
+            ps.setBoolean(17, pveEnabled);
+            ps.setDouble(18, pveRange);
+            if (pvePri != null) ps.setString(19, pvePri);
+            else ps.setNull(19, java.sql.Types.VARCHAR);
+            if (pveMob != null) ps.setString(20, pveMob);
+            else ps.setNull(20, java.sql.Types.VARCHAR);
+            if (pveMode != null) ps.setString(21, pveMode);
+            else ps.setString(21, "OFF");
+            ps.setString(22, uuid);
             ps.executeUpdate();
           } catch (SQLException e) {
             FppLogger.error("DB updateBotAllSettings: " + e.getMessage());
@@ -2071,6 +2159,24 @@ public class DatabaseManager {
             ps.executeUpdate();
           } catch (SQLException e) {
             FppLogger.error("DB updateBotSkin: " + e.getMessage());
+          }
+        });
+  }
+
+  public void updateBotOwner(String uuid, String ownerName, String ownerUuid) {
+    if (!isAlive()) return;
+    enqueue(
+        () -> {
+          if (!isAlive()) return;
+          try (PreparedStatement ps =
+              connection.prepareStatement(
+                  "UPDATE fpp_active_bots SET spawned_by=?,spawned_by_uuid=? WHERE bot_uuid=?")) {
+            ps.setString(1, ownerName);
+            ps.setString(2, ownerUuid);
+            ps.setString(3, uuid);
+            ps.executeUpdate();
+          } catch (SQLException e) {
+            FppLogger.error("DB updateBotOwner: " + e.getMessage());
           }
         });
   }
@@ -2323,12 +2429,16 @@ public class DatabaseManager {
       boolean navParkour,
       boolean navBreakBlocks,
       boolean navPlaceBlocks,
+      boolean navAvoidWater,
+      boolean navAvoidLava,
       boolean swimAiEnabled,
       int chunkLoadRadius,
+      int ping,
       boolean pveEnabled,
       double pveRange,
       String pvePriority,
       String pveMobType,
+      String pveSmartAttackMode,
       String skinTexture,
       String skinSignature) {}
 

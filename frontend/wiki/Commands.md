@@ -1,6 +1,6 @@
 # ⌨️ Commands
 
-> **Complete FPP command reference - v1.6.6.2**  
+> **Complete FPP command reference - v1.6.6.7**  
 > All commands use `/fpp` · aliases `/fakeplayer` and `/fp`
 
 ---
@@ -36,6 +36,11 @@
 | `/fpp attack <bot> [--stop]` | `fpp.attack` | PvE attack — walk to sender, attack entities; `--mob` for stationary mob-targeting |
 | `/fpp follow <bot\|all> <player>` | `fpp.follow` | Continuously follow an online player (persists across restarts) |
 | `/fpp follow <bot\|all> --stop` | `fpp.follow` | Stop the bot's follow loop |
+| `/fpp sleep <bot|all> <x y z> <radius>` | `fpp.sleep` | Set a sleep-origin so the bot auto-sleeps at night near that location |
+| `/fpp sleep <bot|all> --stop` | `fpp.sleep` | Clear the bot's sleep-origin |
+| `/fpp stop [<bot>|all]` | `fpp.stop` | Cancel all active tasks for a bot (move, mine, place, use, attack, follow, sleep) |
+| `/fpp find <bot> <block> [--radius <n>] [--count <n>]` | `fpp.find` | Bot scans nearby chunks for target blocks and mines them progressively |
+| `/fpp groups [gui|list|create|delete|add|remove]` | `fpp.groups` | Personal bot groups with GUI management |
 | `/fpp chat ...` | `fpp.chat` | Control fake chat globally or per-bot |
 | `/fpp freeze ...` | `fpp.freeze` | Freeze or unfreeze bots |
 | `/fpp swap ...` | `fpp.swap` | Session rotation controls |
@@ -194,6 +199,7 @@ Permission: `fpp.inventory`
 ```text
 /fpp move <bot> <player>
 /fpp move <bot|all> --to <player>
+/fpp move <bot|all> --coords <x> <y> <z>
 /fpp move <bot|all> --wp <route> [--random]
 /fpp move <bot|all> --roam [x,y,z] [radius]
 /fpp move <bot|all> --stop
@@ -203,6 +209,14 @@ Shared A* navigation command.
 
 #### Follow player mode
 Makes the bot navigate to an online player. `--to <player>` is the canonical flag form; the old positional `<bot> <player>` syntax still works as a backward-compat fallback.
+
+#### Coords mode (`--coords`)
+Navigate a bot to exact world coordinates. Supports `~` relative offsets.
+
+```text
+/fpp move Steve --coords 100 64 200
+/fpp move Steve --coords ~ ~5 ~
+```
 
 #### Roam mode (`--roam`)
 Bot wanders continuously within a configurable radius (3–500 blocks) around a fixed center.
@@ -706,11 +720,14 @@ Set the simulated tab-list latency (ping bar) for one or all bots.
 /fpp attack <bot>
 /fpp attack <bot> --stop
 /fpp attack <bot> --mob [--range <n>] [--type <mob>] [--priority nearest|lowest-health]
+/fpp attack <bot> --mob --move
 ```
 
 **Classic mode:** bot walks to the command sender's position and continuously attacks nearby entities.
 
 **Mob mode (`--mob`):** stationary PvE auto-targeting — scans for nearby hostile mobs within `--range` blocks, smoothly rotates toward the best target, and attacks with proper weapon cooldowns. Re-targets every `attack-mob.retarget-interval` ticks. Never auto-targets players.
+
+**Mob pursuit (`--mob --move`):** bot chases the target when out of melee range and stops to attack when in reach.
 
 - Respects 1.9+ attack cooldown and item-specific cooldowns dynamically
 - `--stop` cancels the attack loop
@@ -735,6 +752,82 @@ Bot continuously follows an online player using `PathfindingService` (Owner `FOL
 - Respects `pathfinding.max-fall` — will not choose paths with unsafe drops
 
 Permission: `fpp.follow`
+
+---
+
+### 😴 `/fpp sleep`
+
+```text
+/fpp sleep <bot|all> <x y z> <radius>
+/fpp sleep <bot|all> --stop
+```
+
+Registers a sleep-origin for a bot. At night, the bot automatically walks to the nearest free bed within the radius and sleeps using NMS sleep/wake. At dawn, the bot wakes up and resumes its previous tasks.
+
+- Temporary bed placement is used if no bed exists nearby
+- The bot pauses all other tasks while sleeping
+- `/fpp sleep <bot|all> --stop` clears the origin and wakes the bot immediately
+
+Permission: `fpp.sleep`
+
+---
+
+### 🛑 `/fpp stop`
+
+```text
+/fpp stop [<bot>|all]
+```
+
+Instantly cancels all active tasks for a bot:
+- move / roam / waypoint patrol
+- mine (classic and area)
+- place
+- use
+- attack
+- follow
+- find
+- sleep
+
+If no bot name is given, cancels tasks for **all** bots.
+
+Permission: `fpp.stop`
+
+---
+
+### 🔍 `/fpp find`
+
+```text
+/fpp find <bot> <block> [--radius <n>] [--count <n>]
+```
+
+Bot scans nearby chunks for the target block type and mines matching blocks one by one.
+
+- Async chunk snapshot scanning for performance
+- Block reservation system prevents multiple bots from targeting the same block
+- Progressive mining with raytrace visibility check
+- `--radius` limits the search radius (default: 32)
+- `--count` limits how many blocks to mine (default: unlimited)
+
+Permission: `fpp.find`
+
+---
+
+### 👥 `/fpp groups`
+
+```text
+/fpp groups [gui|list|create <name>|delete <name>|add <group> <bot>|remove <group> <bot>]
+```
+
+Personal bot groups with GUI management. Group bots together for bulk commands.
+
+- `gui` — opens the group management GUI
+- `list` — lists all your groups
+- `create <name>` — creates a new group
+- `delete <name>` — deletes a group
+- `add <group> <bot>` — adds a bot to a group
+- `remove <group> <bot>` — removes a bot from a group
+
+Permission: `fpp.groups`
 
 ---
 
@@ -766,6 +859,9 @@ fpp.badword
 fpp.ping
 fpp.attack
 fpp.follow
+fpp.find
+fpp.sleep
+fpp.stop
 ```
 
 For the full permission list, see [Permissions](Permissions).

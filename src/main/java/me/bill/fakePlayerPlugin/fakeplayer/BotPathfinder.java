@@ -6,6 +6,7 @@ import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.block.data.Waterlogged;
+import org.bukkit.block.data.type.Door;
 import org.bukkit.block.data.type.Fence;
 import org.bukkit.block.data.type.Gate;
 import org.bukkit.block.data.type.Slab;
@@ -25,6 +26,8 @@ public final class BotPathfinder {
   private static final int PILLAR_C = 18;
   private static final int SWIM_C = 14;
   private static final int WATER_PEN = 6;
+  private static final int OPEN_C = 12;
+  private static final int CLIMB_C = 10;
 
   private static final Set<Material> HAZARDS =
       EnumSet.of(
@@ -62,7 +65,9 @@ public final class BotPathfinder {
     BREAK,
     PLACE,
     PILLAR,
-    SWIM
+    SWIM,
+    OPEN,
+    CLIMB
   }
 
   public record Move(int x, int y, int z, MoveType type) {
@@ -71,8 +76,13 @@ public final class BotPathfinder {
     }
   }
 
-  public record PathOptions(boolean parkour, boolean breakBlocks, boolean placeBlocks) {
-    public static final PathOptions DEFAULT = new PathOptions(false, false, false);
+  public record PathOptions(boolean parkour, boolean breakBlocks, boolean placeBlocks,
+                            boolean avoidWater, boolean avoidLava) {
+    public PathOptions(boolean parkour, boolean breakBlocks, boolean placeBlocks) {
+      this(parkour, breakBlocks, placeBlocks, false, false);
+    }
+
+    public static final PathOptions DEFAULT = new PathOptions(false, false, false, false, false);
 
     public boolean anyEnabled() {
       return parkour || breakBlocks || placeBlocks;
@@ -169,7 +179,9 @@ public final class BotPathfinder {
         BK = MoveType.BREAK.ordinal(),
         PL = MoveType.PLACE.ordinal(),
         PI = MoveType.PILLAR.ordinal(),
-        SW = MoveType.SWIM.ordinal();
+        SW = MoveType.SWIM.ordinal(),
+        OP = MoveType.OPEN.ordinal(),
+        CL = MoveType.CLIMB.ordinal();
 
     int maxFall = Config.pathfindingMaxFall();
 
@@ -206,6 +218,14 @@ public final class BotPathfinder {
         else if (!headClear) continue;
         if (cost > base) {
           out.add(new int[] {nx, y, nz, cost, BK});
+        }
+      }
+
+      if (!isDiag) {
+        if (!feetClear && isOpenable(world, nx, y, nz)) {
+          out.add(new int[] {nx, y, nz, base + OPEN_C, OP});
+        } else if (feetClear && !headClear && isOpenable(world, nx, y + 1, nz)) {
+          out.add(new int[] {nx, y, nz, base + OPEN_C, OP});
         }
       }
 
@@ -267,7 +287,7 @@ public final class BotPathfinder {
         }
 
         if (isWater(world, nx, y - 1, nz) || canPassThrough(world, nx, y - 1, nz)) {
-          out.add(new int[] {nx, y - 1, nz, SWIM_C - 1, SW});
+          out.add(new int[] {nx, y - 1, nz, SWIM_C + 2, SW});
         }
       }
 
@@ -288,7 +308,16 @@ public final class BotPathfinder {
         out.add(new int[] {x, y + 1, z, SWIM_C, SW});
       }
       if (isWater(world, x, y - 1, z) || canPassThrough(world, x, y - 1, z)) {
-        out.add(new int[] {x, y - 1, z, SWIM_C - 1, SW});
+        out.add(new int[] {x, y - 1, z, SWIM_C + 2, SW});
+      }
+    }
+
+    if (isClimbable(world, x, y, z)) {
+      if (canPassThrough(world, x, y + 1, z)) {
+        out.add(new int[] {x, y + 1, z, CLIMB_C, CL});
+      }
+      if (canPassThrough(world, x, y - 1, z)) {
+        out.add(new int[] {x, y - 1, z, CLIMB_C, CL});
       }
     }
 
@@ -309,39 +338,70 @@ public final class BotPathfinder {
 
     if (isSlowBlock(world, x, y - 1, z)) return;
     if (isWater(world, x, y, z)) return;
+    if (isWater(world, x, y - 1, z)) return;
 
+    // Bot needs headroom to jump
     if (!canPassThrough(world, x, y + 2, z)) return;
 
-    int maxJump = 4;
+    // Gap sizes: dist 2 = jump over 1 block, dist 3 = jump over 2 blocks, dist 4 = jump over 3 blocks
+    for (int dist = 2; dist <= 4; dist++) {
 
-    for (int dist = 2; dist <= maxJump; dist++) {
-      int gx = x + dx * (dist - 1), gz = z + dz * (dist - 1);
-
-      if (!canPassThrough(world, gx, y, gz)
-          || !canPassThrough(world, gx, y + 1, gz)
-          || !canPassThrough(world, gx, y + 2, gz)) break;
-
-      if (dist == 2 && !gap1FeetClear) break;
+      // Validate all intermediate gap blocks are clear (air/passable)
+      boolean gapClear = true;
+      for (int step = 1; step < dist; step++) {
+        int gx = x + dx * step, gz = z + dz * step;
+        if (!canPassThrough(world, gx, y, gz)
+            || !canPassThrough(world, gx, y + 1, gz)
+            || !canPassThrough(world, gx, y + 2, gz)) {
+          gapClear = false;
+          break;
+        }
+      }
+      if (!gapClear) break;
 
       int lx = x + dx * dist, lz = z + dz * dist;
 
-      if (!canPassThrough(world, lx, y, lz) || !canPassThrough(world, lx, y + 1, lz)) {
-
-        if (dist <= 3
-            && canStandOn(world, lx, y, lz)
-            && canPassThrough(world, lx, y + 1, lz)
-            && canPassThrough(world, lx, y + 2, lz)) {
-          if (!isHazard(world, lx, y + 1, lz)) {
-            out.add(new int[] {lx, y + 1, lz, WALK * dist + PARKOUR_C + ASCEND, PK});
-          }
-        }
-        break;
+      // ── Same-level parkour (forward jump, land at same Y) ──────────────────
+      if (canStandOn(world, lx, y - 1, lz)
+          && canPassThrough(world, lx, y, lz)
+          && canPassThrough(world, lx, y + 1, lz)
+          && !isHazard(world, lx, y, lz)
+          && !isHazard(world, lx, y - 1, lz)) {
+        int cost = WALK * dist + PARKOUR_C + (dist - 2) * 6;
+        out.add(new int[] {lx, y, lz, cost, PK});
       }
 
-      if (canStandOn(world, lx, y - 1, lz)) {
-        if (!isHazard(world, lx, y, lz) && !isHazard(world, lx, y - 1, lz)) {
-          out.add(new int[] {lx, y, lz, WALK * dist + PARKOUR_C, PK});
-        }
+      // ── Ascending parkour (jump up 1 block while moving forward) ────────────
+      if (dist <= 3
+          && canStandOn(world, lx, y, lz)
+          && canPassThrough(world, lx, y + 1, lz)
+          && canPassThrough(world, lx, y + 2, lz)
+          && !isHazard(world, lx, y + 1, lz)
+          && !isHazard(world, lx, y, lz)) {
+        int cost = WALK * dist + PARKOUR_C + ASCEND + (dist - 2) * 6;
+        out.add(new int[] {lx, y + 1, lz, cost, PK});
+      }
+
+      // ── Descending parkour (jump down 1 block while moving forward) ─────────
+      if (dist <= 3
+          && canStandOn(world, lx, y - 2, lz)
+          && canPassThrough(world, lx, y - 1, lz)
+          && canPassThrough(world, lx, y, lz)
+          && !isHazard(world, lx, y - 1, lz)
+          && !isHazard(world, lx, y - 2, lz)) {
+        int cost = WALK * dist + PARKOUR_C + FALL_PER + (dist - 2) * 6;
+        out.add(new int[] {lx, y - 1, lz, cost, PK});
+      }
+
+      // ── Descending parkour (jump down 2 blocks while moving forward) ────────
+      if (dist <= 2
+          && canStandOn(world, lx, y - 3, lz)
+          && canPassThrough(world, lx, y - 2, lz)
+          && canPassThrough(world, lx, y - 1, lz)
+          && !isHazard(world, lx, y - 2, lz)
+          && !isHazard(world, lx, y - 3, lz)) {
+        int cost = WALK * dist + PARKOUR_C + FALL_PER * 2 + 4;
+        out.add(new int[] {lx, y - 2, lz, cost, PK});
       }
     }
   }
@@ -365,6 +425,10 @@ public final class BotPathfinder {
           || mat == Material.COBBLESTONE_WALL
           || mat == Material.MOSSY_COBBLESTONE_WALL) return false;
 
+      if (block.getBlockData() instanceof Door door) {
+        return door.isOpen();
+      }
+
       if (block.getBlockData() instanceof Gate gate) {
         return gate.isOpen();
       }
@@ -378,6 +442,8 @@ public final class BotPathfinder {
       }
 
       if (mat == Material.COBWEB) return false;
+
+      if (isClimbable(mat)) return true;
 
       return block.isPassable();
     } catch (Exception e) {
@@ -402,8 +468,10 @@ public final class BotPathfinder {
 
       if (mat.name().contains("STAIRS")) return true;
 
-      if (block.getBlockData() instanceof Fence) return true;
-      if (mat.name().contains("WALL")) return true;
+      // Fences/walls are too tall to "step onto" from ground level; treating them as standable
+      // makes A* try to climb/jump them instead of routing around.
+      if (block.getBlockData() instanceof Fence) return false;
+      if (mat.name().contains("WALL")) return false;
 
       if (mat == Material.GLASS
           || mat.name().contains("STAINED_GLASS") && !mat.name().contains("PANE")) return true;
@@ -423,6 +491,8 @@ public final class BotPathfinder {
       if (mat.name().contains("_BED")) return true;
 
       if (mat == Material.SCAFFOLDING) return true;
+
+      if (isClimbable(mat)) return true;
 
       if (block.getBlockData() instanceof TrapDoor trapDoor) {
         return !trapDoor.isOpen() && trapDoor.getHalf() == org.bukkit.block.data.Bisected.Half.TOP;
@@ -480,6 +550,46 @@ public final class BotPathfinder {
     try {
       if (!world.isChunkLoaded(x >> 4, z >> 4)) return false;
       return SLOW_BLOCKS.contains(world.getBlockAt(x, y, z).getType());
+    } catch (Exception e) {
+      return false;
+    }
+  }
+
+  private static boolean isOpenable(World world, int x, int y, int z) {
+    if (y < world.getMinHeight() || y > world.getMaxHeight()) return false;
+    try {
+      if (!world.isChunkLoaded(x >> 4, z >> 4)) return false;
+      Block block = world.getBlockAt(x, y, z);
+      if (block.getBlockData() instanceof Door door) {
+        Block bottom = door.getHalf() == org.bukkit.block.data.Bisected.Half.BOTTOM ? block : block.getRelative(0, -1, 0);
+        if (bottom.getBlockData() instanceof Door bottomDoor) return !bottomDoor.isOpen();
+        return false;
+      }
+      if (block.getBlockData() instanceof Gate gate) return !gate.isOpen();
+      if (block.getBlockData() instanceof TrapDoor trap) return !trap.isOpen();
+      return false;
+    } catch (Exception e) {
+      return false;
+    }
+  }
+
+  private static boolean isClimbable(Material mat) {
+    return mat == Material.LADDER
+        || mat == Material.VINE
+        || mat == Material.TWISTING_VINES
+        || mat == Material.TWISTING_VINES_PLANT
+        || mat == Material.WEEPING_VINES
+        || mat == Material.WEEPING_VINES_PLANT
+        || mat == Material.CAVE_VINES
+        || mat == Material.CAVE_VINES_PLANT
+        || mat == Material.SCAFFOLDING;
+  }
+
+  private static boolean isClimbable(World world, int x, int y, int z) {
+    if (y < world.getMinHeight() || y > world.getMaxHeight()) return false;
+    try {
+      if (!world.isChunkLoaded(x >> 4, z >> 4)) return false;
+      return isClimbable(world.getBlockAt(x, y, z).getType());
     } catch (Exception e) {
       return false;
     }

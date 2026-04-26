@@ -1,28 +1,43 @@
 package me.bill.fakePlayerPlugin.command;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import me.bill.fakePlayerPlugin.FakePlayerPlugin;
+import me.bill.fakePlayerPlugin.fakeplayer.BotNavUtil;
 import me.bill.fakePlayerPlugin.fakeplayer.FakePlayer;
 import me.bill.fakePlayerPlugin.fakeplayer.FakePlayerManager;
+import me.bill.fakePlayerPlugin.fakeplayer.PathfindingService;
+import me.bill.fakePlayerPlugin.fakeplayer.StorageInteractionHelper;
 import me.bill.fakePlayerPlugin.lang.Lang;
 import me.bill.fakePlayerPlugin.permission.Perm;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
+import org.bukkit.Material;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockState;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
+import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
+import org.bukkit.inventory.ItemStack;
 
 public final class StorageCommand implements FppCommand {
 
-  private static final List<String> SUBCOMMANDS = List.of("--list", "--remove", "--clear");
+  private static final List<String> SUBCOMMANDS = List.of("--list", "--remove", "--clear", "--enable", "--disable", "--deposit");
 
+  private final FakePlayerPlugin plugin;
   private final FakePlayerManager manager;
   private final StorageStore storageStore;
+  private final PathfindingService pathfinding;
 
-  public StorageCommand(FakePlayerManager manager, StorageStore storageStore) {
+  public StorageCommand(FakePlayerPlugin plugin, FakePlayerManager manager, StorageStore storageStore, PathfindingService pathfinding) {
+    this.plugin = plugin;
     this.manager = manager;
     this.storageStore = storageStore;
+    this.pathfinding = pathfinding;
   }
 
   @Override
@@ -84,6 +99,20 @@ public final class StorageCommand implements FppCommand {
           handleClear(sender, fp);
           return true;
         }
+        case "--enable", "enable", "--disable", "disable" -> {
+          if (args.length < 3) {
+            sender.sendMessage(Component.text("Usage: /fpp storage " + fp.getName() + " " + sub + " <name>", NamedTextColor.RED));
+            return true;
+          }
+          boolean enabled = sub.contains("enable") && !sub.contains("disable");
+          boolean ok = storageStore.setEnabled(fp.getName(), args[2], enabled);
+          sender.sendMessage(Component.text(ok ? "Storage updated." : "Storage not found.", ok ? NamedTextColor.YELLOW : NamedTextColor.RED));
+          return true;
+        }
+        case "--deposit", "deposit" -> {
+          depositInventory(sender, fp, args.length >= 3 ? args[2] : null);
+          return true;
+        }
         default -> {}
       }
     }
@@ -100,7 +129,7 @@ public final class StorageCommand implements FppCommand {
     }
 
     BlockState state = target.getState();
-    if (!(state instanceof InventoryHolder)) {
+    if (target.getType() != Material.CHEST && target.getType() != Material.TRAPPED_CHEST && target.getType() != Material.BARREL) {
       sender.sendMessage(Lang.get("storage-invalid-block", "block", target.getType().name()));
       return true;
     }
@@ -130,7 +159,7 @@ public final class StorageCommand implements FppCommand {
   }
 
   private void handleList(CommandSender sender, FakePlayer fp) {
-    List<StorageStore.StoragePoint> list = storageStore.getStorages(fp.getName());
+    List<StorageStore.StoragePoint> list = storageStore.getAllStorages(fp.getName());
     if (list.isEmpty()) {
       sender.sendMessage(Lang.get("storage-list-empty", "name", fp.getDisplayName()));
       return;
@@ -152,7 +181,7 @@ public final class StorageCommand implements FppCommand {
               "index",
               String.valueOf(i++),
               "storage",
-              point.name(),
+              point.name() + (point.enabled() ? "" : " (disabled)"),
               "world",
               worldName,
               "x",
@@ -179,6 +208,78 @@ public final class StorageCommand implements FppCommand {
     int cleared = storageStore.clearStorages(fp.getName());
     sender.sendMessage(
         Lang.get("storage-cleared", "name", fp.getDisplayName(), "count", String.valueOf(cleared)));
+  }
+
+  private void depositInventory(CommandSender sender, FakePlayer fp, String storageName) {
+    Player bot = fp.getPlayer();
+    if (bot == null || !bot.isOnline()) return;
+    StorageStore.StoragePoint point = chooseStorage(fp, bot, storageName);
+    if (point == null) {
+      sender.sendMessage(Component.text("No enabled storage found.", NamedTextColor.RED));
+      return;
+    }
+    Block block = point.location().getBlock();
+    LocationFace face = faceLocation(bot, block);
+    pathfinding.navigate(
+        fp,
+        new PathfindingService.NavigationRequest(
+            PathfindingService.Owner.SYSTEM,
+            () -> face.loc,
+            1.25,
+            0.0,
+            10,
+            () -> StorageInteractionHelper.interact(fp, face.loc, block, plugin, manager, (holder, liveBot) -> moveInventory(liveBot.getInventory(), holder.getInventory()), null),
+            null,
+            null));
+    sender.sendMessage(Component.text("Walking to storage: " + point.name(), NamedTextColor.YELLOW));
+  }
+
+  private StorageStore.StoragePoint chooseStorage(FakePlayer fp, Player bot, String storageName) {
+    List<StorageStore.StoragePoint> points = storageStore.getStorages(fp.getName());
+    StorageStore.StoragePoint best = null;
+    double bestDist = Double.MAX_VALUE;
+    for (StorageStore.StoragePoint point : points) {
+      if (storageName != null && !point.name().equalsIgnoreCase(storageName)) continue;
+      if (point.location().getWorld() != bot.getWorld()) continue;
+      Block block = point.location().getBlock();
+      if (!(block.getState() instanceof InventoryHolder)) continue;
+      double dist = point.location().distanceSquared(bot.getLocation());
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = point;
+      }
+    }
+    return best;
+  }
+
+  private record LocationFace(org.bukkit.Location loc) {}
+
+  private LocationFace faceLocation(Player bot, Block block) {
+    org.bukkit.Location loc = block.getLocation().add(0.5, 0, 0.5);
+    org.bukkit.Location stand = BotNavUtil.findStandLocation(block.getWorld(), (x, y, z) -> false, block.getX(), block.getY(), block.getZ());
+    if (stand == null) stand = bot.getLocation();
+    org.bukkit.Location face = stand.clone();
+    face.setYaw(BotNavUtil.faceToward(face, loc).getYaw());
+    face.setPitch(BotNavUtil.faceToward(face, loc).getPitch());
+    return new LocationFace(face);
+  }
+
+  private int moveInventory(Inventory from, Inventory to) {
+    int moved = 0;
+    for (int i = 0; i < from.getSize(); i++) {
+      ItemStack item = from.getItem(i);
+      if (item == null || item.getType().isAir()) continue;
+      Map<Integer, ItemStack> leftover = to.addItem(item.clone());
+      if (leftover.isEmpty()) {
+        from.setItem(i, null);
+        moved += item.getAmount();
+      } else {
+        ItemStack rest = leftover.values().iterator().next();
+        moved += item.getAmount() - rest.getAmount();
+        from.setItem(i, rest);
+      }
+    }
+    return moved;
   }
 
   @Override

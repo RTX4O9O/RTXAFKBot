@@ -1,0 +1,147 @@
+package me.bill.fakePlayerPlugin.command;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
+import me.bill.fakePlayerPlugin.fakeplayer.FakePlayer;
+import me.bill.fakePlayerPlugin.fakeplayer.FakePlayerManager;
+import me.bill.fakePlayerPlugin.lang.Lang;
+import me.bill.fakePlayerPlugin.permission.Perm;
+import org.bukkit.command.CommandSender;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+
+/**
+ * /fpp stop [&lt;bot&gt;|all]
+ *
+ * Immediately cancels every active task for one bot or all bots:
+ * move/patrol/roam, mine, use, place, attack, follow, find, sleep.
+ *
+ * This command intentionally does NOT touch the sleep-origin/radius
+ * configuration (use "/fpp sleep &lt;bot&gt; --stop" to permanently disable the
+ * sleep system for a bot).  It only interrupts tasks that are currently
+ * running.
+ */
+public final class StopCommand implements FppCommand {
+
+  private final FakePlayerManager manager;
+
+  // All references are nullable — injected after construction.
+  @Nullable private MoveCommand   moveCommand;
+  @Nullable private MineCommand   mineCommand;
+  @Nullable private UseCommand    useCommand;
+  @Nullable private PlaceCommand  placeCommand;
+  @Nullable private AttackCommand attackCommand;
+  @Nullable private FollowCommand followCommand;
+  @Nullable private FindCommand   findCommand;
+  @Nullable private SleepCommand  sleepCommand;
+
+  // ── Constructor ──────────────────────────────────────────────────────────
+
+  public StopCommand(@NotNull FakePlayerManager manager) {
+    this.manager = manager;
+  }
+
+  // ── Dependency injection ─────────────────────────────────────────────────
+
+  public void setMoveCommand(@Nullable MoveCommand cmd)     { this.moveCommand   = cmd; }
+  public void setMineCommand(@Nullable MineCommand cmd)     { this.mineCommand   = cmd; }
+  public void setUseCommand(@Nullable UseCommand cmd)       { this.useCommand    = cmd; }
+  public void setPlaceCommand(@Nullable PlaceCommand cmd)   { this.placeCommand  = cmd; }
+  public void setAttackCommand(@Nullable AttackCommand cmd) { this.attackCommand = cmd; }
+  public void setFollowCommand(@Nullable FollowCommand cmd) { this.followCommand = cmd; }
+  public void setFindCommand(@Nullable FindCommand cmd)     { this.findCommand   = cmd; }
+  public void setSleepCommand(@Nullable SleepCommand cmd)   { this.sleepCommand  = cmd; }
+
+  // ── FppCommand metadata ──────────────────────────────────────────────────
+
+  @Override public String getName()       { return "stop"; }
+  @Override public String getPermission() { return Perm.STOP; }
+  @Override public boolean canUse(CommandSender sender) { return Perm.has(sender, Perm.STOP); }
+  @Override public String getUsage()      { return "[<bot>|all]"; }
+
+  @Override
+  public String getDescription() {
+    return "Stop all active tasks for one bot or all bots.";
+  }
+
+  // ── Command execution ─────────────────────────────────────────────────────
+
+  @Override
+  public boolean execute(CommandSender sender, String[] args) {
+    // Default: stop all if no argument is supplied.
+    if (args.length == 0 || args[0].equalsIgnoreCase("--all")) {
+      int stopped = stopAllBots();
+      if (stopped == 0) {
+        sender.sendMessage(Lang.get("stop-all-nothing"));
+      } else {
+        sender.sendMessage(Lang.get("stop-all-done", "count", String.valueOf(stopped)));
+      }
+      return true;
+    }
+
+    FakePlayer fp = manager.getByName(args[0]);
+    if (fp == null) {
+      sender.sendMessage(Lang.get("stop-not-found", "name", args[0]));
+      return true;
+    }
+
+    boolean didAnything = stopBot(fp.getUuid());
+    if (didAnything) {
+      sender.sendMessage(Lang.get("stop-done", "name", fp.getDisplayName()));
+    } else {
+      sender.sendMessage(Lang.get("stop-nothing", "name", fp.getDisplayName()));
+    }
+    return true;
+  }
+
+  // ── Stop helpers ─────────────────────────────────────────────────────────
+
+  /**
+   * Stops all running tasks for a single bot.
+   *
+   * @return true if at least one task was cancelled.
+   */
+  private boolean stopBot(@NotNull UUID uuid) {
+    boolean did = false;
+
+    if (moveCommand   != null) { moveCommand.cleanupBot(uuid);   did = true; }
+    if (mineCommand   != null && mineCommand.isMining(uuid))   { mineCommand.stopMining(uuid);     did = true; }
+    if (useCommand    != null && useCommand.isUsing(uuid))     { useCommand.stopUsing(uuid);       did = true; }
+    if (placeCommand  != null && placeCommand.isPlacing(uuid)) { placeCommand.stopPlacing(uuid);   did = true; }
+    if (attackCommand != null && attackCommand.isAttacking(uuid)) { attackCommand.stopAttacking(uuid); did = true; }
+    if (followCommand != null && followCommand.isFollowing(uuid)) { followCommand.stopFollowing(uuid); did = true; }
+    if (findCommand   != null && findCommand.isFinding(uuid))  { findCommand.cleanupBot(uuid);     did = true; }
+    // Interrupt current sleep navigation without disabling the sleep schedule.
+    if (sleepCommand  != null && sleepCommand.isSleeping(uuid)) { sleepCommand.cleanupBot(uuid);   did = true; }
+
+    return did;
+  }
+
+  /**
+   * Stops all running tasks for every active bot.
+   *
+   * @return total number of bots that had at least one task stopped.
+   */
+  private int stopAllBots() {
+    int count = 0;
+    for (FakePlayer fp : new ArrayList<>(manager.getActivePlayers())) {
+      if (stopBot(fp.getUuid())) count++;
+    }
+    return count;
+  }
+
+  // ── Tab-completion ────────────────────────────────────────────────────────
+
+  @Override
+  public List<String> tabComplete(CommandSender sender, String[] args) {
+    List<String> out = new ArrayList<>();
+    if (args.length == 1) {
+      String in = args[0].toLowerCase();
+      if ("--all".startsWith(in)) out.add("--all");
+      for (FakePlayer fp : manager.getActivePlayers())
+        if (fp.getName().toLowerCase().startsWith(in)) out.add(fp.getName());
+    }
+    return out;
+  }
+}

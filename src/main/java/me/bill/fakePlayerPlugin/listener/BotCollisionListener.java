@@ -3,10 +3,11 @@ package me.bill.fakePlayerPlugin.listener;
 import java.util.Collection;
 import me.bill.fakePlayerPlugin.FakePlayerPlugin;
 import me.bill.fakePlayerPlugin.config.Config;
-import me.bill.fakePlayerPlugin.fakeplayer.BotType;
 import me.bill.fakePlayerPlugin.fakeplayer.FakePlayer;
 import me.bill.fakePlayerPlugin.fakeplayer.FakePlayerBody;
 import me.bill.fakePlayerPlugin.fakeplayer.FakePlayerManager;
+import me.bill.fakePlayerPlugin.fakeplayer.NmsPlayerSpawner;
+import me.bill.fakePlayerPlugin.util.FppScheduler;
 import org.bukkit.Location;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
@@ -33,7 +34,7 @@ public class BotCollisionListener implements Listener {
   public BotCollisionListener(FakePlayerPlugin plugin, FakePlayerManager manager) {
     this.plugin = plugin;
     this.manager = manager;
-    plugin.getServer().getScheduler().runTaskTimer(plugin, this::tickBotSeparation, 1L, 1L);
+    FppScheduler.runSyncRepeating(plugin, this::tickBotSeparation, 1L, 1L);
   }
 
   @EventHandler(priority = EventPriority.MONITOR)
@@ -48,6 +49,12 @@ public class BotCollisionListener implements Listener {
     Entity attacker = resolveKnockbackSource(event.getDamager());
     if (attacker == null) {
       Config.debugNms("[KB-DEBUG] BotCollision: SKIP - attacker null for bot=" + target.getName());
+      return;
+    }
+
+    if (attacker instanceof Player && !isPvpEnabled(target.getLocation())) {
+      Config.debugNms(
+          "[KB-DEBUG] BotCollision: SKIP - player PVP blocked for bot=" + target.getName());
       return;
     }
 
@@ -98,8 +105,7 @@ public class BotCollisionListener implements Listener {
       kbZ *= scale;
     }
 
-    double pvpFactor = isPvpBot(target) ? 0.15 : 1.0;
-    Vector finalVel = new Vector(kbX * pvpFactor, kb.getY() * pvpFactor, kbZ * pvpFactor);
+    Vector finalVel = new Vector(kbX, kb.getY(), kbZ);
 
     Config.debugNms(
         "[KB-DEBUG] BotCollision: calling setVelocity on "
@@ -111,12 +117,10 @@ public class BotCollisionListener implements Listener {
             + ","
             + String.format("%.4f", finalVel.getZ())
             + ")"
-            + " pvpFactor="
-            + pvpFactor
             + " hitStrength="
             + hitStrength);
 
-    target.setVelocity(finalVel);
+    applyBotKnockback(target, finalVel);
 
     org.bukkit.util.Vector readBack = target.getVelocity();
     Config.debugNms(
@@ -128,6 +132,19 @@ public class BotCollisionListener implements Listener {
             + String.format("%.4f", readBack.getY())
             + " z="
             + String.format("%.4f", readBack.getZ()));
+  }
+
+  private void applyBotKnockback(Player target, Vector velocity) {
+    NmsPlayerSpawner.applyServerVelocity(target, velocity);
+    FppScheduler.runAtEntityLaterWithId(
+        plugin,
+        target,
+        () -> {
+          if (target.isOnline() && target.isValid() && isFakeBody(target)) {
+            NmsPlayerSpawner.applyServerVelocity(target, velocity);
+          }
+        },
+        1L);
   }
 
   @EventHandler(priority = EventPriority.MONITOR)
@@ -162,8 +179,7 @@ public class BotCollisionListener implements Listener {
       kbZ *= scale;
     }
 
-    double pvpFactor = isPvpBot(target) ? 0.25 : 1.0;
-    target.setVelocity(new Vector(kbX * pvpFactor, kb.getY() * pvpFactor, kbZ * pvpFactor));
+    applyBotKnockback(target, new Vector(kbX, kb.getY(), kbZ));
   }
 
   @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -200,8 +216,6 @@ public class BotCollisionListener implements Listener {
       double dist = Math.sqrt(distSq);
       double overlap = 1.0 - (dist / walkRadius);
       double strength = walkStrength * overlap;
-
-      if (fp.getBotType() == BotType.PVP) strength *= 0.25;
 
       applyImpulse(body, (dx / dist) * strength, (dz / dist) * strength, maxHoriz);
     }
@@ -246,11 +260,8 @@ public class BotCollisionListener implements Listener {
         double overlap = 1.0 - (dist / botRadius);
         double strength = botStrength * overlap * 0.5;
 
-        double factorA = bots[i].getBotType() == BotType.PVP ? 0.25 : 1.0;
-        double factorB = bots[j].getBotType() == BotType.PVP ? 0.25 : 1.0;
-
-        applyImpulse(bodyB, nx * strength * factorB, nz * strength * factorB, maxHoriz);
-        applyImpulse(bodyA, -nx * strength * factorA, -nz * strength * factorA, maxHoriz);
+        applyImpulse(bodyB, nx * strength, nz * strength, maxHoriz);
+        applyImpulse(bodyA, -nx * strength, -nz * strength, maxHoriz);
       }
     }
   }
@@ -315,9 +326,12 @@ public class BotCollisionListener implements Listener {
     return val != null && val.startsWith(FakePlayerBody.VISUAL_PDC_VALUE);
   }
 
-  private boolean isPvpBot(Entity entity) {
-    FakePlayer fp = manager.getByEntity(entity);
-    return fp != null && fp.getBotType() == BotType.PVP;
+  @SuppressWarnings("deprecation")
+  private boolean isPvpEnabled(Location location) {
+    if (location == null || location.getWorld() == null) return false;
+    if (location.getWorld().getPVP()) return true;
+    return plugin.isWorldGuardAvailable()
+        && me.bill.fakePlayerPlugin.util.WorldGuardHelper.isPvpAllowed(location);
   }
 
   private static Entity resolveKnockbackSource(Entity damager) {

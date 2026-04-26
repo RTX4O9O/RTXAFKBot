@@ -9,6 +9,7 @@ import me.bill.fakePlayerPlugin.fakeplayer.FakePlayer;
 import me.bill.fakePlayerPlugin.fakeplayer.FakePlayerManager;
 import me.bill.fakePlayerPlugin.lang.Lang;
 import me.bill.fakePlayerPlugin.permission.Perm;
+import me.bill.fakePlayerPlugin.util.FppScheduler;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 
@@ -91,10 +92,8 @@ public class XpCommand implements FppCommand {
     long cooldownEnd = System.currentTimeMillis() + (XP_COOLDOWN_SECONDS * 1000L);
     xpCooldowns.put(botUuid, cooldownEnd);
 
-    plugin
-        .getServer()
-        .getScheduler()
-        .runTaskLater(plugin, () -> xpCooldowns.remove(botUuid), XP_COOLDOWN_SECONDS * 20L);
+    FppScheduler.runSyncLater(
+        plugin, () -> xpCooldowns.remove(botUuid), XP_COOLDOWN_SECONDS * 20L);
 
     sender.sendMessage(
         Lang.get(

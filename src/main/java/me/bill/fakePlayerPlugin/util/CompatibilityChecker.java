@@ -72,6 +72,37 @@ public final class CompatibilityChecker {
     return "0.0.0";
   }
 
+  /**
+   * Returns true if {@code version} is within the plugin's known-supported range.
+   *
+   * <p>Supported ranges:
+   * <ul>
+   *   <li>Old format {@code 1.x.y}: any version below {@code 1.21.12}</li>
+   *   <li>New year-based format {@code 26.1.x}: fully supported</li>
+   * </ul>
+   *
+   * Versions outside these ranges (e.g. {@code 1.21.12+}, {@code 26.2.x}, unknown formats)
+   * are treated as unsupported until explicitly tested and added here.
+   */
+  public static boolean isSupportedVersion(String version) {
+    if (version == null || version.isBlank() || version.equals("unknown")) return true; // fail-open
+    int[] parts = parseVersionParts(version);
+    if (parts.length == 0) return true;
+
+    // Old format: 1.x.y  — supported if < 1.21.12
+    if (parts[0] == 1) {
+      return !isVersionAtLeast(version, "1.21.12");
+    }
+
+    // New year-based format: 26.1.x
+    if (parts[0] == 26 && parts.length >= 2 && parts[1] == 1) {
+      return true;
+    }
+
+    // Everything else is unknown — treat as unsupported.
+    return false;
+  }
+
   public static boolean isVersionAtLeast(String version, String required) {
     int[] v = parseVersionParts(version);
     int[] r = parseVersionParts(required);

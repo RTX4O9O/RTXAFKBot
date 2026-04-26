@@ -3,6 +3,7 @@ package me.bill.fakePlayerPlugin.fakeplayer;
 import java.util.*;
 import me.bill.fakePlayerPlugin.FakePlayerPlugin;
 import me.bill.fakePlayerPlugin.config.Config;
+import me.bill.fakePlayerPlugin.util.FppScheduler;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.World;
@@ -20,7 +21,7 @@ public final class ChunkLoader {
     this.manager = manager;
 
     long interval = Math.max(1L, Config.chunkLoadingUpdateInterval());
-    Bukkit.getScheduler().runTaskTimer(plugin, this::tick, interval, interval);
+    FppScheduler.runSyncRepeating(plugin, this::tick, interval, interval);
   }
 
   private void tick() {
@@ -32,6 +33,13 @@ public final class ChunkLoader {
     int globalRadius = Config.chunkLoadingRadius();
     if (globalRadius == 0) {
 
+      if (!states.isEmpty()) releaseAll();
+      return;
+    }
+
+    int activeCount = manager.getActivePlayers().size();
+    int massThreshold = Config.chunkLoadingMassDisableThreshold();
+    if (massThreshold > 0 && activeCount >= massThreshold) {
       if (!states.isEmpty()) releaseAll();
       return;
     }
@@ -87,6 +95,12 @@ public final class ChunkLoader {
         long key = packKey((int) coord[0], (int) coord[1]);
         if (state.keys.add(key)) {
           world.addPluginChunkTicket((int) coord[0], (int) coord[1], plugin);
+          if (world.isChunkLoaded((int) coord[0], (int) coord[1])) {
+            var chunkEvt = new me.bill.fakePlayerPlugin.api.event.FppBotChunkLoadEvent(
+                new me.bill.fakePlayerPlugin.api.impl.FppBotImpl(fp),
+                world.getChunkAt((int) coord[0], (int) coord[1]));
+            org.bukkit.Bukkit.getPluginManager().callEvent(chunkEvt);
+          }
         }
       }
 
@@ -130,11 +144,13 @@ public final class ChunkLoader {
   }
 
   private static Location resolvePosition(FakePlayer fp) {
+    Location loc = fp.getLiveLocation();
+    if (loc != null && loc.getWorld() != null) return loc;
 
     Player player = fp.getPlayer();
-    if (player != null && player.isValid()) return player.getLocation();
+    if (player != null && player.getWorld() != null) return player.getLocation();
 
-    Location loc = fp.getSpawnLocation();
+    loc = fp.getSpawnLocation();
     if (loc != null && loc.getWorld() != null) return loc;
     return null;
   }

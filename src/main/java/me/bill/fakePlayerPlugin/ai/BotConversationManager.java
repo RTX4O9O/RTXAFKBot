@@ -6,6 +6,7 @@ import java.util.concurrent.Semaphore;
 import me.bill.fakePlayerPlugin.FakePlayerPlugin;
 import me.bill.fakePlayerPlugin.config.Config;
 import me.bill.fakePlayerPlugin.fakeplayer.FakePlayer;
+import me.bill.fakePlayerPlugin.util.FppScheduler;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 
@@ -129,32 +130,31 @@ public final class BotConversationManager {
                 delayTicks = Math.max(1L, Math.round(delaySecs * 20));
               }
 
-              Bukkit.getScheduler()
-                  .runTaskLater(
-                      plugin,
-                      () -> {
-                        if (sender.isOnline()) {
+              FppScheduler.runSyncLater(
+                  plugin,
+                  () -> {
+                    if (sender.isOnline()) {
 
-                          history.addLast(new AIProvider.ChatMessage("assistant", response));
+                      history.addLast(new AIProvider.ChatMessage("assistant", response));
 
-                          sendBotReply(bot, sender, response);
+                      sendBotReply(bot, sender, response);
 
-                          lastResponseTimes.put(key, System.currentTimeMillis());
+                      lastResponseTimes.put(key, System.currentTimeMillis());
 
-                          if (Config.aiConversationsDebug()) {
-                            plugin
-                                .getLogger()
-                                .info(
-                                    "[AI] "
-                                        + bot.getName()
-                                        + " → "
-                                        + sender.getName()
-                                        + ": "
-                                        + response);
-                          }
-                        }
-                      },
-                      delayTicks);
+                      if (Config.aiConversationsDebug()) {
+                        plugin
+                            .getLogger()
+                            .info(
+                                "[AI] "
+                                    + bot.getName()
+                                    + " → "
+                                    + sender.getName()
+                                    + ": "
+                                    + response);
+                      }
+                    }
+                  },
+                  delayTicks);
             })
         .exceptionally(
             ex -> {

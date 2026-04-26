@@ -1,5 +1,6 @@
 package me.bill.fakePlayerPlugin.command;
 
+import java.util.ArrayList;
 import java.util.List;
 import me.bill.fakePlayerPlugin.fakeplayer.FakePlayer;
 import me.bill.fakePlayerPlugin.fakeplayer.FakePlayerManager;
@@ -30,7 +31,7 @@ public class TphCommand implements FppCommand {
 
   @Override
   public String getUsage() {
-    return "[botname]";
+    return "[botname|all]";
   }
 
   @Override
@@ -66,6 +67,31 @@ public class TphCommand implements FppCommand {
     }
     if (candidates.isEmpty()) {
       sender.sendMessage(Lang.get("tph-no-bots"));
+      return true;
+    }
+
+    if (args.length > 0 && args[0].equalsIgnoreCase("--all")) {
+      if (!Perm.has(sender, Perm.USER_TPH_ALL)) {
+        sender.sendMessage(Lang.get("no-permission"));
+        return true;
+      }
+
+      int teleported = 0;
+      int failed = 0;
+      for (FakePlayer fp : candidates) {
+        if (manager.teleportBot(fp, player.getLocation())) {
+          teleported++;
+        } else {
+          failed++;
+        }
+      }
+      sender.sendMessage(
+          Lang.get(
+              "tph-all-result",
+              "count",
+              String.valueOf(teleported),
+              "failed",
+              String.valueOf(failed)));
       return true;
     }
 
@@ -115,15 +141,23 @@ public class TphCommand implements FppCommand {
   @Override
   public List<String> tabComplete(CommandSender sender, String[] args) {
     if (args.length != 1) return List.of();
+    String prefix = args[0].toLowerCase();
     boolean isAdmin = Perm.has(sender, Perm.OP);
     List<FakePlayer> pool =
         isAdmin
             ? List.copyOf(manager.getActivePlayers())
             : (sender instanceof Player p ? manager.getBotsOwnedBy(p.getUniqueId()) : List.of());
-    return pool.stream()
-        .map(FakePlayer::getName)
-        .filter(n -> n.toLowerCase().startsWith(args[0].toLowerCase()))
-        .toList();
+    List<String> completions =
+        new ArrayList<>(
+            pool.stream()
+                .map(FakePlayer::getName)
+                .filter(n -> !n.equalsIgnoreCase("--all"))
+                .filter(n -> n.toLowerCase().startsWith(prefix))
+                .toList());
+    if (Perm.has(sender, Perm.USER_TPH_ALL) && "--all".startsWith(prefix)) {
+      completions.add(0, "--all");
+    }
+    return completions;
   }
 
   private void listBots(CommandSender sender, List<FakePlayer> bots) {

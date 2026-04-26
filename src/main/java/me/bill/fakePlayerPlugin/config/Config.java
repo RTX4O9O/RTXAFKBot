@@ -26,8 +26,6 @@ public final class Config {
     cfg.options().copyDefaults(true);
 
     cfg.set("body.enabled", true);
-
-    cfg.set("pvp-ai.pvp", false);
     plugin.saveConfig();
   }
 
@@ -91,6 +89,14 @@ public final class Config {
     return cfg.getBoolean("update-checker.enabled", true);
   }
 
+  /**
+   * Help display mode. "gui" (default) opens the HelpGui chest for players; "text" always uses
+   * the paginated chat renderer. Controlled by the "help.mode" config key.
+   */
+  public static String helpMode() {
+    return cfg.getString("help.mode", "gui").toLowerCase();
+  }
+
   public static boolean metricsEnabled() {
     return cfg.getBoolean("metrics.enabled", true);
   }
@@ -130,6 +136,10 @@ public final class Config {
 
   public static String userBotNameFormat() {
     return cfg.getString("bot-name.user-format", "<gray>[bot-{spawner}-{num}]</gray>");
+  }
+
+  public static String botNameMode() {
+    return cfg.getString("bot-name.mode", "random").toLowerCase();
   }
 
   public static String luckpermsDefaultGroup() {
@@ -200,6 +210,14 @@ public final class Config {
 
   public static boolean bodyPickUpXp() {
     return cfg.getBoolean("body.pick-up-xp", true);
+  }
+
+  public static boolean autoEatEnabled() {
+    return cfg.getBoolean("automation.auto-eat", true);
+  }
+
+  public static boolean autoPlaceBedEnabled() {
+    return cfg.getBoolean("automation.auto-place-bed", true);
   }
 
   public static boolean dropItemsOnDespawn() {
@@ -363,6 +381,10 @@ public final class Config {
     return cfg.getInt("chunk-loading.update-interval", 20);
   }
 
+  public static int chunkLoadingMassDisableThreshold() {
+    return cfg.getInt("chunk-loading.mass-disable-threshold", 100);
+  }
+
   public static boolean headAiEnabled() {
     return cfg.getBoolean("head-ai.enabled", true);
   }
@@ -419,12 +441,16 @@ public final class Config {
     return cfg.getDouble("pathfinding.follow-recalc-distance", 3.5);
   }
 
+  public static int pathfindingFollowRecalcInterval() {
+    return Math.max(1, cfg.getInt("pathfinding.follow-recalc-interval", 100));
+  }
+
   public static int pathfindingRecalcInterval() {
     return Math.max(1, cfg.getInt("pathfinding.recalc-interval", 60));
   }
 
   public static int pathfindingStuckTicks() {
-    return Math.max(1, cfg.getInt("pathfinding.stuck-ticks", 8));
+    return Math.max(1, cfg.getInt("pathfinding.stuck-ticks", 5));
   }
 
   public static double pathfindingStuckThreshold() {
@@ -448,99 +474,22 @@ public final class Config {
   }
 
   public static int pathfindingMaxNodes() {
-    return Math.max(100, cfg.getInt("pathfinding.max-nodes", 2000));
+    return Math.max(100, cfg.getInt("pathfinding.max-nodes", 900));
   }
 
   public static int pathfindingMaxNodesExtended() {
-    return Math.max(pathfindingMaxNodes(), cfg.getInt("pathfinding.max-nodes-extended", 4000));
+    return Math.max(pathfindingMaxNodes(), cfg.getInt("pathfinding.max-nodes-extended", 1800));
   }
 
-  public static boolean pvpAiEnabled() {
-    return cfg.getBoolean("pvp-ai.pvp", false);
+
+  /** Number of lateral sweep steps tried on each side when searching for a detour waypoint. */
+  public static int pathfindingDetourAttempts() {
+    return Math.max(1, Math.min(cfg.getInt("pathfinding.detour-attempts", 5), 20));
   }
 
-  public static String pvpAiDifficulty() {
-    return cfg.getString("pvp-ai.difficulty", "medium").toLowerCase();
-  }
-
-  public static String pvpAiCombatMode() {
-    return cfg.getString("pvp-ai.combat-mode", "crystal").toLowerCase();
-  }
-
-  public static String pvpAiGear() {
-    return cfg.getString("pvp-ai.gear", "netherite").toLowerCase();
-  }
-
-  public static boolean pvpAiDefensiveMode() {
-    return cfg.getBoolean("pvp-ai.defensive-mode", true);
-  }
-
-  public static double pvpAiDetectRange() {
-    return cfg.getDouble("pvp-ai.detect-range", 32.0);
-  }
-
-  public static String pvpAiKit() {
-    return cfg.getString("pvp-ai.kit", "kit1").toLowerCase();
-  }
-
-  public static boolean pvpAiCritting() {
-    return cfg.getBoolean("pvp-ai.critting", true);
-  }
-
-  public static boolean pvpAiSTapping() {
-    return cfg.getBoolean("pvp-ai.s-tapping", true);
-  }
-
-  public static boolean pvpAiStrafing() {
-    return cfg.getBoolean("pvp-ai.strafing", true);
-  }
-
-  public static boolean pvpAiShielding() {
-    return cfg.getBoolean("pvp-ai.shielding", false);
-  }
-
-  public static boolean pvpAiSpeedBuffs() {
-    return cfg.getBoolean("pvp-ai.speed-buffs", true);
-  }
-
-  public static boolean pvpAiJumpReset() {
-    return cfg.getBoolean("pvp-ai.jump-reset", true);
-  }
-
-  public static boolean pvpAiRandom() {
-    return cfg.getBoolean("pvp-ai.random", false);
-  }
-
-  public static boolean pvpAiSprint() {
-    return cfg.getBoolean("pvp-ai.sprint", true);
-  }
-
-  public static boolean pvpAiWalkBackwards() {
-    return cfg.getBoolean("pvp-ai.walk-backwards", false);
-  }
-
-  public static boolean pvpAiPearl() {
-    return cfg.getBoolean("pvp-ai.pearl", true);
-  }
-
-  public static boolean pvpAiPearlSpam() {
-    return cfg.getBoolean("pvp-ai.pearl-spam", false);
-  }
-
-  public static boolean pvpAiHoleMode() {
-    return cfg.getBoolean("pvp-ai.hole-mode", false);
-  }
-
-  public static boolean pvpAiAutoRefill() {
-    return cfg.getBoolean("pvp-ai.auto-refill", true);
-  }
-
-  public static boolean pvpAiAutoRespawn() {
-    return cfg.getBoolean("pvp-ai.auto-respawn", true);
-  }
-
-  public static boolean pvpAiSpawnProtection() {
-    return cfg.getBoolean("pvp-ai.spawn-protection", true);
+  /** Total lateral radius (in blocks) spread across detour-attempts steps. */
+  public static double pathfindingDetourRadius() {
+    return Math.max(2.0, Math.min(cfg.getDouble("pathfinding.detour-radius", 16.0), 64.0));
   }
 
   public static double collisionWalkRadius() {

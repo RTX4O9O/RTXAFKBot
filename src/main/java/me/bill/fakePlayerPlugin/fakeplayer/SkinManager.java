@@ -12,6 +12,7 @@ import java.util.function.Consumer;
 import me.bill.fakePlayerPlugin.FakePlayerPlugin;
 import me.bill.fakePlayerPlugin.config.Config;
 import me.bill.fakePlayerPlugin.util.FppLogger;
+import me.bill.fakePlayerPlugin.util.FppScheduler;
 import me.bill.fakePlayerPlugin.util.NameTagHelper;
 import org.bukkit.Bukkit;
 import org.bukkit.OfflinePlayer;
@@ -1023,13 +1024,7 @@ public final class SkinManager {
           "ZumaTGW",
           "Zurius3",
           "zyephy",
-          "F_PP",
-          "Notch",
-          "jeb_",
-          "Dinnerbone",
-          "grumm",
-          "MHF_Steve",
-          "MHF_Alex");
+          "F_PP");
 
   private static final int MAX_FALLBACK_ATTEMPTS = 3;
 
@@ -1591,16 +1586,15 @@ public final class SkinManager {
   private @NotNull CompletableFuture<Boolean> runOnMainThread(
       java.util.concurrent.Callable<Boolean> action) {
     CompletableFuture<Boolean> future = new CompletableFuture<>();
-    Bukkit.getScheduler()
-        .runTask(
-            plugin,
-            () -> {
-              try {
-                future.complete(action.call());
-              } catch (Exception e) {
-                future.complete(false);
-              }
-            });
+    FppScheduler.runSync(
+        plugin,
+        () -> {
+          try {
+            future.complete(action.call());
+          } catch (Exception e) {
+            future.complete(false);
+          }
+        });
     return future;
   }
 
@@ -1609,7 +1603,7 @@ public final class SkinManager {
       callback.accept(profile);
       return;
     }
-    Bukkit.getScheduler().runTask(plugin, () -> callback.accept(profile));
+    FppScheduler.runSync(plugin, () -> callback.accept(profile));
   }
 
   private enum ProfileCompleteResult {

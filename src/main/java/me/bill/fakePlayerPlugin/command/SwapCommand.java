@@ -7,7 +7,6 @@ import java.util.stream.Collectors;
 import me.bill.fakePlayerPlugin.FakePlayerPlugin;
 import me.bill.fakePlayerPlugin.config.Config;
 import me.bill.fakePlayerPlugin.fakeplayer.BotSwapAI;
-import me.bill.fakePlayerPlugin.fakeplayer.BotType;
 import me.bill.fakePlayerPlugin.fakeplayer.FakePlayer;
 import me.bill.fakePlayerPlugin.fakeplayer.FakePlayerManager;
 import me.bill.fakePlayerPlugin.lang.Lang;
@@ -103,9 +102,7 @@ public class SwapCommand implements FppCommand {
     BotSwapAI ai = plugin.getBotSwapAI();
     if (ai != null) {
       for (FakePlayer fp : manager.getActivePlayers()) {
-        if (fp.getBotType() != BotType.PVP) {
-          ai.schedule(fp);
-        }
+        ai.schedule(fp);
       }
     }
     sender.sendMessage(Lang.get("swap-enabled"));

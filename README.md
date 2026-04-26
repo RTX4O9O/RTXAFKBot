@@ -58,6 +58,13 @@ FPP adds fake players to your server that look and behave like real ones:
 - **BungeeCord companion** (`fpp-bungee.jar`) — identical feature set for BungeeCord/Waterfall networks; drop into your BungeeCord `plugins/` folder; no configuration needed
 - **Config sync** — push/pull configuration files across your proxy network
 - **PlaceholderAPI** — 29+ placeholders including per-world bot counts, network state, spawn cooldown, and new proxy-aware counts
+- **Extension / Addon API** — drop `.jar` files into `plugins/FakePlayerPlugin/extensions/` to load third-party addons with full access to commands, events, tick handlers, and settings GUI tabs
+- **Random name generator** — `bot-name.mode: random` generates realistic Minecraft-style usernames on the fly
+- **Find command** — bots scan nearby chunks for target blocks and mine them progressively
+- **Bot groups** — personal bot groups with GUI management for bulk commands
+- **WorldEdit integration** — `--wesel` flag for mine/place uses your WorldEdit selection
+- **Automation** — `auto-eat` and `auto-place-bed` defaults for realistic bot survival behaviour
+- **Folia support** — compatible with Folia's regionised threading model
 - Fully **hot-reloadable** — no restarts needed
 
 ---
@@ -71,6 +78,7 @@ FPP adds fake players to your server that look and behave like real ones:
 | [LuckPerms](https://luckperms.net) | Optional — auto-detected |
 | [PlaceholderAPI](https://www.spigotmc.org/resources/placeholderapi.6245/) | Optional — auto-detected (29+ placeholders) |
 | [WorldGuard](https://dev.bukkit.org/projects/worldguard) | Optional — auto-detected (no-PvP region protection) |
+| [WorldEdit](https://enginehub.org/worldedit/) | Optional — auto-detected (`--wesel` flag for mine/place) |
 | [NameTag](https://lode.gg) | Optional — auto-detected (nick-conflict guard, skin sync) |
 
 > **PlaceholderAPI Integration:** FPP provides 29+ placeholders including per-world bot counts, player-relative stats, network state, and system status. See [PLACEHOLDERAPI.md](PLACEHOLDERAPI.md) for the complete reference.
@@ -106,6 +114,7 @@ All commands are under `/fpp` (aliases: `/fakeplayer`, `/fp`).
 | `/fpp freeze <name\|all> [on\|off]` | Freeze or unfreeze bots — frozen bots are immovable |
 | `/fpp inventory <bot>` | Open the bot's full 54-slot inventory GUI (alias: `/fpp inv`) |
 | `/fpp move <bot> <player>` | Navigate a bot to an online player using A* pathfinding |
+| `/fpp move <bot> --coords <x> <y> <z>` | Navigate a bot to exact world coordinates (supports `~` relative offsets) |
 | `/fpp move <bot> --wp <route>` | Patrol a named waypoint route on a loop |
 | `/fpp move <bot> --stop` | Stop the bot's current navigation |
 | `/fpp mine <bot> [once\|stop]` | Continuous or one-shot block mining |
@@ -120,9 +129,14 @@ All commands are under `/fpp` (aliases: `/fakeplayer`, `/fp`).
 | `/fpp personality <bot> set\|reset\|show` | Assign or clear AI personality per bot |
 | `/fpp personality list\|reload` | List available personality files or reload them |
 | `/fpp ping [<bot>] [--ping <ms>\|--random] [--count <n>]` | Set simulated tab-list ping for one or all bots |
-| `/fpp attack <bot> [--stop]` | Bot walks to sender and attacks nearby entities (PvE); `--mob` for stationary mob-targeting mode |
+| `/fpp attack <bot> [--stop]` | Bot walks to sender and attacks nearby entities (PvE); `--mob` for stationary mob-targeting mode; `--mob --move` to pursue targets |
 | `/fpp follow <bot\|all> <player>` | Bot continuously follows an online player; path recalculates as target moves |
 | `/fpp follow <bot\|all> --stop` | Stop the bot's current follow loop |
+| `/fpp sleep <bot\|all> <x y z> <radius>` | Set a sleep-origin so the bot auto-sleeps at night near that location |
+| `/fpp sleep <bot\|all> --stop` | Clear the bot's sleep-origin |
+| `/fpp stop [<bot>\|all]` | Cancel all active tasks for a bot (move, mine, place, use, attack, follow, sleep) |
+| `/fpp find <bot> <block> [--radius <n>] [--count <n>]` | Bot scans nearby chunks for target blocks and mines them progressively |
+| `/fpp groups [gui\|list\|create\|delete\|add\|remove]` | Personal bot groups with GUI management |
 | `/fpp badword add\|remove\|list\|reload` | Manage the runtime badword list |
 | `/fpp chat [on\|off\|status]` | Toggle the fake chat system |
 | `/fpp swap [on\|off\|status\|now <bot>\|list\|info <bot>]` | Toggle / manage the bot swap/rotation system |
@@ -165,7 +179,8 @@ All commands are under `/fpp` (aliases: `/fakeplayer`, `/fp`).
 | `fpp.info` | Query the database |
 | `fpp.reload` | Reload configuration |
 | `fpp.tp` | Teleport to bots |
-| `fpp.tph` | Teleport any bot to you |
+| `fpp.tph` | Teleport your own bot to you |
+| `fpp.tph.all` | Teleport all accessible bots to you at once |
 | `fpp.bypass.maxbots` | Bypass the global bot cap |
 | `fpp.peaks` | Manage the peak-hours bot pool scheduler |
 | `fpp.settings` | Open the in-game settings GUI |
@@ -184,6 +199,9 @@ All commands are under `/fpp` (aliases: `/fakeplayer`, `/fp`).
 | `fpp.ping` | View/set simulated tab-list ping for bots |
 | `fpp.attack` | PvE attack automation (classic & mob-targeting modes) |
 | `fpp.follow` | Follow-target bot automation (persistent across restarts) |
+| `fpp.find` | Bot block-finding and progressive mining |
+| `fpp.sleep` | Set bot sleep-origin for night auto-sleep |
+| `fpp.stop` | Cancel all active tasks for one or all bots |
 | `fpp.migrate` | Data migration and backup utilities |
 | `fpp.alert` | Broadcast network-wide admin alerts |
 | `fpp.sync` | Push/pull config across proxy network |
@@ -249,6 +267,8 @@ Located at `plugins/FakePlayerPlugin/config.yml`. Run `/fpp reload` after any ch
 | `server-list` | Whether bots count in the server-list player total; `count-bots`, `include-remote-bots` |
 | `config-sync` | Cross-server config push/pull mode (`DISABLED` / `MANUAL` / `AUTO_PULL` / `AUTO_PUSH`) |
 | `database` | `mode` (`LOCAL` / `NETWORK`), `server-id`, SQLite (default) or MySQL |
+| `automation` | `auto-eat`, `auto-place-bed` — realistic bot survival defaults |
+| `attack-mob` | PvE auto-targeting defaults (`default-range`, `default-priority`, etc.) |
 
 ---
 
@@ -343,6 +363,73 @@ Identical feature set for BungeeCord/Waterfall networks.
 ---
 
 ## Changelog
+
+### v1.6.6.7 *(2026-04-26)*
+
+**Extension / Addon API**
+- New `FppExtension` interface — third-party developers can drop `.jar` files into `plugins/FakePlayerPlugin/extensions/` and FPP will auto-load them on startup
+- `ExtensionLoader` scans extension jars for `FppExtension` implementations, instantiates them, and registers them as addons sorted by priority
+- Full addon lifecycle: `onEnable(FppApi)` / `onDisable()` with access to commands, events, tick handlers, settings GUI tabs, metadata, navigation API, and service registry
+- 20+ API event classes for bot interactions (spawn, despawn, move, mine, place, attack, follow, chat, etc.)
+- See `EXTENSIONS.md` in the repository for the complete addon developer guide
+
+**Random Name Generator**
+- New `bot-name.mode: random` (default) — generates realistic Minecraft-style usernames on the fly when the name pool is empty or when `mode: random` is set
+- `bot-name.mode: pool` — legacy behaviour, picks from `bot-names.yml`
+- No more `Bot1234` fallback names; every auto-generated name looks like a real player
+
+**New Commands**
+- **`/fpp find <bot> <block> [--radius <n>] [--count <n>]`** — bot scans nearby chunks for the target block type, reserves matching locations, and mines them one by one. Async chunk snapshot scanning with progressive mining and raytrace visibility check. Permission: `fpp.find`
+- **`/fpp groups [gui|list|create <name>|delete <name>|add <group> <bot>|remove <group> <bot>]`** — personal bot groups with GUI management. Group bots together for bulk commands. Permission: `fpp.groups`
+- **`/fpp sleep <bot|all> <x y z> <radius>`** — registers a sleep-origin; bot auto-walks to the nearest free bed within radius at night and sleeps. `/fpp sleep <bot|all> --stop` clears the origin. NMS sleep/wake with temporary bed placement. Permission: `fpp.sleep`
+- **`/fpp stop [<bot>|all]`** — instantly cancels all active tasks for a bot (move, mine, place, use, attack, follow, find, sleep). Permission: `fpp.stop`
+- **`/fpp move <bot> --coords <x> <y> <z>`** — navigate a bot to exact world coordinates; supports `~` relative offsets. Permission: `fpp.move`
+- **`/fpp attack <bot> --mob --move`** — PvE mob-targeting mode now supports pursuit; bot chases the target when out of melee range and stops to attack when in reach. Permission: `fpp.attack`
+
+**WorldEdit Integration**
+- New `--wesel` flag for `/fpp mine` and `/fpp place` — uses the player's current WorldEdit selection as the work area instead of manual `--pos1`/`--pos2`
+- Soft-dependency: `WorldEdit` added to `plugin.yml` softdepend list
+- Permissions: `fpp.mine.wesel`, `fpp.place.wesel`
+
+**Automation Defaults**
+- New `automation` config section:
+  - `auto-eat: true` — bots eat food from inventory when hunger prevents sprinting
+  - `auto-place-bed: true` — bots may place a bed from inventory for auto-sleep, then break it after waking
+- Values are copied to newly spawned/restored bots; existing bots keep per-bot overrides
+
+**Pathfinding & Knockback Fixes**
+- Door handling — bots now correctly open and pass through wooden doors, fence gates, and trapdoors during pathfinding
+- Ladder and vine climbing — ASCEND/DESCEND moves now support ladders, vines, and scaffolding
+- Knockback fix double-check — resolved residual knockback issues on 1.21.9+ with tiered strategy verification
+- Organic walk wobble — subtle sine-wave yaw drift (±5°) on straight WALK segments for more human-like movement
+- Sprint-jump naturalness — jump fires on first airborne→ground transition instead of fixed 6-tick timer
+
+**Folia Support**
+- `folia-supported: true` declared in `plugin.yml`
+- Compatible with Folia's regionised threading model
+
+**Proxy & Communication**
+- Enhanced proxy communication with error handling and pending bot despawn management
+- `fpp.tph.all` permission — teleports all accessible bots to the sender at once
+
+**Configuration**
+- Config version: 65 → 67
+- `chunk-loading.mass-disable-threshold: 100` — auto-releases chunk tickets when bot count exceeds this threshold to prevent mass-bot lag
+- `bot-name.mode: random` (new default)
+- `pathfinding.follow-recalc-interval: 100` (new key)
+
+**Permissions**
+- New nodes: `fpp.find`, `fpp.sleep`, `fpp.stop`, `fpp.attack.hunt`, `fpp.mine.wesel`, `fpp.place.wesel`, `fpp.tph.all`
+- All nodes declared in `plugin.yml` for LuckPerms tab-completion
+
+**Technical**
+- Database schema updates for bot groups and despawn snapshot persistence
+- `BotGroupCommand`, `BotGroupStore` for group management
+- `FindCommand` with async chunk snapshot scanning and block reservation system
+- `SleepCommand` with NMS sleep/wake and night-watch repeating task
+- `StopCommand` with dependency injection of other command instances for bulk cancellation
+
+---
 
 ### v1.6.6.2 *(2026-04-21)*
 
@@ -896,4 +983,4 @@ Thank you for using Fake Player Plugin. Without you, it wouldn't be where it is 
 
 ---
 
-*Built for Paper 1.21.x · Java 21 · FPP v1.6.6.2 · [Modrinth](https://modrinth.com/plugin/fake-player-plugin-(fpp)) · [SpigotMC](https://www.spigotmc.org/resources/fake-player-plugin-fpp.133572/) · [PaperMC](https://hangar.papermc.io/Pepe-tf/FakePlayerPlugin) · [BuiltByBit](https://builtbybit.com/resources/fake-player-plugin.98704/) · [Wiki](https://fakeplayerplugin.xyz) · [GitHub](https://github.com/Pepe-tf/fake-player-plugin)*
+*Built for Paper 1.21.x · Java 21 · FPP v1.6.6.7 · [Modrinth](https://modrinth.com/plugin/fake-player-plugin-(fpp)) · [SpigotMC](https://www.spigotmc.org/resources/fake-player-plugin-fpp.133572/) · [PaperMC](https://hangar.papermc.io/Pepe-tf/FakePlayerPlugin) · [BuiltByBit](https://builtbybit.com/resources/fake-player-plugin.98704/) · [Wiki](https://fakeplayerplugin.xyz) · [GitHub](https://github.com/Pepe-tf/fake-player-plugin)*

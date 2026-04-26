@@ -14,13 +14,13 @@ import me.bill.fakePlayerPlugin.fakeplayer.FakePlayerManager;
 import me.bill.fakePlayerPlugin.lang.Lang;
 import me.bill.fakePlayerPlugin.permission.Perm;
 import me.bill.fakePlayerPlugin.util.BadwordFilter;
+import me.bill.fakePlayerPlugin.util.FppScheduler;
 import me.bill.fakePlayerPlugin.util.TextUtil;
 import org.bukkit.Location;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.PlayerInventory;
-import org.bukkit.scheduler.BukkitRunnable;
 
 public class BadwordCommand implements FppCommand {
 
@@ -286,142 +286,144 @@ public class BadwordCommand implements FppCommand {
       final RenameTask task = tasks.get(i);
       final long delay = 12L + (long) i * 8L;
 
-      plugin
-          .getServer()
-          .getScheduler()
-          .runTaskLater(
-              plugin,
-              () -> {
-                Location loc = task.location();
-                if (loc == null) {
-                  msg(
-                      sender,
-                      RED
-                          + "  ✘ "
-                          + GRAY
-                          + "Cannot respawn "
-                          + ACCENT
-                          + task.newName()
-                          + CLOSE
-                          + GRAY
-                          + " — no location saved (bodyless bot had no"
-                          + " world position).");
-                  return;
-                }
+      FppScheduler.runSyncLater(
+          plugin,
+          () -> {
+            Location loc = task.location();
+            if (loc == null) {
+              msg(
+                  sender,
+                  RED
+                      + "  ✘ "
+                      + GRAY
+                      + "Cannot respawn "
+                      + ACCENT
+                      + task.newName()
+                      + CLOSE
+                      + GRAY
+                      + " — no location saved (bodyless bot had no"
+                      + " world position).");
+              return;
+            }
 
-                int result = manager.spawn(loc, 1, null, task.newName(), true, task.botType());
-                if (result <= 0) {
-                  String reason =
-                      switch (result) {
-                        case 0 -> "name already taken";
-                        case -1 -> "global bot limit reached";
-                        case -2 -> "name failed Minecraft validation";
-                        default -> "unknown error (code " + result + ")";
-                      };
-                  msg(
-                      sender,
-                      RED
-                          + "  ✘ "
-                          + GRAY
-                          + "Failed to spawn "
-                          + ACCENT
-                          + task.newName()
-                          + CLOSE
-                          + GRAY
-                          + ": "
-                          + reason
-                          + ".");
-                  return;
-                }
+            int result = manager.spawn(loc, 1, null, task.newName(), true, task.botType());
+            if (result <= 0) {
+              String reason =
+                  switch (result) {
+                    case 0 -> "name already taken";
+                    case -1 -> "global bot limit reached";
+                    case -2 -> "name failed Minecraft validation";
+                    default -> "unknown error (code " + result + ")";
+                  };
+              msg(
+                  sender,
+                  RED
+                      + "  ✘ "
+                      + GRAY
+                      + "Failed to spawn "
+                      + ACCENT
+                      + task.newName()
+                      + CLOSE
+                      + GRAY
+                      + ": "
+                      + reason
+                      + ".");
+              return;
+            }
 
-                scheduleSnapshotRestore(sender, task);
-              },
-              delay);
+            scheduleSnapshotRestore(sender, task);
+          },
+          delay);
     }
   }
 
   private void scheduleSnapshotRestore(CommandSender sender, RenameTask task) {
-    new BukkitRunnable() {
-      int elapsed = 0;
+    final int[] elapsed = {0};
+    final int[] pollTaskId = {-1};
 
-      @Override
-      public void run() {
-        elapsed += (int) POLL_INTERVAL_TICKS;
+    Runnable poll =
+        () -> {
+          elapsed[0] += (int) POLL_INTERVAL_TICKS;
 
-        if (elapsed > POLL_TIMEOUT_TICKS) {
-          cancel();
+          if (elapsed[0] > POLL_TIMEOUT_TICKS) {
+            if (pollTaskId[0] != -1) {
+              FppScheduler.cancelTask(pollTaskId[0]);
+              pollTaskId[0] = -1;
+            }
+            msg(
+                sender,
+                YELLOW
+                    + "  ⚠ "
+                    + GRAY
+                    + "Timed out waiting for "
+                    + ACCENT
+                    + task.newName()
+                    + CLOSE
+                    + GRAY
+                    + " to finish spawning. Bot is online but some data "
+                    + "may not have been restored.");
+            return;
+          }
+
+          FakePlayer newFp = manager.getByName(task.newName());
+          if (newFp == null) return;
+
+          if (!newFp.isBodyless() && newFp.getPlayer() == null) return;
+
+          if (pollTaskId[0] != -1) {
+            FppScheduler.cancelTask(pollTaskId[0]);
+            pollTaskId[0] = -1;
+          }
+
+          task.snapshot().applyChatAndState(newFp);
+
+          if (task.snapshot().aiPersonality() != null) {
+            me.bill.fakePlayerPlugin.database.DatabaseManager dbm = plugin.getDatabaseManager();
+            if (dbm != null)
+              dbm.updateBotAiPersonality(newFp.getUuid().toString(), task.snapshot().aiPersonality());
+          }
+
+          if (newFp.getPlayer() != null) {
+            task.snapshot().applyInventoryAndXp(newFp.getPlayer());
+          }
+
+          if (task.snapshot().lpGroup() != null && plugin.isLuckPermsAvailable()) {
+            FppScheduler.runSyncLater(
+                plugin,
+                () -> {
+                  FakePlayer fp = manager.getByName(task.newName());
+                  if (fp == null) return;
+                  me.bill.fakePlayerPlugin.util.LuckPermsHelper.applyGroupToOnlineUser(
+                      fp.getUuid(), task.snapshot().lpGroup());
+                  fp.setLuckpermsGroup(task.snapshot().lpGroup());
+
+                  manager.refreshLpDisplayName(fp);
+                },
+                5L);
+          }
+
           msg(
               sender,
-              YELLOW
-                  + "  ⚠ "
-                  + GRAY
-                  + "Timed out waiting for "
+              GREEN
+                  + "  ✔ "
                   + ACCENT
                   + task.newName()
                   + CLOSE
                   + GRAY
-                  + " to finish spawning. Bot is online but some data "
-                  + "may not have been restored.");
-          return;
-        }
+                  + " is online"
+                  + GRAY
+                  + " <dark_gray>("
+                  + RED
+                  + task.oldName()
+                  + GRAY
+                  + " renamed, data restored"
+                  + "<dark_gray>)"
+                  + GRAY
+                  + ".");
+        };
 
-        FakePlayer newFp = manager.getByName(task.newName());
-        if (newFp == null) return;
-
-        if (!newFp.isBodyless() && newFp.getPlayer() == null) return;
-
-        cancel();
-
-        task.snapshot().applyChatAndState(newFp);
-
-        if (task.snapshot().aiPersonality() != null) {
-          me.bill.fakePlayerPlugin.database.DatabaseManager dbm = plugin.getDatabaseManager();
-          if (dbm != null)
-            dbm.updateBotAiPersonality(newFp.getUuid().toString(), task.snapshot().aiPersonality());
-        }
-
-        if (newFp.getPlayer() != null) {
-          task.snapshot().applyInventoryAndXp(newFp.getPlayer());
-        }
-
-        if (task.snapshot().lpGroup() != null && plugin.isLuckPermsAvailable()) {
-          plugin
-              .getServer()
-              .getScheduler()
-              .runTaskLater(
-                  plugin,
-                  () -> {
-                    FakePlayer fp = manager.getByName(task.newName());
-                    if (fp == null) return;
-                    me.bill.fakePlayerPlugin.util.LuckPermsHelper.applyGroupToOnlineUser(
-                        fp.getUuid(), task.snapshot().lpGroup());
-                    fp.setLuckpermsGroup(task.snapshot().lpGroup());
-
-                    manager.refreshLpDisplayName(fp);
-                  },
-                  5L);
-        }
-
-        msg(
-            sender,
-            GREEN
-                + "  ✔ "
-                + ACCENT
-                + task.newName()
-                + CLOSE
-                + GRAY
-                + " is online"
-                + GRAY
-                + " <dark_gray>("
-                + RED
-                + task.oldName()
-                + GRAY
-                + " renamed, data restored"
-                + "<dark_gray>)"
-                + GRAY
-                + ".");
-      }
-    }.runTaskTimer(plugin, POLL_INTERVAL_TICKS, POLL_INTERVAL_TICKS);
+    pollTaskId[0] =
+        FppScheduler.runSyncRepeatingWithId(plugin, poll, POLL_INTERVAL_TICKS, POLL_INTERVAL_TICKS);
   }
 
   private void doStatus(CommandSender sender) {

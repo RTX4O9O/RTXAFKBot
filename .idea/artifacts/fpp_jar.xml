@@ -1,6 +1,6 @@
 <component name="ArtifactManager">
   <artifact type="jar" name="fpp:jar">
-    <output-path>C:/Users/Name/Desktop/dmc/plugins</output-path>
+    <output-path>$USER_HOME$/Desktop/FPPT/Plugins</output-path>
     <root id="archive" name="fpp.jar">
       <element id="module-output" name="fpp" />
       <element id="extracted-dir" path="$MAVEN_REPOSITORY$/dev/faststats/metrics/core/0.18.1/core-0.18.1.jar" path-in-jar="/" />
