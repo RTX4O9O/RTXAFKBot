@@ -1,8 +1,8 @@
-PROPRIETARY SOFTWARE LICENSE
+CUSTOM PROPRIETARY SOFTWARE LICENSE
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Fake Player Plugin (FPP)
-Copyright (c) 2026 Bill_Hub. All Rights Reserved.
+RTXAFKBot Based on the original work by Pepe-tf/fake-player-plugin (RTX4090) Modified and Maintained by Bill_Hub Copyright (c) 2026 Bill_Hub. All Rights Reserved.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -11,108 +11,58 @@ THIS SOFTWARE. BY USING THIS SOFTWARE IN ANY WAY, YOU AGREE TO BE BOUND BY THE
 TERMS OF THIS LICENSE. IF YOU DO NOT AGREE, DO NOT USE THIS SOFTWARE.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. OWNERSHIP & DERIVATION
 
-1. OWNERSHIP
 ━━━━━━━━━━━━
-This software, "Fake Player Plugin" (hereinafter referred to as "the Software"),
-including all source code, compiled binaries, configuration files, resource
-files, documentation, and any associated materials, is the exclusive proprietary
-property of Bill_Hub (hereinafter referred to as "the Owner"). All rights are
-reserved.
+This software, "RTXAFKBot" (hereinafter referred to as "the Software"), is a derivative work based on the "fake-player-plugin" originally created by RTX4090.
 
+While the original logic remains the property of the initial creator under their respective terms, the specific modifications, custom compiled binaries, configuration structures, and optimizations in this build are the proprietary property of Bill_Hub (hereinafter referred to as "the Owner"). All rights to this specific distribution are reserved.
 2. PROHIBITED ACTIONS
+
 ━━━━━━━━━━━━━━━━━━━━━
-The following actions are STRICTLY PROHIBITED without prior explicit written
-permission from the Owner:
+The following actions are STRICTLY PROHIBITED without prior explicit written permission from the Owner:
 
-  a) COPYING — You may NOT copy, reproduce, duplicate, or replicate any part
-     of this Software, in whole or in part, in any form or by any means,
-     electronic or mechanical, for any purpose whatsoever.
+    a) COPYING — You may NOT copy, reproduce, duplicate, or replicate any part of this specific build for redistribution.
 
-  b) DISTRIBUTION — You may NOT distribute, publish, sell, sublicense, rent,
-     lease, lend, share, or otherwise transfer this Software or any portion
-     thereof to any third party.
+    b) DISTRIBUTION — You may NOT distribute, publish, sell, sublicense, or share this Software or any portion thereof to any third party.
 
-  c) MODIFICATION — You may NOT modify, alter, adapt, translate, create
-     derivative works from, or otherwise change any part of this Software,
-     including but not limited to its source code, configuration files,
-     resource files, and compiled binaries.
+    c) FURTHER MODIFICATION — You may NOT modify, alter, or create further derivative works from this specific build.
 
-  d) DECOMPILATION & REVERSE ENGINEERING — You may NOT decompile, disassemble,
-     reverse engineer, decrypt, crack, patch, or attempt to derive the source
-     code or underlying algorithms of the compiled Software by any means.
+    d) DECOMPILATION — You may NOT decompile, disassemble, or reverse engineer the compiled Software to extract the custom modifications.
 
-  e) REDISTRIBUTION — You may NOT redistribute this Software under any other
-     name, branding, or license, or claim it as your own work.
+    e) REDISTRIBUTION — You may NOT redistribute this Software under any other name or branding, or claim the RTXSMP-specific changes as your own work.
 
-  f) COMMERCIAL USE — You may NOT use this Software or any part of it for
-     commercial purposes without explicit written authorization from the Owner.
-
-  g) SUBLICENSING — You may NOT sublicense, grant, or transfer any rights
-     granted to you under this license to any other person or entity.
-
-  h) REMOVAL OF NOTICES — You may NOT remove, alter, or obscure any copyright
-     notice, license notice, attribution, or proprietary marking contained
-     within this Software.
+    f) COMMERCIAL USE — You may NOT use this Software for commercial purposes (e.g., selling access to it) without explicit written authorization.
 
 3. PERMITTED USE
+
 ━━━━━━━━━━━━━━━━
 You are permitted to:
 
-  a) Use the compiled, unmodified version of the Software solely for its
-     intended purpose, as provided by the Owner, on servers you own or
-     administrate.
+    Use the compiled, unmodified version of the Software solely for its intended purpose on servers you own or administrate.
 
-  b) Any use beyond what is explicitly stated above requires prior written
-     consent from the Owner.
+    Attribute the work correctly to both the original creator (RTX4090) and the custom build maintainer (Bill_Hub) if requested in-game or in documentation.
 
 4. NO WARRANTIES — PROVIDED "AS IS"
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-THIS SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT. IN NO EVENT SHALL THE
-OWNER BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN
-ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION
-WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
-THE OWNER DOES NOT GUARANTEE THAT THE SOFTWARE WILL BE ERROR-FREE, UNINTERRUPTED,
-SECURE, OR FREE OF HARMFUL COMPONENTS.
-
+THIS SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND. THE OWNER DOES NOT GUARANTEE THAT THE SOFTWARE WILL BE ERROR-FREE, UNINTERRUPTED, OR COMPATIBLE WITH ALL SERVER ENVIRONMENTS. IN NO EVENT SHALL THE OWNER BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY ARISING FROM THE USE OF THIS SOFTWARE.
 5. TERMINATION
-━━━━━━━━━━━━━━
-Any violation of the terms of this license will result in the immediate and
-automatic termination of any rights granted to you under this license. Upon
-termination, you must immediately cease all use of the Software and destroy all
-copies in your possession.
 
-6. ENFORCEMENT
 ━━━━━━━━━━━━━━
-The Owner reserves the right to pursue all available legal remedies for any
-violation of this license, including but not limited to injunctive relief,
-monetary damages, and recovery of legal fees.
+Any violation of these terms results in the immediate and automatic termination of your right to use this custom build. Upon termination, you must destroy all copies of the Software in your possession.
+6. CONTACT & PERMISSIONS
 
-7. CONTACT & PERMISSIONS
 ━━━━━━━━━━━━━━━━━━━━━━━━
-If you wish to request permission for any use not explicitly permitted by this
-license, you must contact the Owner BEFORE taking any such action.
+If you wish to request permission for any use not explicitly permitted by this license, contact the Owner:
 
-  Discord : Bill_Hub
-  GitHub  : https://github.com/Bill-Hub
+    Discord: Bill_Hub
 
-Requests will be considered on a case-by-case basis. Failure to obtain
-permission prior to use constitutes a violation of this license.
-
-8. GOVERNING LAW
-━━━━━━━━━━━━━━━━
-This license shall be governed by and construed in accordance with applicable
-law. Any disputes arising under or in connection with this license shall be
-subject to the exclusive jurisdiction of the courts of the Owner's jurisdiction.
+    GitHub: https://github.com/Bill-Hub
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-© 2026 Bill_Hub — ALL RIGHTS RESERVED.
-Unauthorized use, copying, modification, or distribution of this Software
-is strictly prohibited and may result in severe civil and criminal penalties.
+© 2026 Bill_Hub — ALL RIGHTS RESERVED. Derived from Pepe-tf/fake-player-plugin by RTX4090.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
+license edited/generated by gemeni
